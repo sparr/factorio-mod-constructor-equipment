@@ -1,0 +1,11 @@
+{
+  "name": "constructor-equipment",
+  "version": "0.15.0",
+  "title": "Constructor Equipment",
+  "author": "Sparr",
+  "homepage": "http://github.com/sparr/factorio-mod-constructor-equipment",
+  "contact": "sparr0@gmail.com",
+  "description": "Adds equipment for short range automated construction.",
+  "dependencies": ["base >= 0.15.0"],
+  "factorio_version": "0.15"
+}
