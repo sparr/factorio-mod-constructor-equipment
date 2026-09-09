@@ -57,7 +57,7 @@ describe("a character wearing the equipment", function()
     local full = player.character_running_speed
     world.ghost(player, BELT, 2, 0)
     world.ghost(player, BELT, 3, 0)
-    after_ticks(10, function()
+    after_ticks(world.DELIVERED, function()
       assert.is_not_nil(world.slowdown(player), "no slowdown sticker was applied")
       assert.is_true(player.character_running_speed < full,
         "the character is not actually walking any slower")

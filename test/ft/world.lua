@@ -16,6 +16,13 @@ world.BUILD_RANGE = 4
 --- Two builds a second, so a little over half a second between them.
 world.BUILD_INTERVAL = 30
 
+--- How long the claw takes to swing one way. Out and back fills a whole build interval,
+--- so nothing lands the instant a job starts: the item has to get there first.
+world.SWING_TICKS = 15
+
+--- Comfortably after a swing has reached its target and delivered.
+world.DELIVERED = world.SWING_TICKS + 14
+
 ---The player the harness gives us, put back into a known state.
 ---@return LuaPlayer
 function world.player()
