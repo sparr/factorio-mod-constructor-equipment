@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.3
+  Features:
+    - The character now comes back up to speed gradually once there is nothing left to build, rather than all at once
+  Changes:
+    - The slowdown no longer fights other mods that change how fast you walk, and both effects now apply together
+  Bugfixes:
+    - Fixed being left slowed for good if anything interrupted a build, and gave the speed back to anyone a previous version had left that way
+---------------------------------------------------------------------------------------------------
 Version: 2.1.2
 Date: 2026-09-09
   Bugfixes:

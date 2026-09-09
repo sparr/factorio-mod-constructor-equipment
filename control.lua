@@ -4,11 +4,20 @@ local BUILD_RANGE = 4
 local BUILD_PER_SECOND = 2
 local CHECK_PER_SECOND = 10
 local BUILD_ENERGY_COST = 1000000
-local BUILD_RUNNING_SPEED_MODIFIER = -0.75
+
+--- The slowdown, and how long it lasts after the build that caused it. See
+--- prototypes/sticker.lua for why it is a sticker and not a number on the character.
+local SLOWDOWN = "constructor-equipment-slowdown"
+local RECOVERY = "constructor-equipment-recovery"
 
 local BUILD_INTERVAL = 60 / BUILD_PER_SECOND
 local CHECK_INTERVAL = 60 / CHECK_PER_SECOND
 local CHECK_TICK = CHECK_INTERVAL / 2
+
+--- What the sticker's duration_in_ticks is set to, kept here so the tests and the
+--- prototype agree: long enough to bridge the gap between two builds, so that building
+--- steadily is one unbroken slowdown rather than a stutter.
+local SLOWDOWN_TICKS = BUILD_INTERVAL + CHECK_INTERVAL + 9
 
 --- 2.0 renamed the save table from global to storage, and filling it in at load time is
 --- no longer allowed: the file is run before the save is read, so anything put there
@@ -16,8 +25,73 @@ local CHECK_TICK = CHECK_INTERVAL / 2
 --- configuration_changed for a save that predates this.
 local function setup()
   storage.constructor_last_build_tick = storage.constructor_last_build_tick or {}
-  storage.constructor_saved_running_speed_modifier =
-    storage.constructor_saved_running_speed_modifier or {}
+
+  -- Older versions slowed the character by writing character_running_speed_modifier and
+  -- remembering what had been there. A save from one of those can be carrying a player
+  -- left at quarter speed, because the value was only put back on the tick after a build
+  -- that did not happen. Give it back and forget the bookkeeping.
+  local saved = storage.constructor_saved_running_speed_modifier
+  if saved then
+    for index, previous in pairs(saved) do
+      local player = game.get_player(index)
+      if player and player.character_running_speed_modifier == -0.75 then
+        player.character_running_speed_modifier = previous or 0
+      end
+    end
+    storage.constructor_saved_running_speed_modifier = nil
+  end
+end
+
+---One of this mod's stickers on a character, if it is there.
+---@param character LuaEntity
+---@param name string
+---@return LuaEntity?
+local function sticker_on(character, name)
+  for _, sticker in pairs(character.stickers or {}) do
+    if sticker.valid and sticker.name == name then return sticker end
+  end
+  return nil
+end
+
+---Slow the character down, or keep them slowed if they already are.
+---
+---Putting the same sticker on a character who already has it does not give them two: the
+---engine keeps the one and starts its life over. So a run of builds is one unbroken
+---slowdown without this having to find the old sticker and reset it, and the character
+---never speeds up in the middle. test/ft/slowdown.lua pins that, since it is the engine's
+---behaviour and not this mod's.
+---
+---The recovery sticker has to go, though. It is a different prototype, so the engine
+---would keep both and multiply them together, and a character who started speeding up and
+---then found something else to build would end up slower than one who never stopped.
+---@param character LuaEntity
+local function slow(character)
+  local recovery = sticker_on(character, RECOVERY)
+  if recovery then recovery.destroy() end
+  character.surface.create_entity{
+    name = SLOWDOWN,
+    position = character.position,
+    target = character,
+  }
+end
+
+---Let a character who has run out of things to build come back up to speed.
+---
+---The slowdown is flat while there is work, because its own life keeps being restarted
+---and the interpolation would restart with it -- which would read as stuttering rather
+---than as effort. The ramp belongs at the end, where there is one of it. So the flat
+---sticker is swapped for one that interpolates from a quarter speed back to full over its
+---lifetime, and the engine walks it up as its life runs down.
+---@param character LuaEntity
+local function recover(character)
+  local slowdown = sticker_on(character, SLOWDOWN)
+  if not slowdown then return end
+  slowdown.destroy()
+  character.surface.create_entity{
+    name = RECOVERY,
+    position = character.position,
+    target = character,
+  }
 end
 
 ---Whether this character is wearing the equipment, with enough charge to use it.
@@ -79,11 +153,7 @@ local function build_one(player)
         storage.constructor_last_build_tick[player.index] = game.tick
         inventory.remove({ name = item, count = needed })
         spend(character.grid)
-        if player.character_running_speed_modifier ~= BUILD_RUNNING_SPEED_MODIFIER then
-          storage.constructor_saved_running_speed_modifier[player.index] =
-            player.character_running_speed_modifier
-        end
-        player.character_running_speed_modifier = BUILD_RUNNING_SPEED_MODIFIER
+        slow(character)
         return true
       end
     end
@@ -101,16 +171,13 @@ local function on_tick(event)
     -- opening cutscene, and anyone in the map editor or spectating. Reading
     -- character_running_speed_modifier without one raises "No character" outright, which
     -- is what 0.15 never had to think about because a player always had one.
+    -- A build that was due and did not happen means there is nothing left in reach, which
+    -- is when the character starts getting their speed back. Nothing of anyone else's is
+    -- touched either way.
     local last = storage.constructor_last_build_tick[player.index]
     if player.character and build.due(event.tick, last, BUILD_INTERVAL) then
-      local built = build_one(player)
-      --TODO smoothly accelerate
-      --TODO make compatible with ProgressiveRunning and other mods that change
-      --     character_running_speed_modifier
-      if (not built)
-          and player.character_running_speed_modifier == BUILD_RUNNING_SPEED_MODIFIER then
-        player.character_running_speed_modifier =
-          storage.constructor_saved_running_speed_modifier[player.index] or 0
+      if not build_one(player) then
+        recover(player.character)
       end
     end
   end
@@ -126,6 +193,8 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
   require("__factorio-test__/init")({
     "test.ft.building",
     "test.ft.characterless",
+    "test.ft.slowdown",
+    "test.ft.interpolation",
   }, {
     load_luassert = true,
     game_speed = 100,

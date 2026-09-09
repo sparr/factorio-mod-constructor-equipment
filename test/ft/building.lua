@@ -54,19 +54,23 @@ describe("a character wearing the equipment", function()
 
   -- the trade the mod offers: it builds for you, and you walk slowly while it does
   it("slows the character down while it is working", function()
+    local full = player.character_running_speed
     world.ghost(player, BELT, 2, 0)
     world.ghost(player, BELT, 3, 0)
-    after_ticks(5, function()
-      assert.is_true(player.character_running_speed_modifier < 0,
-        "the character was not slowed while building")
+    after_ticks(10, function()
+      assert.is_not_nil(world.slowdown(player), "no slowdown sticker was applied")
+      assert.is_true(player.character_running_speed < full,
+        "the character is not actually walking any slower")
     end)
   end)
 
   it("gives the speed back once there is nothing left to build", function()
+    local full = player.character_running_speed
     world.ghost(player, BELT, 2, 0)
-    after_ticks(A_BUILD * 3, function()
+    after_ticks(world.SLOWDOWN_TICKS + A_BUILD, function()
       assert.are.equal(0, world.ghosts(player), "something is still waiting to be built")
-      assert.are.equal(0, player.character_running_speed_modifier,
+      assert.is_nil(world.slowdown(player), "the slowdown outlived the building")
+      assert.are.equal(full, player.character_running_speed,
         "the character is still slowed with nothing left to build")
     end)
   end)
@@ -123,7 +127,7 @@ describe("a character who cannot build", function()
     world.equipped(player)
     world.ghost(player, BELT, 2, 0)
     after_ticks(A_BUILD, function()
-      assert.are.equal(0, player.character_running_speed_modifier,
+      assert.is_nil(world.slowdown(player),
         "the character was slowed for a build that never happened")
     end)
   end)

@@ -101,6 +101,31 @@ function world.count(player, name)
   return player.surface.count_entities_filtered{ name = name }
 end
 
+--- The mod's own slowdown, from prototypes/sticker.lua.
+world.SLOWDOWN = "constructor-equipment-slowdown"
+
+--- How long the sticker lasts after the build that applied it, from control.lua.
+world.SLOWDOWN_TICKS = 45
+
+---The mod's slowdown sticker on this character, if it is there.
+---@param player LuaPlayer
+---@return LuaEntity?
+---@param name string? which sticker, defaulting to the slowdown
+function world.slowdown(player, name)
+  name = name or world.SLOWDOWN
+  for _, sticker in pairs(player.character.stickers or {}) do
+    if sticker.valid and sticker.name == name then return sticker end
+  end
+  return nil
+end
+
+---How many stickers of any kind are on the character.
+---@param player LuaPlayer
+---@return integer
+function world.stickers(player)
+  return #(player.character.stickers or {})
+end
+
 ---How many ghosts are left in the arena.
 ---@param player LuaPlayer
 ---@return integer
