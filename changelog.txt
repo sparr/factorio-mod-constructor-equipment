@@ -1,0 +1,9 @@
+---------------------------------------------------------------------------------------------------
+Version: 2.1.0
+  Features:
+    - Updated for Factorio 2.1
+  Changes:
+    - Researching the technology no longer extends how long ghosts survive, which a mod can no longer do
+  Bugfixes:
+    - Fixed the equipment not going into an armour at all
+    - Fixed a crash whenever a player had no character, which included the whole of the opening cutscene and any time spent in the map editor

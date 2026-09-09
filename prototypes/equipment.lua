@@ -21,7 +21,9 @@ data:extend(
       type = "electric",
       usage_priority = "secondary-input"
     },
-    energy_consumption = "0kW",
+    -- 0.15 accepted "0kW" here. It must be positive now, so this is nominal: the real
+    -- cost of a build is taken straight out of the grid's batteries in control.lua.
+    energy_consumption = "1W",
     movement_bonus = 0.0,
     categories = {"armor"}
   }

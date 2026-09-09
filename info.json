@@ -6,6 +6,8 @@
   "homepage": "http://github.com/sparr/factorio-mod-constructor-equipment",
   "contact": "sparr0@gmail.com",
   "description": "Adds equipment for short range automated construction.",
-  "dependencies": ["base >= 0.15.0"],
-  "factorio_version": "0.15"
+  "dependencies": [
+    "base >= 2.1.0"
+  ],
+  "factorio_version": "2.1"
 }

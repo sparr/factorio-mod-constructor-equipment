@@ -7,11 +7,11 @@ data:extend(
     energy_required = 10,
     ingredients =
     {
-      {"advanced-circuit", 5},
-      {"steel-plate", 5},
-      {"iron-gear-wheel", 10},
-      {"long-handed-inserter", 4}
+      {type = "item", name = "advanced-circuit", amount = 5},
+      {type = "item", name = "steel-plate", amount = 5},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "long-handed-inserter", amount = 4}
     },
-    result = "constructor-equipment"
+    results = {{type = "item", name = "constructor-equipment", amount = 1}}
   }
 })
