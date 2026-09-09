@@ -1,21 +1,14 @@
 --- The decisions behind a build, with no game in them.
 ---
 --- There is not much here, because most of what this mod does is ask the game questions:
---- what ghosts are nearby, what is in the grid, what is in the inventory. These two are
---- the parts that are arithmetic rather than enquiry, and they are the parts worth
---- pinning down a case at a time.
-local build = {}
-
----Whether enough ticks have gone by since this player last built something.
+--- what ghosts are nearby, what is in the grid, what is in the inventory. This is the one
+--- part that is arithmetic rather than enquiry, and it is worth pinning down a case at a
+--- time.
 ---
----A player who has never built has no last tick, and is due immediately.
----@param tick number
----@param last number?
----@param interval number
----@return boolean
-function build.due(tick, last, interval)
-  return last == nil or tick >= last + interval
-end
+--- It had a second function, for whether a build was due yet. There is no clock any more:
+--- an arm sets off when its claw is home and something is in reach, so how often it builds
+--- is how fast it swings.
+local build = {}
 
 ---Which item to spend on a ghost, and how many, out of the ones that could place it.
 ---

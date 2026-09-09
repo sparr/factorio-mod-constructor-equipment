@@ -1,14 +1,31 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.3
   Features:
-    - The arm sits on whichever side of you is your back, and is put away a second after it runs out of work
+    - The arm sits on whichever side of you is your back, and shrinks away a second after it runs out of work
     - An inserter arm now reaches out of your back to each ghost, carries the item there in its claw and puts it down, then comes back for the next one
+    - Wearing more than one of the equipment gives you an arm for each of them, all building at once
+    - Added three further tiers of the equipment, reaching three, four and five tiles, with red, blue and green arms
+    - Better arms slow you less: half as much at the second tier, and not at all at the third and fourth
+    - Tiers can be mixed, and each arm keeps its own reach and its own pace
+    - Researching inserter capacity lets an arm carry more than one thing at a time, and it then turns from ghost to ghost rather than going home between each
+    - An arm carries exactly what the inserter it is made from carries, so the fourth tier's bulk claw goes much further on that research than the others do
     - The arm gives up if you walk out of reach partway through, and carries the item back rather than losing it
     - And turns straight to another ghost that takes the same item instead of making a trip home for an identical one
-    - The character now leans into the work, slowing to a crawl over a second and a half rather than dropping to it at once
+    - The character now leans into the work, slowing over a second rather than dropping to their slowest at once
     - And comes back up to speed gradually once there is nothing left to build, rather than all at once
   Changes:
-    - A delivery now costs a tenth of what a personal laser defence spends on one shot, rather than twenty times more
+    - The arm reaches two tiles rather than four
+    - How often an arm builds is now however fast its claw swings, rather than a fixed two a second: a better arm is a quicker one, and things close by go up faster than things at arm's length
+    - The arm draws power from your armour as it swings and while it idles, at the rate the inserter it is made from draws, rather than a fixed amount per delivery
+    - An arm waits for a full charge before setting off, and turns for home rather than starting a delivery it cannot pay for
+    - Each piece of equipment holds the charge for its own arm, the way an armour holds charge for night vision, rather than the arm drawing straight from your batteries
+    - You walk half as slowly while the first tier is working, and reach that speed twice as quickly
+    - The equipment tooltip no longer claims a movement bonus of nothing and a consumption of one watt; what each tier really draws is in its description
+    - The equipment is cheaper to make: an inserter and a circuit, rather than steel, gears and four long handed inserters
+    - Researching it needs only automation science
+    - Each higher tier is built out of the tier below it, a circuit and a steel plate
+    - The arm is yellow, and each higher tier takes the colour of the inserter its arm comes from
+    - Researching each tier now also needs whatever unlocks the inserter it is built out of, found in the technology tree rather than assumed, so it still holds if a mod moves them
     - The slowdown no longer fights other mods that change how fast you walk, and both effects now apply together
   Bugfixes:
     - Fixed the arm twitching in place instead of building, when a ghost sat just outside its reach or under your feet
@@ -32,5 +49,9 @@ Date: 2026-09-09
   Changes:
     - Researching the technology no longer extends how long ghosts survive, which a mod can no longer do
   Bugfixes:
+    - Fixed the arm reaching over and over for something it could never build, such as a power pole you are standing next to
+    - Fixed a power warning being drawn over your character the whole time the arm was out
+    - Fixed the arm flinging itself out sideways at full stretch before coming home
+    - Fixed the arm reaching for a ghost you had walked onto, which it can never build
     - Fixed the equipment not going into an armour at all
     - Fixed a crash whenever a player had no character, which included the whole of the opening cutscene and any time spent in the map editor
