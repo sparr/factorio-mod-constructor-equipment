@@ -17,41 +17,58 @@
 --- finishing a build left the player at quarter speed for good.
 ---
 --- So it has to outlast the gap between two builds, and that gap is the arm's own swing
---- out and back, which at four tiles of reach is well over a hundred ticks. Set from the
---- build interval, as it first was, it expired mid-run and the character surged between
---- builds.
-data:extend(
-{
-  {
-    type = "sticker",
-    name = "constructor-equipment-slowdown",
-    flags = {"not-on-map"},
-    hidden = true,
-    duration_in_ticks = 240,
-    -- a quarter speed, which is what character_running_speed_modifier = -0.75 gave
-    target_movement_modifier = 0.25
-  },
-  {
-    -- The head: the first build of a run puts this on, and the character slows from full
-    -- speed to a quarter of it over its lifetime rather than dropping to a crawl in one
-    -- tick. Once it runs out the flat sticker above takes over and holds them there.
-    type = "sticker",
-    name = "constructor-equipment-slowing",
-    flags = {"not-on-map"},
-    hidden = true,
-    duration_in_ticks = 60,
-    target_movement_modifier_from = 1.0,
-    target_movement_modifier_to = 0.25
-  },
-  {
-    -- The tail: once there is nothing left to build, this takes over and lets the
-    -- character back up to speed over its lifetime rather than all at once.
-    type = "sticker",
-    name = "constructor-equipment-recovery",
-    flags = {"not-on-map"},
-    hidden = true,
-    duration_in_ticks = 45,
-    target_movement_modifier_from = 0.25,
-    target_movement_modifier_to = 1.0
-  }
-})
+--- out and back, which is well over a hundred ticks. Set from the build interval, as it
+--- first was, it expired mid-run and the character surged between builds.
+---
+--- How hard it bites is half what it was. The arm used to be the whole of the trade: you
+--- got free building and paid for it in walking speed. It is not, any more -- the swing
+--- takes as long as it takes, and that alone stops the equipment from carrying you across
+--- a blueprint at a run -- so the walking penalty on top of it only wants to be felt,
+--- not endured.
+--- Each tier that slows its wearer gets its own three of them, because how much it slows
+--- them is baked into the prototype rather than being something script can dial. A tier
+--- that asks for none of the penalty has no stickers at all, and control.lua keeps at most
+--- one set on a character at a time: they are separate prototypes, so the engine would
+--- otherwise keep two and multiply them together.
+local tiers = require("lib.tiers")
+
+local stickers = {}
+
+for _, tier in ipairs(tiers.list) do
+  local set = tier.stickers
+  if set then
+    table.insert(stickers, {
+      type = "sticker",
+      name = set.flat,
+      flags = {"not-on-map"},
+      hidden = true,
+      duration_in_ticks = 240,
+      target_movement_modifier = set.modifier
+    })
+    table.insert(stickers, {
+      -- The head: the first build of a run puts this on, and the character slows from full
+      -- speed down to it over the sticker's lifetime rather than dropping in one tick. Once
+      -- it runs out the flat sticker above takes over and holds them there.
+      type = "sticker",
+      name = set.slowing,
+      flags = {"not-on-map"},
+      hidden = true,
+      duration_in_ticks = 30,
+      target_movement_modifier_from = 1.0,
+      target_movement_modifier_to = set.modifier
+    })
+    table.insert(stickers, {
+      -- The tail: once there is nothing left to build, this takes over and lets the
+      -- character back up to speed over its lifetime rather than all at once.
+      type = "sticker",
+      name = set.recovery,
+      flags = {"not-on-map"},
+      hidden = true,
+      duration_in_ticks = 45,
+      target_movement_modifier_from = set.modifier,
+      target_movement_modifier_to = 1.0
+    })
+  end
+end
+
+data:extend(stickers)

@@ -1,55 +1,62 @@
---- The inserter itself, as a real entity rather than a drawing of one.
+--- The arm itself, as a real entity rather than a drawing of one, and one prototype per
+--- tier because the tiers differ in colour, in how fast they swing and in what that costs.
 ---
 --- Drawing an arm by hand means drawing an arm: a sprite stretched from the shoulder to
 --- the claw, with no elbow, no shadow, and a texture that distorts as it reaches. An
 --- inserter entity already knows how to swing, and the engine animates it properly. So
---- there is one of these per character, moved to wherever they are, aimed by setting its
+--- there is one of these per arm, moved to wherever its character is, aimed by setting its
 --- drop position, and handed an item when there is something to deliver. Its own logic
 --- does the rest.
 ---
 --- It is not a thing in the world in any other sense: it collides with nothing, cannot be
---- selected, mined, blueprinted or seen on the map, and runs on no power so it never waits
---- for any. placeable-off-grid is what lets it sit exactly on a character rather than
---- snapping to the tile they happen to be standing on.
-local HAND = "__base__/graphics/entity/long-handed-inserter/"
+--- selected, mined, blueprinted or seen on the map. placeable-off-grid is what lets it sit
+--- exactly on a character rather than snapping to the tile they happen to be standing on.
+---
+--- It does run on power, at the base game's own prices for the inserter it borrows from,
+--- and it is on no network to get any: control.lua tops its buffer up out of the armour's
+--- batteries every tick and takes back whatever is left when the arm is put away. That way
+--- the engine works out the bill -- a swing costs what a swing costs, and a long reach
+--- costs more than a short one -- and an armour with nothing left in it stops the arm
+--- where it stands.
+local tiers = require("lib.tiers")
+local art = require("prototypes.art")
 
---- How fast the hand moves, in tiles per tick, and how fast it turns.
-local EXTENSION_SPEED = 0.075
-local ROTATION_SPEED = 0.025
+--- How much charge an arm carries: a couple of movements' worth, so a tick's draw never
+--- empties it between one top up and the next, and little is tied up in the arm at any
+--- moment or has to be handed back when it is put away.
+local BUFFER_MOVEMENTS = 2
 
---- Small enough to be something a person is wearing rather than something bolted to the
---- floor.
-local SCALE = 0.2
+local arms = {}
 
----The base game's own hand graphics. The arm and the claw are different sizes, so the
----size goes with the picture rather than being guessed from it.
-local function hand(picture, width, height, shadow)
-  return {
-    filename = HAND .. picture,
-    priority = "extra-high",
-    width = width,
-    height = height,
-    scale = SCALE,
-    draw_as_shadow = shadow or nil
-  }
-end
-
-local ARM = { "long-handed-inserter-hand-base.png", 32, 136 }
-local CLOSED = { "long-handed-inserter-hand-closed.png", 72, 164 }
-local OPEN = { "long-handed-inserter-hand-open.png", 72, 164 }
-
-data:extend(
-{
-  {
+for _, tier in ipairs(tiers.list) do
+  table.insert(arms, {
     type = "inserter",
-    name = "constructor-equipment-inserter",
-    -- runs on nothing: the equipment's own batteries are what actually pay for a build,
-    -- and an inserter waiting for power would just stand there with its arm out
-    energy_source = { type = "void" },
-    energy_per_movement = "1J",
-    energy_per_rotation = "1J",
-    extension_speed = EXTENSION_SPEED,
-    rotation_speed = ROTATION_SPEED,
+    name = tier.inserter,
+    energy_source =
+    {
+      type = "electric",
+      usage_priority = "secondary-input",
+      buffer_capacity = (tier.movement * BUFFER_MOVEMENTS) .. "J",
+      -- The arm is on no network on purpose: the armour feeds it. Say so, or the engine
+      -- draws an unplugged warning over the character the whole time the arm is out.
+      render_no_network_icon = false,
+      render_no_power_icon = false,
+      -- what the base game charges this same inserter to sit idle
+      drain = tier.drain
+    },
+    energy_per_movement = tier.energy,
+    energy_per_rotation = tier.energy,
+    -- A claw that carries more than one has to be told so: without this the engine holds
+    -- the hand to a single item however many are put in it. Inserter capacity research
+    -- raises it from there, the same as it raises every other inserter in the factory --
+    -- these are inserters, and a player who has paid for bigger hands should get them here
+    -- too. Nothing is added on top of that, so an arm holds what the inserter it is made of
+    -- holds. How many ghosts a journey works through is read back off the hand itself in
+    -- control.lua, so the two can never disagree.
+    bulk = tier.bulk,
+    uses_inserter_stack_size_bonus = true,
+    extension_speed = tier.extension,
+    rotation_speed = tier.rotation,
     -- both ends are set from script every tick; these are only what it starts with
     pickup_position = { 0, 0 },
     insert_position = { 0, 1 },
@@ -71,12 +78,12 @@ data:extend(
         height = 1
       }
     },
-    hand_base_picture = hand(ARM[1], ARM[2], ARM[3]),
-    hand_closed_picture = hand(CLOSED[1], CLOSED[2], CLOSED[3]),
-    hand_open_picture = hand(OPEN[1], OPEN[2], OPEN[3]),
-    hand_base_shadow = hand(ARM[1], ARM[2], ARM[3], true),
-    hand_closed_shadow = hand(CLOSED[1], CLOSED[2], CLOSED[3], true),
-    hand_open_shadow = hand(OPEN[1], OPEN[2], OPEN[3], true),
+    hand_base_picture = art.hand(tier, "base"),
+    hand_closed_picture = art.hand(tier, "closed"),
+    hand_open_picture = art.hand(tier, "open"),
+    hand_base_shadow = art.hand(tier, "base", true),
+    hand_closed_shadow = art.hand(tier, "closed", true),
+    hand_open_shadow = art.hand(tier, "open", true),
     collision_box = { { -0.15, -0.15 }, { 0.15, 0.15 } },
     collision_mask = { layers = {} },
     -- No selection box at all rather than a small one. Hovering something an inserter is
@@ -97,5 +104,7 @@ data:extend(
       "no-automated-item-removal",
       "no-automated-item-insertion"
     }
-  }
-})
+  })
+end
+
+data:extend(arms)
