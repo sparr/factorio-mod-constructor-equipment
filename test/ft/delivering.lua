@@ -1,16 +1,12 @@
 --- The inserter cycle: reach out with the item, put it down, come back.
 ---
---- These read storage directly, which the fixtures can do because they are required from
---- control.lua and share its environment. The alternative is inferring the state of the
---- swing from what has been built, which says nothing about what the arm is doing partway
---- through.
 local world = require("test.ft.world")
 
 local BELT = "transport-belt"
 local player
 
 local function job()
-  return storage.constructor_reach[player.index]
+  return world.job(player)
 end
 
 before_each(function()
@@ -21,7 +17,7 @@ before_each(function()
 end)
 
 after_each(function()
-  storage.constructor_reach[player.index] = nil
+  storage.constructor_arms[player.index] = nil
   for _, sticker in pairs(player.character.stickers or {}) do sticker.destroy() end
   world.clear(player)
 end)
@@ -38,7 +34,7 @@ describe("reaching for a ghost", function()
   end)
 
   it("carries the item until it gets there", function()
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 2, 0)
     after_ticks(world.SWING_TICKS - 4, function()
       assert.is_not_nil(job(), "the swing ended early")
       assert.are.equal(10, player.get_item_count(BELT),
@@ -99,7 +95,7 @@ describe("a ghost the character is standing on", function()
   it("does not stop it building anything else", function()
     local underfoot = world.ghost(player, BELT, 0, 0)
     player.teleport(underfoot.position, player.surface)
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 1, 0)
     after_ticks(world.CYCLE * 2, function()
       assert.are.equal(1, world.count(player, BELT),
         "the reachable ghost was never built, so the one underfoot jammed it")
@@ -111,7 +107,7 @@ describe("a ghost the character is standing on", function()
     local ghost = world.ghost(player, BELT, 0, 0)
     player.teleport(ghost.position, player.surface)
     after_ticks(world.BUILD_INTERVAL, function()
-      player.teleport({ ghost.position.x - 3, ghost.position.y }, player.surface)
+      player.teleport({ ghost.position.x - 1.5, ghost.position.y }, player.surface)
     end)
     after_ticks(world.CYCLE * 3, function()
       assert.are.equal(1, world.count(player, BELT),
@@ -142,12 +138,15 @@ describe("the arm itself", function()
   end)
 
   it("comes back out when something else turns up", function()
+    local AWAY = world.CYCLE + 120
     world.ghost(player, BELT, 2, 0)
-    after_ticks(world.CYCLE + 120, function()
+    after_ticks(AWAY, function()
       assert.is_nil(world.arm(player), "it should have been put away by now")
       world.ghost(player, BELT, -2, 0)
     end)
-    after_ticks(world.CYCLE * 3, function()
+    -- after_ticks counts from the start of the test, so this has to be past the offset
+    -- above rather than merely a few cycles long
+    after_ticks(AWAY + world.CYCLE * 2, function()
       assert.are.equal(2, world.count(player, BELT),
         "it never came back out for the second one")
     end)
@@ -178,16 +177,10 @@ describe("the arm itself", function()
     end)
   end)
 
-  -- One arm, however many of the equipment are worn. Wearing two does nothing at present:
-  -- the mod asks whether the equipment is there at all, not how much of it.
-  it("is one arm even with two of the equipment worn", function()
-    local grid = player.character.grid
-    grid.put{ name = "constructor-equipment" }
+  it("is one arm for one of the equipment", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(20, function()
-      local arms = player.surface.find_entities_filtered{
-        name = "constructor-equipment-inserter", position = player.position, radius = 4 }
-      assert.are.equal(1, #arms, "two of the equipment grew a second arm")
+      assert.are.equal(1, #world.arms(player), "one of the equipment grew more than one arm")
     end)
   end)
 end)
@@ -199,11 +192,12 @@ describe("giving up on one ghost with another like it in reach", function()
   -- appears only once the arm is on its way. Stepping east then puts the first out of reach
   -- and leaves the second in it.
   local function start_far_then_offer_near()
-    world.ghost(player, BELT, -3.5, 0)
+    world.ghost(player, BELT, -1.75, 0)
     after_ticks(8, function()
       assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
-      world.ghost(player, BELT, 3.5, 0)
-      player.teleport({ world.ORIGIN.x + 1.5, world.ORIGIN.y }, player.surface)
+      world.ghost(player, BELT, 1.75, 0)
+      -- three quarters of a tile east leaves the first 2.5 tiles off and the second one
+      player.teleport({ world.ORIGIN.x + 0.75, world.ORIGIN.y }, player.surface)
     end)
   end
 
@@ -259,12 +253,14 @@ end)
 --- abandoned as out of range on the next tick, and found again on the tick after: the arm
 --- swung out and back for ever and nothing in reach ever got a turn.
 describe("a ghost just outside the range", function()
-  -- 4.4 tiles away, which is what the live case turned out to be: outside a radius of
-  -- four, inside a square of four, and with a box that overlaps the square's edge
-  local OUT = 4.4
+  -- Two tiles out and one across: 2.24 tiles away, so outside a radius of two and well
+  -- inside a square of it. A ghost snaps to the middle of a tile, so the only way to land
+  -- just outside a whole number of tiles is to go diagonally. The live case was 4.4 tiles
+  -- against a range of four.
+  local OUT = { 2, -1 }
 
   it("is never reached for", function()
-    world.ghost(player, BELT, 0, -OUT)
+    world.ghost(player, BELT, OUT[1], OUT[2])
     after_ticks(world.CYCLE, function()
       assert.is_nil(job(), "it started a swing for something it cannot reach")
       assert.are.equal(1, world.ghosts(player), "it built something out of range")
@@ -272,7 +268,7 @@ describe("a ghost just outside the range", function()
   end)
 
   it("does not stop it building what is in reach", function()
-    world.ghost(player, BELT, 0, -OUT)
+    world.ghost(player, BELT, OUT[1], OUT[2])
     world.ghost(player, BELT, 2, 0)
     after_ticks(world.CYCLE * 2, function()
       assert.are.equal(1, world.count(player, BELT),
@@ -282,9 +278,9 @@ describe("a ghost just outside the range", function()
   end)
 
   it("gets built once the character walks closer", function()
-    world.ghost(player, BELT, 0, -OUT)
+    world.ghost(player, BELT, OUT[1], OUT[2])
     after_ticks(world.BUILD_INTERVAL, function()
-      player.teleport({ world.ORIGIN.x, world.ORIGIN.y - 2 }, player.surface)
+      player.teleport({ world.ORIGIN.x + 1, world.ORIGIN.y }, player.surface)
     end)
     after_ticks(world.CYCLE * 3, function()
       assert.are.equal(1, world.count(player, BELT),
@@ -297,7 +293,7 @@ end)
 --- of inserter, so it lets go and comes back empty handed.
 describe("walking away mid swing", function()
   it("gives up on a ghost that has gone out of reach", function()
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 2, 0)
     after_ticks(6, function()
       assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
       player.teleport({ world.ORIGIN.x + 25, world.ORIGIN.y }, player.surface)
@@ -311,7 +307,7 @@ describe("walking away mid swing", function()
   -- the return is quick when it gives up early, so this watches for it never reaching
   -- again rather than trying to catch it on its way home
   it("comes home empty rather than staying stretched out", function()
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 2, 0)
     after_ticks(6, function()
       assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
       player.teleport({ world.ORIGIN.x + 25, world.ORIGIN.y }, player.surface)
@@ -333,7 +329,7 @@ describe("walking away mid swing", function()
   -- go of it costs nothing -- but it should not wink out of a closed claw halfway across
   -- the ground. It comes back with the arm and is taken out when the arm gets there.
   it("brings the item back in the claw rather than dropping it out of existence", function()
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 2, 0)
     local carried_home = false
     after_ticks(world.SWING_TICKS - 6, function()
       assert.are.equal(BELT, world.held(player), "it was not carrying anything yet")
@@ -356,7 +352,7 @@ describe("walking away mid swing", function()
   end)
 
   it("does not leave the carried item on the ground", function()
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 2, 0)
     after_ticks(world.SWING_TICKS - 6, function()
       player.teleport({ world.ORIGIN.x + 25, world.ORIGIN.y }, player.surface)
     end)
@@ -367,7 +363,7 @@ describe("walking away mid swing", function()
   end)
 
   it("picks up where it left off once back in reach", function()
-    world.ghost(player, BELT, 3, 0)
+    world.ghost(player, BELT, 2, 0)
     after_ticks(6, function()
       player.teleport({ world.ORIGIN.x + 25, world.ORIGIN.y }, player.surface)
     end)
@@ -377,6 +373,410 @@ describe("walking away mid swing", function()
     after_ticks(world.CYCLE * 3, function()
       assert.are.equal(1, world.count(player, BELT),
         "it never went back for the ghost it gave up on")
+    end)
+  end)
+end)
+
+--- The equipment can come out of the armour mid reach, with the claw halfway to a ghost
+--- and an item in it. Nothing is owed either way: the item in the claw was conjured there
+--- rather than taken from the inventory, and it is only debited on arrival, so an arm that
+--- never arrives has cost its owner nothing at all.
+describe("taking the equipment off mid delivery", function()
+  local function reaching_then_stripped()
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(8, function()
+      assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
+      assert.are.equal(BELT, world.held(player), "the claw was not carrying anything yet")
+      assert.is_true(world.unequip(player, "constructor-equipment"),
+        "there was no equipment to take out")
+    end)
+  end
+
+  it("takes the arm away at once", function()
+    reaching_then_stripped()
+    after_ticks(10, function()
+      assert.is_nil(world.arm(player), "the arm stayed on after the equipment came out")
+      assert.is_nil(job(), "it is still reaching for something it can no longer build")
+    end)
+  end)
+
+  it("leaves the ghost standing", function()
+    reaching_then_stripped()
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.ghosts(player), "it finished the build anyway")
+      assert.are.equal(0, world.count(player, BELT))
+    end)
+  end)
+
+  it("costs the character nothing", function()
+    reaching_then_stripped()
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(10, player.get_item_count(BELT),
+        "the item in the claw was charged for a delivery that never happened")
+    end)
+  end)
+
+  it("does not leave the item it was carrying on the ground", function()
+    reaching_then_stripped()
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(0, player.surface.count_entities_filtered{ name = "item-on-ground" },
+        "the claw dropped what it was holding when the equipment came out")
+    end)
+  end)
+
+  it("gives the character their speed back", function()
+    local full = player.character_running_speed
+    reaching_then_stripped()
+    after_ticks(10, function()
+      assert.is_true(player.character_running_speed < full,
+        "the character was never slowed, so this proves nothing")
+    end)
+    after_ticks(world.CYCLE * 4, function()
+      assert.is_nil(world.slowed_by(player),
+        "the character is still slowed by equipment they are not wearing")
+      assert.are.equal(full, player.character_running_speed,
+        "the character never got their walking speed back")
+    end)
+  end)
+
+  it("comes back if the equipment goes back in", function()
+    reaching_then_stripped()
+    after_ticks(20, function()
+      player.character.grid.put{ name = "constructor-equipment" }
+      for _, equipment in pairs(player.character.grid.equipment) do
+        equipment.energy = equipment.max_energy
+      end
+    end)
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "it never built the ghost once the equipment was back on")
+    end)
+  end)
+end)
+
+--- The character can spend the item while the claw is halfway to a ghost holding one of
+--- their own. Nothing is owed either way: the item in the claw was conjured there, and the
+--- inventory is only debited on arrival, so the worst that can happen is a wasted swing.
+describe("spending the item mid delivery", function()
+  local function reaching_then_broke()
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(8, function()
+      assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
+      assert.are.equal(BELT, world.held(player), "the claw was not carrying anything yet")
+      player.remove_item{ name = BELT, count = 10 }
+      assert.are.equal(0, player.get_item_count(BELT), "the inventory was not emptied")
+    end)
+  end
+
+  it("leaves the ghost standing", function()
+    reaching_then_broke()
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.ghosts(player),
+        "it built a belt the character no longer had")
+      assert.are.equal(0, world.count(player, BELT))
+    end)
+  end)
+
+  it("does not conjure the item out of the claw", function()
+    reaching_then_broke()
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(0, player.get_item_count(BELT),
+        "it put a belt back that the character had spent")
+      assert.are.equal(0, player.surface.count_entities_filtered{ name = "item-on-ground" },
+        "it dropped the item it was carrying on the ground")
+    end)
+  end)
+
+  it("brings it home in the claw rather than dropping it at the ghost", function()
+    reaching_then_broke()
+    local carried_home = false
+    for n = 10, 50, 2 do
+      after_ticks(n, function()
+        if job() and job().going == "back" and world.held(player) == BELT then
+          carried_home = true
+        end
+      end)
+    end
+    after_ticks(world.CYCLE * 2, function()
+      assert.is_true(carried_home,
+        "the claw came home empty, so the item vanished at the ghost")
+      assert.is_nil(job(), "the swing never finished")
+      assert.is_nil(world.held(player), "the item should be out of the hand by now")
+    end)
+  end)
+
+  it("gets on with it once the character has one again", function()
+    reaching_then_broke()
+    after_ticks(world.CYCLE, function()
+      player.insert{ name = BELT, count = 5 }
+    end)
+    after_ticks(world.CYCLE * 4, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "it never went back for the ghost once the item was available again")
+      assert.are.equal(4, player.get_item_count(BELT), "one belt should have gone")
+    end)
+  end)
+end)
+
+--- Delivering while the character walks.
+---
+--- Both ends of the swing are re-aimed every tick, because the arm travels with its owner:
+--- the claw comes home to wherever they are now, and the drop position is re-set because
+--- an inserter's drop position moves with the inserter. So a walking character is a moving
+--- target at both ends, and whether the claw ever lands exactly on either is not something
+--- to count on. That is what the arrived and home thresholds are for, and it is why they
+--- cannot simply be tightened: standing still, the hand comes to rest exactly on its
+--- target and any threshold at all would do.
+describe("walking while the arm is reaching", function()
+  local EAST, WEST = defines.direction.east, defines.direction.west
+
+  --- Back and forth rather than off in one direction. A character walks about a seventh of
+  --- a tile a tick, so a hundred ticks of walking east is fifteen tiles and the ghost is
+  --- simply left behind: what is wanted here is a base that keeps moving, not one that
+  --- leaves.
+  ---
+  --- Written every tick, because walking_state is what the character is doing this tick
+  --- rather than a standing order: set once, it moves them for one tick and then they
+  --- stop. Setting it every eighth tick looked like walking and was standing still.
+  local TURN = 8
+  local function pace(from, to)
+    for n = from, to do
+      after_ticks(n, function()
+        local way = math.floor((n - from) / TURN) % 2 == 0 and EAST or WEST
+        player.walking_state = { walking = true, direction = way }
+      end)
+    end
+    after_ticks(to + 1, function()
+      player.walking_state = { walking = false, direction = EAST }
+    end)
+  end
+
+  before_each(function()
+    -- The third tier, for room to move about without putting the ghost out of reach. The
+    -- armour goes back on from scratch: the outer fixture has already put a first tier one
+    -- on, and a 3x5 will not fit in a modular armour beside it.
+    world.clear(player)
+    world.equip(player, { "constructor-equipment-3", "battery-equipment" }, true)
+    player.insert{ name = BELT, count = 10 }
+  end)
+
+  after_each(function()
+    player.walking_state = { walking = false, direction = EAST }
+  end)
+
+  it("still delivers", function()
+    world.ghost(player, BELT, 0, -2)
+    pace(4, 60)
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "nothing was built while the character was walking")
+      assert.are.equal(9, player.get_item_count(BELT), "the item was not taken")
+    end)
+  end)
+
+  it("brings the claw home again rather than leaving the arm out", function()
+    world.ghost(player, BELT, 0, -2)
+    pace(4, 60)
+    after_ticks(world.CYCLE * 2 + 90, function()
+      assert.is_nil(world.job(player), "the swing never finished")
+      assert.is_nil(world.arm(player), "the arm never went away")
+      assert.are.equal(0, player.surface.count_entities_filtered{ name = "item-on-ground" },
+        "something was dropped on the ground")
+    end)
+  end)
+
+  it("keeps going through a run of them", function()
+    world.several(player, BELT, 6)
+    pace(4, 130)
+    after_ticks(150, function()
+      assert.is_true(world.count(player, BELT) >= 3,
+        "only " .. world.count(player, BELT) .. " went up while the character walked")
+    end)
+  end)
+end)
+
+--- Walking onto the thing being built.
+---
+--- An inserter will not reach for something underneath its own base, so a ghost the
+--- character is standing in is passed over when work is handed out. It has to be asked
+--- again every tick of the swing: walking onto the target mid reach is every bit as final
+--- as walking away from it, and the claw would otherwise sit over it trying and failing
+--- until the swing limit gave up on its own.
+describe("walking onto the ghost being built", function()
+  it("gives up rather than reaching for something underfoot", function()
+    local ghost = world.ghost(player, BELT, 2, 0)
+    local target = ghost.position
+    after_ticks(10, function()
+      assert.is_not_nil(world.job(player), "nothing was reaching, so this proves nothing")
+      player.teleport(target, player.surface)
+    end)
+    after_ticks(24, function()
+      local job = world.job(player)
+      assert.is_true(job == nil or job.going == "back",
+        "it was still reaching for the ghost it was standing on")
+    end)
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.ghosts(player), "it built the one under its own feet")
+      assert.are.equal(10, player.get_item_count(BELT), "it spent the item anyway")
+    end)
+  end)
+
+  it("goes back for it once the character steps off", function()
+    local ghost = world.ghost(player, BELT, 2, 0)
+    local target = ghost.position
+    after_ticks(10, function() player.teleport(target, player.surface) end)
+    after_ticks(40, function()
+      player.teleport({ target.x - 1.5, target.y }, player.surface)
+    end)
+    after_ticks(40 + world.CYCLE * 2, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "it never went back for the ghost once it could reach it again")
+    end)
+  end)
+end)
+
+--- Standing on something with a small collision box.
+---
+--- A medium electric pole takes up a whole tile and collides across about a third of one,
+--- so a character standing a fifth of a tile off its centre is outside its box while still
+--- squarely in its way. Judged by the box, the arm reached for a ghost directly beneath
+--- itself, failed, sprang back and tried again for as long as the player stood there.
+---
+--- Two things were wrong. The footprint is the tiles the thing will occupy, not its
+--- collision box. And a ghost that cannot be built where it stands should not be reached
+--- for at all, whatever the reason: standing merely near a pole is enough to stop it going
+--- up, and that is a case a player walks into constantly.
+describe("a ghost the character is in the way of", function()
+  local POLE = "medium-electric-pole"
+
+  local function pole_at(dx, dy)
+    local ghost = player.surface.create_entity{
+      name = "entity-ghost", inner_name = POLE,
+      position = { world.ORIGIN.x + dx, world.ORIGIN.y + dy }, force = player.force }
+    assert(ghost, "could not place a pole ghost")
+    return ghost
+  end
+
+  before_each(function()
+    player.insert{ name = POLE, count = 10 }
+  end)
+
+  for _, off in ipairs{ 0, 0.2, 0.35, 0.49 } do
+    it(("is left alone when stood on, %.2f off centre"):format(off), function()
+      local ghost = pole_at(1, 0)
+      player.teleport({ ghost.position.x - off, ghost.position.y }, player.surface)
+      local reached = 0
+      for n = 4, 120, 2 do
+        after_ticks(n, function()
+          local job = world.job(player)
+          if job and job.going == "out" then reached = reached + 1 end
+        end)
+      end
+      after_ticks(130, function()
+        assert.are.equal(0, reached,
+          ("it reached for a pole it was standing on, %.2f off centre, on %d samples")
+            :format(off, reached))
+        assert.are.equal(1, world.ghosts(player), "it built one it was standing on")
+      end)
+    end)
+  end
+
+  -- The footprint test only knows about the character. Anything else can be in the way
+  -- too, and reaching for a ghost that cannot go up is the same wasted journey repeating:
+  -- out, fail to revive, home, pick the same one again.
+  it("is left alone when something else is in the way", function()
+    local ghost = pole_at(2, 0)
+    local tree = player.surface.create_entity{
+      name = "tree-01", position = ghost.position }
+    assert.is_not_nil(tree, "no tree to block it with")
+    assert.is_false(
+      player.surface.can_place_entity{
+        name = POLE, position = ghost.position, direction = ghost.direction,
+        force = player.force,
+        build_check_type = defines.build_check_type.ghost_revive },
+      "the tree is not actually in the way, so this proves nothing")
+    local reached = 0
+    for n = 4, 120, 2 do
+      after_ticks(n, function()
+        local job = world.job(player)
+        if job and job.going == "out" then reached = reached + 1 end
+      end)
+    end
+    after_ticks(130, function()
+      assert.are.equal(0, reached,
+        "it reached for a pole it could not build, on " .. reached .. " samples")
+      assert.are.equal(1, world.ghosts(player), "the pole should still be waiting")
+    end)
+  end)
+
+  it("goes for it once the way is clear", function()
+    local ghost = pole_at(2, 0)
+    local tree = player.surface.create_entity{
+      name = "tree-01", position = ghost.position }
+    after_ticks(30, function()
+      assert.are.equal(1, world.ghosts(player), "it built through the tree")
+      tree.destroy()
+    end)
+    after_ticks(30 + world.CYCLE * 2, function()
+      assert.are.equal(1, world.count(player, POLE),
+        "it never went for the pole once the tree was gone")
+    end)
+  end)
+
+  it("is built once the character is out of its way", function()
+    local ghost = pole_at(2, 0)
+    -- far enough that the character's own body is not in the pole's space
+    player.teleport(world.ORIGIN, player.surface)
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.count(player, POLE),
+        "a pole two tiles off, with nothing in the way, was never built")
+    end)
+  end)
+end)
+
+--- Stowing the arm.
+---
+--- It used to vanish the instant it ran out of work, which read as a glitch rather than as
+--- something being put away. The entity still goes at once -- an entity's sprites are
+--- scaled in its prototype and nothing changes that at runtime -- but a drawn copy of the
+--- folded claw is left in its place for a fifth of a second, shrinking and fading, and a
+--- drawn sprite takes its scale and tint from script.
+describe("putting the arm away", function()
+  ---Every claw currently shrinking away, by the mod's own reckoning.
+  local function stowing()
+    local n = 0
+    for _ in pairs(storage.constructor_stowing or {}) do n = n + 1 end
+    return n
+  end
+
+  it("leaves a claw shrinking behind it", function()
+    world.ghost(player, BELT, 2, 0)
+    local seen, smallest = 0, 99
+    for n = world.CYCLE, world.CYCLE + 140, 2 do
+      after_ticks(n, function()
+        for id in pairs(storage.constructor_stowing or {}) do
+          local drawn = rendering.get_object_by_id(id)
+          if drawn and drawn.valid then
+            seen = seen + 1
+            smallest = math.min(smallest, drawn.x_scale)
+          end
+        end
+      end)
+    end
+    after_ticks(world.CYCLE + 150, function()
+      assert.is_true(seen > 0, "nothing was ever drawn in the arm's place")
+      assert.is_true(smallest < 0.1,
+        ("the claw only shrank to %.3f before it went"):format(smallest))
+    end)
+  end)
+
+  it("clears the drawing away afterwards", function()
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(world.CYCLE + 200, function()
+      assert.are.equal(0, stowing(),
+        stowing() .. " claws were left behind, still being stowed")
+      assert.are.equal(0, #rendering.get_all_objects("constructor-equipment"),
+        "the mod left drawings on the map")
     end)
   end)
 end)

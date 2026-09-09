@@ -1,28 +1,5 @@
 local build = require("lib.build")
 
-describe("whether a build is due", function()
-  it("is due at once for a player who has never built", function()
-    assert.is_true(build.due(0, nil, 30))
-    assert.is_true(build.due(12345, nil, 30))
-  end)
-
-  it("is not due until the interval has passed", function()
-    assert.is_false(build.due(100, 100, 30))
-    assert.is_false(build.due(129, 100, 30))
-  end)
-
-  it("is due once it has", function()
-    assert.is_true(build.due(130, 100, 30))
-    assert.is_true(build.due(131, 100, 30))
-  end)
-
-  -- the mod is checked ten times a second and builds twice, so it will usually be asked
-  -- some way past the exact tick
-  it("stays due after the moment it became due", function()
-    assert.is_true(build.due(1000, 100, 30))
-  end)
-end)
-
 describe("choosing what to spend on a ghost", function()
   --- What a prototype hands over: a list rather than a table keyed by name, since 2.0.
   local BELT = { { name = "transport-belt", count = 1 } }

@@ -99,10 +99,18 @@ describe("coming back up to speed", function()
     local function sample()
       samples[#samples + 1] = player.character_running_speed / BELT_FULL
     end
-    -- sampled from once the build is done and the recovery has taken over
-    for n = 0, 3 do after_ticks(world.CYCLE + 10 + n * 8, sample) end
-    after_ticks(world.CYCLE + 60, function()
-      assert.are.equal(4, #samples, "the samples did not all run")
+    -- Sampled whenever the recovery sticker is actually on, rather than at offsets guessed
+    -- from how long a build takes. The ramp is only 45 ticks long, and every change to how
+    -- fast the arm swings moves when it starts: fixed offsets kept sliding off the end of
+    -- it and catching nothing but full speed.
+    for n = 30, 160, 4 do
+      after_ticks(n, function()
+        if world.slowdown(player, world.RECOVERY) then sample() end
+      end)
+    end
+    after_ticks(170, function()
+      assert.is_true(#samples >= 4,
+        "the recovery was only seen " .. #samples .. " times")
       local text = {}
       for i, v in pairs(samples) do text[i] = ("%.3f"):format(v) end
       assert.is_true(samples[1] < 0.9,
@@ -182,10 +190,10 @@ end)
 --- speed up in the middle of a run.
 describe("building several things in a row", function()
   it("keeps one sticker rather than piling them up", function()
-    for i = 1, 5 do world.ghost(player, BELT, i - 3, 2) end
-    -- one build per swing, out and back, and the first does not start until the first
-    -- check tick
-    after_ticks(world.CYCLE * 4, function()
+    world.several(player, BELT, 5)
+    -- partway through the run rather than after it: sampled once the run is over, the
+    -- slowdown has rightly gone and there is nothing left to count
+    after_ticks(world.CYCLE * 3, function()
       assert.is_true(world.count(player, BELT) >= 3,
         "not enough got built to be a run: " .. world.count(player, BELT))
       assert.are.equal(1, world.stickers(player),
@@ -194,7 +202,7 @@ describe("building several things in a row", function()
   end)
 
   it("keeps the slowdown unbroken across builds", function()
-    for i = 1, 6 do world.ghost(player, BELT, i - 4, 2) end
+    world.several(player, BELT, 6)
     -- sampled right before each build is due, which is when a sticker that was not
     -- refreshed would have lapsed
     local lapses, seen = 0, 0
@@ -218,7 +226,7 @@ describe("building several things in a row", function()
   -- that would start the descent again and the character would surge mid-run. So this
   -- waits for the ramp to have finished handing over before it measures anything.
   it("refreshes the flat sticker rather than letting it run down", function()
-    for i = 1, 6 do world.ghost(player, BELT, i - 4, 2) end
+    world.several(player, BELT, 6)
     local first
     after_ticks(world.RAMP_TICKS + world.CYCLE, function()
       local sticker = world.slowdown(player)
@@ -231,6 +239,61 @@ describe("building several things in a row", function()
       assert.is_true(sticker.time_to_live > first - world.CYCLE,
         ("it was not refreshed: %d ticks left, having started at %d")
           :format(sticker.time_to_live, first))
+    end)
+  end)
+end)
+
+--- A reach of two tiles takes longer than the interval between reaches, so the arm is
+--- always still swinging when the next one falls due. A reach of one does not: the claw
+--- gets home with ticks to spare and stands there waiting for the clock.
+---
+--- Those gaps used to end the slowdown. Recovery went by whether an arm was swinging,
+--- which had been the same question as whether there was anything left to build only
+--- because the gap never existed. Once it did, the character surged between every ghost
+--- along a blueprint.
+describe("building things close enough together to leave gaps", function()
+  local NEAR = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 1, 1 }, { -1, 1 }, { 1, -1 } }
+
+  local function near_ghosts()
+    for _, spot in pairs(NEAR) do world.ghost(player, BELT, spot[1], spot[2]) end
+  end
+
+  it("does not start recovering in the gaps", function()
+    near_ghosts()
+    local recovering, sampled = 0, 0
+    for n = 20, 150, 2 do
+      after_ticks(n, function()
+        -- only while there is still something to build: recovering after the last one is
+        -- the whole point of the thing
+        if world.ghosts(player) > 0 then
+          sampled = sampled + 1
+          if world.slowdown(player, world.RECOVERY) then recovering = recovering + 1 end
+        end
+      end)
+    end
+    after_ticks(160, function()
+      assert.is_true(sampled > 20, "the run was over too soon to sample: " .. sampled)
+      assert.are.equal(0, recovering,
+        "it began giving the speed back " .. recovering .. " times out of " .. sampled
+        .. " with ghosts still standing")
+    end)
+  end)
+
+  it("stays slowed all the way through", function()
+    near_ghosts()
+    local lapses, sampled = 0, 0
+    for n = 20, 150, 2 do
+      after_ticks(n, function()
+        if world.ghosts(player) > 0 then
+          sampled = sampled + 1
+          if not world.slowed_by(player) then lapses = lapses + 1 end
+        end
+      end)
+    end
+    after_ticks(160, function()
+      assert.is_true(sampled > 20, "the run was over too soon to sample: " .. sampled)
+      assert.are.equal(0, lapses,
+        "the slowdown lapsed " .. lapses .. " times out of " .. sampled .. " samples")
     end)
   end)
 end)

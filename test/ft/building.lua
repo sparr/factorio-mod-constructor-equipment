@@ -84,18 +84,18 @@ describe("a character wearing the equipment", function()
   end)
 
   it("builds one at a time rather than all at once", function()
-    for i = 1, 4 do world.ghost(player, BELT, i - 3, 2) end
-    -- a single swing's worth of time should be one belt, not the whole row: the arm has to
-    -- go out and come back before the next one starts
-    after_ticks(world.CYCLE, function()
+    world.several(player, BELT, 4)
+    -- one build interval should be one belt, not the whole row: the arm has to go out and
+    -- come back before the next one starts
+    after_ticks(world.BUILD_INTERVAL, function()
       assert.are.equal(1, world.count(player, BELT),
         "the whole row went up at once, so the arm is not being waited for")
     end)
-    after_ticks(world.CYCLE * 2 + 10, function()
+    after_ticks(world.CYCLE * 2, function()
       assert.is_true(world.count(player, BELT) >= 2,
         "it never got to the second one")
       assert.is_true(world.count(player, BELT) < 4,
-        "the row went up faster than one swing each")
+        "the row went up faster than one a swing")
     end)
   end)
 end)
@@ -177,12 +177,22 @@ end)
 describe("a ghost that takes more than one item", function()
   local RAIL_GHOST = "half-diagonal-rail"
 
+  -- A half diagonal rail snaps to a two tile grid and has a long box, so placed in the
+  -- middle of the arena the character is standing inside it and it is rightly ignored.
+  -- Two tiles east, with the character stepped round to its western side, it is a tile
+  -- and a half off and clear of their feet.
+  local function rail_in_reach()
+    local ghost = world.ghost(player, RAIL_GHOST, 2, 0)
+    player.teleport({ world.ORIGIN.x + 1, world.ORIGIN.y + 0.5 }, player.surface)
+    return ghost
+  end
+
   before_each(function()
     world.equipped(player)
   end)
 
   it("is left alone when the character has too few", function()
-    world.ghost(player, RAIL_GHOST, 2, 0)
+    rail_in_reach()
     player.insert{ name = "rail", count = 1 }
     after_ticks(A_BUILD, function()
       assert.are.equal(0, world.count(player, RAIL_GHOST),
@@ -192,7 +202,7 @@ describe("a ghost that takes more than one item", function()
   end)
 
   it("is built when the character has enough", function()
-    world.ghost(player, RAIL_GHOST, 2, 0)
+    rail_in_reach()
     player.insert{ name = "rail", count = 10 }
     after_ticks(A_BUILD, function()
       assert.are.equal(1, world.count(player, RAIL_GHOST), "the rail was never built")
@@ -200,7 +210,7 @@ describe("a ghost that takes more than one item", function()
   end)
 
   it("costs as many items as it takes", function()
-    world.ghost(player, RAIL_GHOST, 2, 0)
+    rail_in_reach()
     player.insert{ name = "rail", count = 10 }
     after_ticks(A_BUILD, function()
       assert.are.equal(8, player.get_item_count("rail"),
