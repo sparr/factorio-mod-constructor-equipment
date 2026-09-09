@@ -16,12 +16,17 @@ world.BUILD_RANGE = 4
 --- Two builds a second, so a little over half a second between them.
 world.BUILD_INTERVAL = 30
 
---- How long the claw takes to swing one way. Out and back fills a whole build interval,
---- so nothing lands the instant a job starts: the item has to get there first.
-world.SWING_TICKS = 15
+--- Roughly how long the arm takes to reach a ghost two or three tiles off. The swing is
+--- the inserter entity's own, at its extension and rotation speeds, so this is measured
+--- rather than set: halving those speeds doubled it.
+world.SWING_TICKS = 30
 
 --- Comfortably after a swing has reached its target and delivered.
-world.DELIVERED = world.SWING_TICKS + 14
+world.DELIVERED = world.SWING_TICKS + 20
+
+--- A whole out and back, with room to spare. The swing now takes longer than the build
+--- interval, so it is the swing that sets the pace and this is what tests should wait.
+world.CYCLE = world.SWING_TICKS * 2 + 20
 
 ---The player the harness gives us, put back into a known state.
 ---@return LuaPlayer
@@ -108,22 +113,58 @@ function world.count(player, name)
   return player.surface.count_entities_filtered{ name = name }
 end
 
---- The mod's own slowdown, from prototypes/sticker.lua.
+--- The mod's own slowdown, from prototypes/sticker.lua. There are two of them on the way
+--- down: a ramp that eases the character from full speed to a quarter of it, and a flat
+--- one that holds them there once the ramp has run out.
 world.SLOWDOWN = "constructor-equipment-slowdown"
+world.SLOWING = "constructor-equipment-slowing"
+world.RECOVERY = "constructor-equipment-recovery"
 
 --- How long the sticker lasts after the build that applied it, from control.lua.
-world.SLOWDOWN_TICKS = 45
+world.SLOWDOWN_TICKS = 240
+
+--- How long the ramp into the slowdown lasts, from prototypes/sticker.lua. The flat
+--- sticker does not appear until this has run its course.
+world.RAMP_TICKS = 60
 
 ---The mod's slowdown sticker on this character, if it is there.
 ---@param player LuaPlayer
 ---@return LuaEntity?
----@param name string? which sticker, defaulting to the slowdown
+---Either half of the slowdown, whichever is on the character.
+---@param player LuaPlayer
+---@return LuaEntity?
+function world.slowed_by(player)
+  return world.slowdown(player, world.SLOWING) or world.slowdown(player, world.SLOWDOWN)
+end
+
+---@param name string? which sticker, defaulting to the flat slowdown
 function world.slowdown(player, name)
   name = name or world.SLOWDOWN
   for _, sticker in pairs(player.character.stickers or {}) do
     if sticker.valid and sticker.name == name then return sticker end
   end
   return nil
+end
+
+---The inserter doing the reaching, found by name rather than through storage so a fixture
+---can look at what the engine has it doing.
+---@param player LuaPlayer
+---@return LuaEntity?
+function world.arm(player)
+  return player.surface.find_entities_filtered{
+    name = "constructor-equipment-inserter",
+    position = player.position,
+    radius = 3,
+  }[1]
+end
+
+---What the claw is holding, if anything.
+---@param player LuaPlayer
+---@return string?
+function world.held(player)
+  local arm = world.arm(player)
+  if not (arm and arm.valid and arm.held_stack.valid_for_read) then return nil end
+  return arm.held_stack.name
 end
 
 ---How many stickers of any kind are on the character.

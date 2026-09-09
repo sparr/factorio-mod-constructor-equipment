@@ -58,7 +58,7 @@ describe("a character wearing the equipment", function()
     world.ghost(player, BELT, 2, 0)
     world.ghost(player, BELT, 3, 0)
     after_ticks(world.DELIVERED, function()
-      assert.is_not_nil(world.slowdown(player), "no slowdown sticker was applied")
+      assert.is_not_nil(world.slowed_by(player), "no slowdown sticker was applied")
       assert.is_true(player.character_running_speed < full,
         "the character is not actually walking any slower")
     end)
@@ -69,7 +69,7 @@ describe("a character wearing the equipment", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(world.SLOWDOWN_TICKS + A_BUILD, function()
       assert.are.equal(0, world.ghosts(player), "something is still waiting to be built")
-      assert.is_nil(world.slowdown(player), "the slowdown outlived the building")
+      assert.is_nil(world.slowed_by(player), "the slowdown outlived the building")
       assert.are.equal(full, player.character_running_speed,
         "the character is still slowed with nothing left to build")
     end)
@@ -85,10 +85,17 @@ describe("a character wearing the equipment", function()
 
   it("builds one at a time rather than all at once", function()
     for i = 1, 4 do world.ghost(player, BELT, i - 3, 2) end
-    -- one interval's worth of ticks should be one belt, not four
-    after_ticks(world.BUILD_INTERVAL - 5, function()
+    -- a single swing's worth of time should be one belt, not the whole row: the arm has to
+    -- go out and come back before the next one starts
+    after_ticks(world.CYCLE, function()
       assert.are.equal(1, world.count(player, BELT),
-        "the whole row went up in one interval, so the build rate is not being kept")
+        "the whole row went up at once, so the arm is not being waited for")
+    end)
+    after_ticks(world.CYCLE * 2 + 10, function()
+      assert.is_true(world.count(player, BELT) >= 2,
+        "it never got to the second one")
+      assert.is_true(world.count(player, BELT) < 4,
+        "the row went up faster than one swing each")
     end)
   end)
 end)
@@ -127,7 +134,7 @@ describe("a character who cannot build", function()
     world.equipped(player)
     world.ghost(player, BELT, 2, 0)
     after_ticks(A_BUILD, function()
-      assert.is_nil(world.slowdown(player),
+      assert.is_nil(world.slowed_by(player),
         "the character was slowed for a build that never happened")
     end)
   end)

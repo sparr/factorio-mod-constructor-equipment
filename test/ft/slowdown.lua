@@ -28,7 +28,7 @@ describe("the slowdown", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(world.DELIVERED, function()
       assert.are.equal(1, world.stickers(player), "expected exactly one sticker")
-      assert.is_not_nil(world.slowdown(player), "and it should be the mod's own")
+      assert.is_not_nil(world.slowed_by(player), "and it should be the mod's own")
     end)
   end)
 
@@ -58,7 +58,7 @@ describe("the slowdown", function()
   it("ends by itself, with nothing having to remember to end it", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(world.SLOWDOWN_TICKS + A_BUILD, function()
-      assert.is_nil(world.slowdown(player), "the sticker should have run out")
+      assert.is_nil(world.slowed_by(player), "the sticker should have run out")
     end)
   end)
 end)
@@ -99,8 +99,9 @@ describe("coming back up to speed", function()
     local function sample()
       samples[#samples + 1] = player.character_running_speed / BELT_FULL
     end
-    for n = 0, 3 do after_ticks(world.BUILD_INTERVAL + 6 + n * 8, sample) end
-    after_ticks(world.BUILD_INTERVAL + 50, function()
+    -- sampled from once the build is done and the recovery has taken over
+    for n = 0, 3 do after_ticks(world.CYCLE + 10 + n * 8, sample) end
+    after_ticks(world.CYCLE + 60, function()
       assert.are.equal(4, #samples, "the samples did not all run")
       local text = {}
       for i, v in pairs(samples) do text[i] = ("%.3f"):format(v) end
@@ -137,26 +138,39 @@ describe("coming back up to speed", function()
   -- end up slower than someone who never stopped. The flat slowdown only lasts until the
   -- next build falls due with nothing to build, so this samples across the window rather
   -- than guessing which tick to look on.
-  it("goes back to the flat slowdown when there is something to build again", function()
+  it("is slowed again when there is something to build again", function()
     world.ghost(player, BELT, 2, 0)
-    local recovering = false
-    after_ticks(world.BUILD_INTERVAL * 2, function()
-      recovering = world.slowdown(player, "constructor-equipment-recovery") ~= nil
+    -- The exact tick the recovery starts on depends on how long the swing took, so this
+    -- watches for it across a window rather than naming a tick. The second ghost goes down
+    -- afterwards, and what matters is that the character is slowed again without the two
+    -- stickers ever being on at once.
+    local recovered_at, both_seen, slowed_after = nil, false, false
+    for n = 0, 24 do
+      after_ticks(world.CYCLE + n * 8, function()
+        if not recovered_at and world.slowdown(player, world.RECOVERY) then
+          recovered_at = n
+        end
+        if world.stickers(player) > 1 then both_seen = true end
+      end)
+    end
+    local PLACED = world.CYCLE + 25 * 8
+    after_ticks(PLACED, function()
       world.ghost(player, BELT, -2, 0)
     end)
-    local flat_seen, both_seen = false, false
-    local function sample()
-      if world.slowdown(player) then flat_seen = true end
-      if world.stickers(player) > 1 then both_seen = true end
+    for n = 1, 20 do
+      after_ticks(PLACED + n * 8, function()
+        if world.slowed_by(player) then slowed_after = true end
+        if world.stickers(player) > 1 then both_seen = true end
+      end)
     end
-    for n = 0, 13 do after_ticks(world.BUILD_INTERVAL * 2 + 6 + n * 6, sample) end
-    after_ticks(world.BUILD_INTERVAL * 2 + 100, function()
-      assert.is_true(recovering, "it should have been recovering when the second ghost went down")
-      assert.are.equal(2, world.count(player, BELT), "the second belt was never built")
+    after_ticks(PLACED + 200, function()
+      assert.are.equal(2, world.count(player, BELT), "both belts should be up by now")
+      assert.is_not_nil(recovered_at,
+        "it never started recovering after running out of things to build")
+      assert.is_true(slowed_after,
+        "it was never slowed again after finding something else to build")
       assert.is_false(both_seen,
-        "the flat slowdown and the recovery were on the character at the same time")
-      assert.is_true(flat_seen,
-        "the flat slowdown never came back after it found something else to build")
+        "the slowdown and the recovery were on the character at the same time")
     end)
   end)
 end)
@@ -169,8 +183,9 @@ end)
 describe("building several things in a row", function()
   it("keeps one sticker rather than piling them up", function()
     for i = 1, 5 do world.ghost(player, BELT, i - 3, 2) end
-    -- one build per interval, and the first does not start until the first check tick
-    after_ticks(world.BUILD_INTERVAL * 5, function()
+    -- one build per swing, out and back, and the first does not start until the first
+    -- check tick
+    after_ticks(world.CYCLE * 4, function()
       assert.is_true(world.count(player, BELT) >= 3,
         "not enough got built to be a run: " .. world.count(player, BELT))
       assert.are.equal(1, world.stickers(player),
@@ -185,7 +200,7 @@ describe("building several things in a row", function()
     local lapses, seen = 0, 0
     local function sample()
       seen = seen + 1
-      if not world.slowdown(player) then lapses = lapses + 1 end
+      if not world.slowed_by(player) then lapses = lapses + 1 end
     end
     -- after_ticks counts from the start of the test rather than from the last one, so
     -- these are absolute offsets. Sampled just before each build falls due, which is when
@@ -199,18 +214,21 @@ describe("building several things in a row", function()
     end)
   end)
 
-  it("refreshes the sticker's remaining life rather than letting it run down", function()
-    world.ghost(player, BELT, 2, 0)
-    world.ghost(player, BELT, 3, 0)
+  -- Only the flat sticker is refreshed. The ramp is deliberately left to run: refreshing
+  -- that would start the descent again and the character would surge mid-run. So this
+  -- waits for the ramp to have finished handing over before it measures anything.
+  it("refreshes the flat sticker rather than letting it run down", function()
+    for i = 1, 6 do world.ghost(player, BELT, i - 4, 2) end
     local first
-    after_ticks(world.DELIVERED, function()
-      first = world.slowdown(player).time_to_live
+    after_ticks(world.RAMP_TICKS + world.CYCLE, function()
+      local sticker = world.slowdown(player)
+      assert.is_not_nil(sticker, "the flat sticker never took over from the ramp")
+      first = sticker.time_to_live
     end)
-    -- past the next build, which should have set it back to its full life
-    after_ticks(world.BUILD_INTERVAL + 5, function()
+    after_ticks(world.RAMP_TICKS + world.CYCLE * 2 + 10, function()
       local sticker = world.slowdown(player)
       assert.is_not_nil(sticker, "the slowdown went away mid-run")
-      assert.is_true(sticker.time_to_live > first - world.BUILD_INTERVAL,
+      assert.is_true(sticker.time_to_live > first - world.CYCLE,
         ("it was not refreshed: %d ticks left, having started at %d")
           :format(sticker.time_to_live, first))
     end)

@@ -13,10 +13,13 @@
 --- snapping to the tile they happen to be standing on.
 local HAND = "__base__/graphics/entity/long-handed-inserter/"
 
---- How fast the hand moves, in tiles per tick, and how fast it turns. Quicker than a real
---- long handed inserter, because this one is meant to keep up with someone walking.
-local EXTENSION_SPEED = 0.15
-local ROTATION_SPEED = 0.05
+--- How fast the hand moves, in tiles per tick, and how fast it turns.
+local EXTENSION_SPEED = 0.075
+local ROTATION_SPEED = 0.025
+
+--- Small enough to be something a person is wearing rather than something bolted to the
+--- floor.
+local SCALE = 0.2
 
 ---The base game's own hand graphics. The arm and the claw are different sizes, so the
 ---size goes with the picture rather than being guessed from it.
@@ -26,7 +29,7 @@ local function hand(picture, width, height, shadow)
     priority = "extra-high",
     width = width,
     height = height,
-    scale = 0.5,
+    scale = SCALE,
     draw_as_shadow = shadow or nil
   }
 end
@@ -52,6 +55,10 @@ data:extend(
     insert_position = { 0, 1 },
     allow_custom_vectors = true,
     draw_held_item = true,
+    -- No arrow. An inserter draws a marker showing which way it hands things over, and it
+    -- is drawn on the character's own tile when the arm is worn: hovering the ghost it was
+    -- reaching for showed a yellow line straight through them.
+    draw_inserter_arrow = false,
     -- the base is deliberately nothing. An arm coming out of someone's back says what is
     -- happening; a platform strapped there as well only gets in the way of it.
     platform_picture =
@@ -72,7 +79,11 @@ data:extend(
     hand_open_shadow = hand(OPEN[1], OPEN[2], OPEN[3], true),
     collision_box = { { -0.15, -0.15 }, { 0.15, 0.15 } },
     collision_mask = { layers = {} },
-    selection_box = { { -0.2, -0.2 }, { 0.2, 0.2 } },
+    -- No selection box at all rather than a small one. Hovering something an inserter is
+    -- working with highlights the inserter as well, and a box round the middle of the
+    -- character is not something the player should ever be shown. Being unselectable is
+    -- not enough on its own: the highlight is drawn for the entity a hovered one is
+    -- related to, whether it can be clicked or not.
     selectable_in_game = false,
     hidden = true,
     hidden_in_factoriopedia = true,

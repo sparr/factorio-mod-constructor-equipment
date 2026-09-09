@@ -5,21 +5,22 @@ local reach = require("lib.reach")
 local BUILD_RANGE = 4
 local BUILD_PER_SECOND = 2
 local CHECK_PER_SECOND = 10
-local BUILD_ENERGY_COST = 1000000
+--- What one delivery costs out of the armour's batteries. A personal laser defence spends
+--- fifty kilojoules a shot, and putting a belt down should be much cheaper than shooting
+--- something, so this is a tenth of that.
+local BUILD_ENERGY_COST = 5000
 
 --- The slowdown, and how long it lasts after the build that caused it. See
 --- prototypes/sticker.lua for why it is a sticker and not a number on the character.
 local SLOWDOWN = "constructor-equipment-slowdown"
+local SLOWING = "constructor-equipment-slowing"
 local RECOVERY = "constructor-equipment-recovery"
+
 
 local BUILD_INTERVAL = 60 / BUILD_PER_SECOND
 local CHECK_INTERVAL = 60 / CHECK_PER_SECOND
 local CHECK_TICK = CHECK_INTERVAL / 2
 
---- What the sticker's duration_in_ticks is set to, kept here so the tests and the
---- prototype agree: long enough to bridge the gap between two builds, so that building
---- steadily is one unbroken slowdown rather than a stutter.
-local SLOWDOWN_TICKS = BUILD_INTERVAL + CHECK_INTERVAL + 9
 
 --- How long the claw takes to swing one way. Out and back is a whole build, so the two of
 --- them together are what BUILD_PER_SECOND actually buys.
@@ -34,6 +35,19 @@ local HOME = 0.4
 --- How close the hand has to get to the ghost to count as having arrived.
 local ARRIVED = 0.3
 
+--- How long the arm stays out after the last thing it did. An arm that vanished the moment
+--- a swing ended would flicker between one ghost and the next; one that never vanished
+--- would be worn to bed.
+local IDLE_TICKS = 60
+
+
+--- How long a swing is allowed to take before it is written off.
+---
+--- Nothing should need this: a reach that cannot finish is a fault somewhere else. It is
+--- here because the failure it prevents is the mod quietly stopping for good, which is
+--- much worse than a swing that gives up early and tries again.
+local SWING_LIMIT = 300
+
 --- 2.0 renamed the save table from global to storage, and filling it in at load time is
 --- no longer allowed: the file is run before the save is read, so anything put there
 --- would be thrown away or would desync. It is set up on_init instead, and again on
@@ -41,6 +55,7 @@ local ARRIVED = 0.3
 local function setup()
   storage.constructor_last_build_tick = storage.constructor_last_build_tick or {}
   storage.constructor_inserter = storage.constructor_inserter or {}
+  storage.constructor_busy = storage.constructor_busy or {}
   storage.constructor_reach = storage.constructor_reach or {}
 
   -- Older versions slowed the character by writing character_running_speed_modifier and
@@ -72,24 +87,55 @@ end
 
 ---Slow the character down, or keep them slowed if they already are.
 ---
----Putting the same sticker on a character who already has it does not give them two: the
----engine keeps the one and starts its life over. So a run of builds is one unbroken
----slowdown without this having to find the old sticker and reset it, and the character
----never speeds up in the middle. test/ft/slowdown.lua pins that, since it is the engine's
----behaviour and not this mod's.
+---Slowing is in two parts. The first build of a run puts on the slowing sticker, which
+---interpolates from full speed down to a quarter of it over its lifetime, so the character
+---leans into the work rather than stopping dead. When that has run its course the flat
+---sticker takes over and holds them there for as long as there is building to do.
 ---
----The recovery sticker has to go, though. It is a different prototype, so the engine
----would keep both and multiply them together, and a character who started speeding up and
----then found something else to build would end up slower than one who never stopped.
+---Putting the same sticker on a character who already has it does not give them two: the
+---engine keeps the one and starts its life over. That is what makes a run of builds one
+---unbroken slowdown, and it is also why the slowing sticker must be left alone while it
+---runs: refreshing it would start the ramp again and the character would surge.
+---
+---The recovery sticker has to go whichever is applied. It is a different prototype, so
+---the engine would keep both and multiply them together, and a character who started
+---speeding up and then found something else to build would end up slower than one who
+---never stopped.
 ---@param character LuaEntity
 local function slow(character)
   local recovery = sticker_on(character, RECOVERY)
   if recovery then recovery.destroy() end
+
+  local flat = sticker_on(character, SLOWDOWN)
+  if flat then
+    -- already at the bottom of the ramp; keep it there
+    character.surface.create_entity{
+      name = SLOWDOWN, position = character.position, target = character }
+    return
+  end
+
+  local slowing = sticker_on(character, SLOWING)
+  if slowing then
+    -- part way down. Left alone unless it is about to run out, at which point the flat one
+    -- takes over at the speed the ramp finished on.
+    if slowing.time_to_live > CHECK_INTERVAL * 2 then return end
+    slowing.destroy()
+    character.surface.create_entity{
+      name = SLOWDOWN, position = character.position, target = character }
+    return
+  end
+
+  -- The ramp is cosmetic, and a missing sticker prototype is not worth ending someone's
+  -- game over. It can go missing for a real reason: game.reload_mods() reloads a mod's
+  -- scripts but not its prototypes, so a script that has just learnt about a new sticker
+  -- runs against data that has never heard of it. That crashed a session.
+  if not prototypes.entity[SLOWING] then
+    character.surface.create_entity{
+      name = SLOWDOWN, position = character.position, target = character }
+    return
+  end
   character.surface.create_entity{
-    name = SLOWDOWN,
-    position = character.position,
-    target = character,
-  }
+    name = SLOWING, position = character.position, target = character }
 end
 
 ---Let a character who has run out of things to build come back up to speed.
@@ -101,7 +147,7 @@ end
 ---lifetime, and the engine walks it up as its life runs down.
 ---@param character LuaEntity
 local function recover(character)
-  local slowdown = sticker_on(character, SLOWDOWN)
+  local slowdown = sticker_on(character, SLOWDOWN) or sticker_on(character, SLOWING)
   if not slowdown then return end
   slowdown.destroy()
   character.surface.create_entity{
@@ -152,6 +198,25 @@ local function spend(grid)
   end
 end
 
+---Where the arm is mounted on a character, and so where its hand rests.
+---@param character LuaEntity
+---@return {x: number, y: number}
+local function mounting(character)
+  local at = character.position
+  local offset = pack.offset(character.direction)
+  return { x = at.x + offset.x, y = at.y + offset.y }
+end
+
+---Whether a character is standing inside a ghost's footprint.
+---@param ghost LuaEntity
+---@param at {x: number, y: number}
+---@return boolean
+local function standing_in(ghost, at)
+  local box = ghost.bounding_box
+  return at.x >= box.left_top.x and at.x <= box.right_bottom.x
+     and at.y >= box.left_top.y and at.y <= box.right_bottom.y
+end
+
 ---Find something to build and what to build it with.
 ---@param player LuaPlayer
 ---@return LuaEntity? ghost
@@ -161,9 +226,16 @@ local function find_job(player)
   local character = player.character
   if not ready(character) then return nil end
 
+  -- A radius, and the same radius the reach is judged against further down. Two things
+  -- went wrong with the square this replaces. A square of side twice the range reaches
+  -- 1.41 times as far at its corners, and find_entities_filtered returns anything whose
+  -- own box merely overlaps the area, so a ghost whose centre was well over four tiles
+  -- away came back as a candidate. It was then abandoned as out of range on the very next
+  -- tick, and found again the tick after: the arm swung out and back for ever, and because
+  -- a swing counted as under way, no ghost that was actually in reach got a turn.
   local nearby_ghosts = player.surface.find_entities_filtered{
-    area = {{player.position.x - BUILD_RANGE, player.position.y - BUILD_RANGE},
-            {player.position.x + BUILD_RANGE, player.position.y + BUILD_RANGE}},
+    position = player.position,
+    radius = BUILD_RANGE,
     type = "entity-ghost"
   }
 
@@ -173,24 +245,27 @@ local function find_job(player)
   if not inventory then return false end
   local function carried(name) return inventory.get_item_count(name) end
 
+  local standing = character.position
   for _, ghost in pairs(nearby_ghosts) do
     -- 2.0 turned items_to_place_this into a list of { name, count } rather than a table
     -- keyed by item name
     local item, needed = build.placing_item(ghost.ghost_prototype.items_to_place_this, carried)
-    if item then
+    -- An inserter will not reach for something underneath its own base. Asked to, it
+    -- twitches a tick's worth and springs back, over and over, and because a swing counts
+    -- as under way no other ghost gets a look in either: standing on a ghost jammed the
+    -- whole thing. Distance is the wrong way to say it -- ghosts half a tile off get built
+    -- perfectly well -- so what is asked is whether the character is standing in it.
+    --
+    -- The range is asked again here, by the same measure the swing is judged by, because
+    -- a radius search still returns a ghost whose box overlaps the edge while its centre
+    -- lies outside.
+    if item and not standing_in(ghost, standing)
+        and not reach.out_of_range(standing, ghost.position, BUILD_RANGE) then
       return ghost, item, needed
     end
   end
 
   return nil
-end
-
----Where the claw hangs when it is at rest, which is the shoulder the arm swings from.
----@param character LuaEntity
----@return {x: number, y: number}
-local function shoulder(character)
-  local at = character.position
-  return { x = at.x, y = at.y + pack.HEIGHT }
 end
 
 ---The inserter belonging to a character, made if it is not there yet.
@@ -236,27 +311,33 @@ local function aim(player, job)
   local arm = arm_of(player)
   if not (arm and arm.valid) then return nil end
 
-  local here = character.position
-  local offset = pack.offset(character.direction)
-  arm.teleport({ here.x + offset.x, here.y + offset.y })
-  arm.pickup_position = { here.x, here.y }
+  local mount = mounting(character)
+  arm.teleport(mount)
+  -- the hand comes home to the mounting point rather than to the character's feet
+  arm.pickup_position = { mount.x, mount.y }
   if job then
-    arm.drop_position = { job.target.x, job.target.y }
+    if job.going == "out" then
+      arm.drop_position = { job.target.x, job.target.y }
+    else
+      -- On the way back, the hand is aimed at the character. An empty hand comes home by
+      -- itself, but one still holding something goes wherever it was told to drop, so
+      -- while it is carrying an abandoned item that has to be here.
+      arm.drop_position = { mount.x, mount.y }
+    end
   end
   return arm
 end
 
 ---Give up on a reach without building anything.
 ---
----The item in the hand was never taken out of the inventory, so letting go of it is enough:
----nothing has to be given back.
+---Whatever is in the hand stays in it and comes back with the claw, which is what it looks
+---like from outside: the arm carries the thing home again rather than the item winking out
+---of a closed claw halfway across the ground. It is taken out of the hand when the claw
+---gets there. Nothing is given back to the inventory because nothing was ever taken from
+---it: the hand is filled from nothing and the inventory is only debited on arrival.
 ---@param player LuaPlayer
 ---@param job table
 local function abandon(player, job)
-  local arm = storage.constructor_inserter[player.index]
-  if arm and arm.valid and arm.held_stack.valid_for_read then
-    arm.held_stack.clear()
-  end
   job.going = "back"
   job.ghost = nil
 end
@@ -284,11 +365,27 @@ local function deliver(player, job)
     if built then
       inventory.remove({ name = job.item, count = job.count })
       spend(character.grid)
-      slow(character)
     end
   end
   job.going = "back"
   job.ghost = nil
+end
+
+---Point a reach at something else that takes the same item, if there is anything.
+---
+---The claw is already out and already holding the right thing, so going home to fetch an
+---identical item and coming back out is a wasted trip. Anything that needs something else
+---does mean a trip home, because the hand can only hold one thing.
+---@param player LuaPlayer
+---@param job table
+---@return boolean whether it found somewhere else to go
+local function redirect(player, job)
+  local ghost, item, count = find_job(player)
+  if not ghost then return false end
+  if item ~= job.item or count ~= job.count then return false end
+  job.ghost = ghost
+  job.target = ghost.position
+  return true
 end
 
 ---Move a reach on by one tick.
@@ -306,20 +403,46 @@ local function advance(player)
     return
   end
 
+  if job then
+    storage.constructor_busy[player.index] = game.tick
+  else
+    -- Nothing to do. The arm stays out for a moment in case another ghost turns up, and is
+    -- put away if none does, rather than being worn while the character wanders about.
+    local busy = storage.constructor_busy[player.index]
+    if busy and game.tick - busy <= IDLE_TICKS then
+      aim(player, nil)
+    else
+      put_away(player)
+      storage.constructor_busy[player.index] = nil
+    end
+    return
+  end
+
   local arm = aim(player, job)
-  if not (arm and job) then return end
+  if not arm then return end
+
+  -- Slowed for as long as the arm is working, not only at the moment it arrives. Applying
+  -- it on delivery alone left a gap: the ramp ran out partway through the next swing and
+  -- the character surged until the next thing was delivered.
+  slow(character)
 
   if job.going == "out" then
     -- the character can walk off mid swing, and an arm that stretched to follow would be
     -- no kind of inserter
     if not (job.ghost and job.ghost.valid)
-        or reach.out_of_range(character.position, job.ghost.position, BUILD_RANGE) then
-      abandon(player, job)
+        or reach.out_of_range(character.position, job.ghost.position, BUILD_RANGE)
+        or game.tick - (job.started or game.tick) > SWING_LIMIT then
+      if not redirect(player, job) then abandon(player, job) end
     elseif reach.distance(arm.held_stack_position, job.target) < ARRIVED then
       -- the hand has got there, which is as far as the engine will take it
       deliver(player, job)
     end
-  elseif reach.distance(arm.held_stack_position, character.position) < HOME then
+  elseif reach.distance(arm.held_stack_position, mounting(character)) < HOME
+      or game.tick - (job.started or game.tick) > SWING_LIMIT then
+    -- Home is the mounting point, which is not where the character's feet are. Anything
+    -- still in the hand is taken out here rather than dropped: the engine would put a real
+    -- item on the ground the moment the claw reached what it was aimed at.
+    if arm.held_stack.valid_for_read then arm.held_stack.clear() end
     storage.constructor_reach[player.index] = nil
   end
 end
@@ -357,6 +480,7 @@ local function on_tick(event)
           item = item,
           count = count,
           going = "out",
+          started = event.tick,
         }
         -- filled from nothing, not from the inventory: the item is only really spent if
         -- it arrives, so walking away costs nothing
