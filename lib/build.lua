@@ -17,19 +17,20 @@ function build.due(tick, last, interval)
   return last == nil or tick >= last + interval
 end
 
----Which item to spend on a ghost, out of the ones that could place it.
+---Which item to spend on a ghost, and how many, out of the ones that could place it.
 ---
----The first one the character is carrying at all. Note "at all": a ghost that takes four
----of something is built by anyone holding one of them, and only one is taken. That is
----what the mod has always done and this tier does not change it; test/spec has the case,
----skipped, for 2.1.2 to make true.
+---The first one the character is carrying enough of. Enough matters: a curved rail takes
+---three rails and a half diagonal takes two, and the mod used to build either for anyone
+---holding a single rail and take only that one off them.
 ---@param items_to_place {name: string, count: number?}[]? as the prototype gives them
 ---@param carried fun(name: string): number how many of that item the character holds
----@return string? the item to spend, if any
+---@return string? item the item to spend, if any
+---@return integer? count how many of it the ghost takes
 function build.placing_item(items_to_place, carried)
   for _, entry in pairs(items_to_place or {}) do
-    if carried(entry.name) > 0 then
-      return entry.name
+    local needed = entry.count or 1
+    if carried(entry.name) >= needed then
+      return entry.name, needed
     end
   end
   return nil

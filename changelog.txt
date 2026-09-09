@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.2
+  Bugfixes:
+    - Fixed building the wrong ghost when several were in range, which took the item for one and built another
+    - Fixed building things that take several items, such as curved rails, from a single item
+---------------------------------------------------------------------------------------------------
 Version: 2.1.1
 Date: 2026-09-09
   Features:

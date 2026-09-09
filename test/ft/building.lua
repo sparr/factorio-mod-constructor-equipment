@@ -129,17 +129,17 @@ describe("a character who cannot build", function()
   end)
 end)
 
---- The build loop revives nearby_ghosts[1] rather than the ghost it matched an item for.
---- With one kind of ghost about that is invisible. With two, it takes the item for the
---- one it can build and puts up the one it cannot, which is how you end up holding a
---- chest and looking at a belt.
----
---- Skipped rather than failing: 2.1.1 is the tier that writes the tests and 2.1.2 is the
---- tier that fixes what they find. Turn it into `it` when it is fixed.
+--- The build loop used to revive nearby_ghosts[1] rather than the ghost it had matched an
+--- item for. With one kind of ghost about that is invisible. With two it took the item for
+--- the one it could build and put up the one it could not, so you ended up a belt lighter
+--- and looking at a chest.
 describe("with more than one kind of ghost in reach", function()
-  test.skip("builds the one it has the item for", function()
+  before_each(function()
     world.equipped(player)
-    -- a chest ghost first in the list, a belt second, and only belts in the pocket
+  end)
+
+  it("builds the one it has the item for", function()
+    -- a chest ghost and a belt ghost, and only belts in the pocket
     world.ghost(player, "wooden-chest", -2, 0)
     world.ghost(player, BELT, 2, 0)
     player.insert{ name = BELT, count = 5 }
@@ -147,6 +147,53 @@ describe("with more than one kind of ghost in reach", function()
       assert.are.equal(1, world.count(player, BELT), "the belt it could build is missing")
       assert.are.equal(0, world.count(player, "wooden-chest"),
         "it built a chest the character was not carrying")
+    end)
+  end)
+
+  it("leaves the one it cannot pay for standing", function()
+    world.ghost(player, "wooden-chest", -2, 0)
+    world.ghost(player, BELT, 2, 0)
+    player.insert{ name = BELT, count = 5 }
+    after_ticks(A_BUILD, function()
+      assert.are.equal(1, world.ghosts(player), "the chest ghost should still be waiting")
+      assert.are.equal(4, player.get_item_count(BELT), "exactly one belt should have gone")
+    end)
+  end)
+end)
+
+--- A half diagonal rail takes two rails and a curved one takes three. The mod used to
+--- build either for anyone holding a single rail, and take only that rail off them.
+describe("a ghost that takes more than one item", function()
+  local RAIL_GHOST = "half-diagonal-rail"
+
+  before_each(function()
+    world.equipped(player)
+  end)
+
+  it("is left alone when the character has too few", function()
+    world.ghost(player, RAIL_GHOST, 2, 0)
+    player.insert{ name = "rail", count = 1 }
+    after_ticks(A_BUILD, function()
+      assert.are.equal(0, world.count(player, RAIL_GHOST),
+        "a rail that takes two was built with one")
+      assert.are.equal(1, player.get_item_count("rail"), "the rail should not have gone")
+    end)
+  end)
+
+  it("is built when the character has enough", function()
+    world.ghost(player, RAIL_GHOST, 2, 0)
+    player.insert{ name = "rail", count = 10 }
+    after_ticks(A_BUILD, function()
+      assert.are.equal(1, world.count(player, RAIL_GHOST), "the rail was never built")
+    end)
+  end)
+
+  it("costs as many items as it takes", function()
+    world.ghost(player, RAIL_GHOST, 2, 0)
+    player.insert{ name = "rail", count = 10 }
+    after_ticks(A_BUILD, function()
+      assert.are.equal(8, player.get_item_count("rail"),
+        "a half diagonal rail takes two rails, so eight of ten should be left")
     end)
   end)
 end)

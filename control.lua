@@ -72,16 +72,12 @@ local function build_one(player)
   for _, ghost in pairs(nearby_ghosts) do
     -- 2.0 turned items_to_place_this into a list of { name, count } rather than a table
     -- keyed by item name
-    local item = build.placing_item(ghost.ghost_prototype.items_to_place_this, carried)
+    local item, needed = build.placing_item(ghost.ghost_prototype.items_to_place_this, carried)
     if item then
-      -- FIXME reviving nearby_ghosts[1] rather than ghost is wrong: the item is taken for
-      -- whichever ghost matched and the first ghost in the list is built instead. Left as
-      -- it was written so that this tier changes no behaviour; test/ft has the case,
-      -- skipped, for 2.1.2.
-      local _, built = nearby_ghosts[1].revive()
+      local _, built = ghost.revive()
       if built then
         storage.constructor_last_build_tick[player.index] = game.tick
-        inventory.remove({ name = item, count = 1 })
+        inventory.remove({ name = item, count = needed })
         spend(character.grid)
         if player.character_running_speed_modifier ~= BUILD_RUNNING_SPEED_MODIFIER then
           storage.constructor_saved_running_speed_modifier[player.index] =

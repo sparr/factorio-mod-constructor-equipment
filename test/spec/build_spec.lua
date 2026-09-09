@@ -37,8 +37,9 @@ describe("choosing what to spend on a ghost", function()
   end
 
   it("picks the item when the character has it", function()
-    assert.are.equal("transport-belt",
-      build.placing_item(BELT, holding{ ["transport-belt"] = 3 }))
+    local item, count = build.placing_item(BELT, holding{ ["transport-belt"] = 3 })
+    assert.are.equal("transport-belt", item)
+    assert.are.equal(1, count)
   end)
 
   it("picks nothing when the character has none of it", function()
@@ -48,15 +49,15 @@ describe("choosing what to spend on a ghost", function()
 
   it("picks the first one it is actually carrying", function()
     assert.are.equal("transport-belt",
-      build.placing_item(EITHER, holding{ ["transport-belt"] = 1 }))
+      (build.placing_item(EITHER, holding{ ["transport-belt"] = 1 })))
     assert.are.equal("fast-transport-belt",
-      build.placing_item(EITHER, holding{ ["fast-transport-belt"] = 1 }))
+      (build.placing_item(EITHER, holding{ ["fast-transport-belt"] = 1 })))
   end)
 
   it("prefers the earlier of two it is carrying, as the prototype lists them", function()
     assert.are.equal("fast-transport-belt",
-      build.placing_item(EITHER, holding{
-        ["fast-transport-belt"] = 1, ["transport-belt"] = 1 }))
+      (build.placing_item(EITHER, holding{
+        ["fast-transport-belt"] = 1, ["transport-belt"] = 1 })))
   end)
 
   it("copes with a ghost that nothing places", function()
@@ -64,13 +65,29 @@ describe("choosing what to spend on a ghost", function()
     assert.is_nil(build.placing_item(nil, holding{ ["transport-belt"] = 1 }))
   end)
 
-  --- A ghost that takes four of something is currently built by anyone holding one of
-  --- them, and only one is taken off them. Rails are the case in vanilla. Skipped rather
-  --- than failing, for 2.1.2: this tier writes the tests and the next one fixes what they
-  --- find.
-  pending("wants as many as the ghost actually takes", function()
+  --- A curved rail takes three rails and a half diagonal takes two. The mod used to build
+  --- either for anyone holding a single rail, and take only that one.
+  it("wants as many as the ghost actually takes", function()
     assert.is_nil(build.placing_item(RAIL, holding{ ["rail"] = 1 }),
       "one rail is not enough to place a ghost that takes four")
-    assert.are.equal("rail", build.placing_item(RAIL, holding{ ["rail"] = 4 }))
+    assert.is_nil(build.placing_item(RAIL, holding{ ["rail"] = 3 }))
+    local item, count = build.placing_item(RAIL, holding{ ["rail"] = 4 })
+    assert.are.equal("rail", item)
+    assert.are.equal(4, count, "it should ask for all four")
+  end)
+
+  it("says how many to take, not just what", function()
+    local _, count = build.placing_item(BELT, holding{ ["transport-belt"] = 9 })
+    assert.are.equal(1, count)
+  end)
+
+  it("skips one it cannot afford in favour of one it can", function()
+    local mixed = {
+      { name = "rail", count = 4 },
+      { name = "transport-belt", count = 1 },
+    }
+    local item = build.placing_item(mixed, holding{ ["rail"] = 2, ["transport-belt"] = 1 })
+    assert.are.equal("transport-belt", item,
+      "it settled for a rail ghost it could not pay for")
   end)
 end)
