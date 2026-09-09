@@ -1,0 +1,14 @@
+{
+  "modPath": ".",
+  "mods": [
+    "quality",
+    "recycler",
+    "elevated-rails",
+    "space-age",
+    "ce-tests"
+  ],
+  "test": {
+    "game_speed": 100,
+    "default_timeout": 36000
+  }
+}
