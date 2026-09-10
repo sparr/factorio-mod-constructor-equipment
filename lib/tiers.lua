@@ -35,9 +35,21 @@ tiers.SCALE = 0.2
 --- it at all: a better arm is a lighter one to carry.
 tiers.SLOWED = 0.625
 
---- How many reaches' worth of charge an armour must have before an arm will set off. Two,
---- so that an arm never stops halfway with an item in its hand.
-tiers.RESERVE = 2
+--- How many reaches' worth of charge an armour must have before an arm will set off, so
+--- that an arm never stops halfway with an item in its hand.
+---
+--- Three rather than two since the claw started delivering into a box on the ghost. The
+--- engine takes the hand all the way onto its target and finishes the swing itself now,
+--- where the mod used to call it arrived three tenths of a tile short and cut the swing
+--- off there, so a journey costs more than it did: two ghosts half a turn apart were
+--- measured at 1.85 reaches where they used to fit inside 1.2. Two reaches banked was
+--- enough for the old journey and is marginal for this one.
+---
+--- Asking for more costs a well powered character nothing, because an equipment buffer
+--- refills from charged batteries in a single tick at every tier. What it buys is the
+--- badly powered case: an armour that cannot raise three reaches keeps its arm at home
+--- rather than sending it out on a journey it cannot finish.
+tiers.RESERVE = 3
 
 --- What a base game bulk inserter holds with no capacity research done. The engine gives
 --- anything with bulk = true this much and then adds the force's bulk inserter capacity
@@ -101,7 +113,11 @@ local DEFINED = {
   {
     reach = 4,
     hand = "fast-inserter", colour = "blue",
-    extension = 0.1, rotation = 0.04,
+    -- Vanilla's rotation, divided by how much further this reaches than the inserter it
+    -- borrows. A fast inserter spends a shade longer turning round than reaching its one
+    -- tile; keeping its 0.04 on a four tile arm made the turn look instant against a
+    -- crawling extension. Dividing by the reach puts the two back in vanilla's proportion.
+    extension = 0.1, rotation = 0.01,
     width = 3, height = 5, movement = 7000, drain = "0.5kW",
     slows = 0,
     craft = 20,
@@ -120,7 +136,8 @@ local DEFINED = {
   {
     reach = 5,
     hand = "bulk-inserter", colour = "green",
-    extension = 0.1, rotation = 0.04,
+    -- The same again, over five tiles rather than four. See the tier above.
+    extension = 0.1, rotation = 0.008,
     -- Carries what a bulk inserter carries, and is charged what a bulk inserter is
     -- charged. No head start of its own: whatever the capacity research has bought, this
     -- holds exactly that and no more.

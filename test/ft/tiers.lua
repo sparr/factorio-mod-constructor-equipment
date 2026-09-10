@@ -6,6 +6,7 @@
 --- than the first tier's for everything.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
+local reach = require("lib.reach")
 
 local BELT = "transport-belt"
 
@@ -128,6 +129,55 @@ end)
 --- than at a fixed tick. A pair of arms clears ten ghosts in well under two seconds and a
 --- fast one clears them quicker still, so any fixed sample is a race against the run
 --- ending and the character recovering.
+--- Not a correctness check: control.lua cannot rely on this, and does not.
+---
+--- The mod looks at the hand once a tick, so a window narrower than a tick of travel is a
+--- band the hand can step over. That much can be worked out from the tier's numbers. What
+--- cannot is the last step: the engine does not creep up on its target and stop, it jumps
+--- whatever gap is left in a single tick to land exactly on it, measured at 0.44 tiles for
+--- the third tier against a sustained 0.25. So no window computed from extension and
+--- rotation is safe, and salvage in control.lua is what actually closes the hole.
+---
+--- What this is for is the shape of the swing. A tier whose hand crosses half a tile in a
+--- tick is one whose turn looks instantaneous against an extension that crawls, which is
+--- what the fourth tier did at the base game's rotation speed on a five tile arm.
+describe("how far a hand moves in a tick", function()
+  local SETTLE = 150
+
+  local function measure(level, done)
+    world.equip(player, { tiers.list[level].name, "battery-equipment" }, true)
+    player.insert{ name = BELT, count = 40 }
+    -- out at the very edge, where a turn carries the hand furthest
+    world.ghost(player, BELT, tiers.list[level].range, 0)
+    world.ghost(player, BELT, -tiers.list[level].range, 0)
+
+    local worst, last, last_arm = 0, nil, nil
+    local function sample()
+      local arm = world.arms(player)[1]
+      if not (arm and arm.valid) then last, last_arm = nil, nil return end
+      local at = arm.held_stack_position
+      -- only between two looks at the same arm: a new arm starts wherever it starts, and
+      -- that jump is not the hand moving
+      if last and last_arm == arm.unit_number then
+        worst = math.max(worst, reach.distance(last, at))
+      end
+      last, last_arm = { x = at.x, y = at.y }, arm.unit_number
+    end
+    for n = 1, SETTLE do after_ticks(n, sample) end
+    after_ticks(SETTLE + 1, function() done(worst) end)
+  end
+
+  for level = 1, #tiers.list do
+    it(("keeps tier %d's hand under half a tile a tick"):format(level), function()
+      measure(level, function(worst)
+        assert.is_true(worst > 0, "the hand never moved, so this measured nothing")
+        assert.is_true(worst < 0.5,
+          ("tier %d moved its hand %.3f tiles in a tick"):format(level, worst))
+      end)
+    end)
+  end
+end)
+
 describe("tiers worn together", function()
   local function lowest_while_working(pairs_of)
     world.equip(player, pairs_of, true, "power-armor")
@@ -708,16 +758,89 @@ describe("what a hop costs against what carrying on asks for", function()
     -- due east and due west, the longest way round there is
     world.ghost(player, BELT, tier.range, 0)
     world.ghost(player, BELT, -tier.range, 0)
-    local before, items
-    after_ticks(4, function() before = stored(); items = player.get_item_count(BELT) end)
+    local before
+    after_ticks(4, function() before = stored() end)
     after_ticks(300, function()
-      local built = items - player.get_item_count(BELT)
+      -- counted as belts standing, not as items missing from the pockets: the claw is
+      -- loaded out of the pockets before it sets off now, so what has gone from them says
+      -- what was picked up rather than what was delivered
+      local built = #player.surface.find_entities_filtered{ name = BELT,
+        position = world.ORIGIN, radius = tier.range + 2 }
       local spent = before - stored()
       assert.are.equal(2, built, "both ghosts should have gone up in one journey")
-      -- one reach's worth covers the hop and the journey home with room over
-      assert.is_true(spent < tier.reach_energy * 1.2,
+      -- Two reaches' worth covers both deliveries and the journey home, with room over.
+      --
+      -- It used to be one and a bit. The saving a carrying claw buys is smaller than it
+      -- was: the mod used to count a delivery done three tenths of a tile short and cut
+      -- the swing off, and the engine now takes the hand the whole way onto the box. Two
+      -- deliveries half a turn apart measure about 1.85 reaches. Still a saving over two
+      -- separate journeys, which would be two full reaches out and two home.
+      assert.is_true(spent < tier.reach_energy * 2.0,
         ("two deliveries half a turn apart cost %.0fJ against a reach's %.0fJ")
           :format(spent, tier.reach_energy))
+    end)
+  end)
+end)
+
+--- A round of several is only as long as what is in the claw. The two came apart in the
+--- sandbox: a fourth tier arm loaded with two solar panels put one down, found its hand
+--- empty, and carried on to the next ghost anyway, because deliver() consulted the counter
+--- and not the claw. The arm then stood at full stretch over a ghost holding nothing,
+--- which is what a player sees as a delivery that never arrived.
+describe("a round with less in the claw than the count says", function()
+  -- Capacity research is a force wide setting, so a test that turns it on and walks away
+  -- leaves every test after it with claws that carry more than they expect. Seven of them
+  -- failed that way before this was put back.
+  after_each(function()
+    for n = 1, 7 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = false end
+    end
+  end)
+
+    it("ends the round instead of reaching on empty handed", function()
+    for n = 1, 7 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = true end
+    end
+    world.equip(player, { tiers.list[4].name, "battery-equipment" }, true, "power-armor")
+    player.insert{ name = BELT, count = 40 }
+    local r = tiers.list[4].range
+    for _, d in ipairs{ { r, 0 }, { -r, 0 }, { 0, r }, { 0, -r },
+                        { r - 1, 1 }, { -(r - 1), 1 }, { r - 1, -1 } } do
+      world.ghost(player, BELT, d[1], d[2])
+    end
+
+    -- Catch it loaded for a round of more than one and take all but one away: the state
+    -- the sandbox arrived at on its own, without waiting for it to happen again.
+    local trimmed, stranded, most = false, false, 0
+    for n = 5, 240 do
+      after_ticks(n, function()
+        local arm = world.arms(player)[1]
+        if not (arm and arm.valid) then return end
+        local job = world.job(player)
+        if arm.held_stack.valid_for_read then
+          most = math.max(most, arm.held_stack.count)
+        end
+        if not trimmed then
+          if arm.held_stack.valid_for_read and arm.held_stack.count > 1 then
+            arm.held_stack.count = 1
+            trimmed = true
+          end
+          return
+        end
+        -- from here on, an arm on its way out with nothing in the claw is the fault
+        if job and job.going == "out" and not arm.held_stack.valid_for_read then
+          stranded = true
+        end
+      end)
+    end
+
+    after_ticks(260, function()
+      assert.is_true(trimmed,
+        ("the arm never took a round of more than one; most in the claw was %d"):format(most))
+      assert.is_false(stranded,
+        "the arm carried on to another ghost with an empty claw")
     end)
   end)
 end)

@@ -1,5 +1,6 @@
 --- What the equipment does, and what it declines to do.
 local world = require("test.ft.world")
+local tiers = require("lib.tiers")
 
 --- Comfortably more than one build interval, so a test is not at the mercy of which tick
 --- of the cycle it started on.
@@ -172,6 +173,78 @@ describe("with more than one kind of ghost in reach", function()
   end)
 end)
 
+--- What happens when a ghost wants more of something than a claw can hold.
+---
+--- A claw holds what its inserter holds, which for a plain one is a single item, and a
+--- curved rail wants three. A construction robot carries all three at once whatever its
+--- cargo size, so the arm makes the same bargain differently: the whole round comes out of
+--- the pockets when it sets off, the claw carries what fits, and the rest travels with the
+--- job and is spent on arrival or handed back if the arm comes home with nothing built.
+describe("a ghost that wants more than the claw can hold", function()
+  local CURVE = "curved-rail-a"
+
+  local function curve_in_reach()
+    local ghost = player.surface.create_entity{ name = "entity-ghost",
+      inner_name = CURVE, position = { world.ORIGIN.x + 4, world.ORIGIN.y },
+      force = player.force, direction = defines.direction.north }
+    return ghost
+  end
+
+  -- the fourth tier for its reach, with no capacity research, so its claw still holds a
+  -- single item and a curved rail is still more than it can carry in one trip
+  before_each(function()
+    world.equip(player, { tiers.list[4].name, "battery-mk2-equipment" }, true)
+  end)
+
+  it("takes the whole round out of the pockets when it sets off", function()
+    player.insert{ name = "rail", count = 10 }
+    curve_in_reach()
+    after_ticks(10, function()
+      assert.are.equal(7, player.get_item_count("rail"),
+        "all three should have been taken when the arm set off, not one")
+      local arm = world.arms(player)[1]
+      assert.is_true(arm and arm.held_stack.valid_for_read,
+        "the claw should be carrying what it can of them")
+    end)
+  end)
+
+  it("builds it, and charges exactly three", function()
+    player.insert{ name = "rail", count = 10 }
+    curve_in_reach()
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(1, world.count(player, CURVE), "the curved rail was never built")
+      assert.are.equal(7, player.get_item_count("rail"),
+        "a curved rail takes three, so seven of ten should be left")
+    end)
+  end)
+
+  it("hands all three back if the ghost goes while the arm is out", function()
+    player.insert{ name = "rail", count = 10 }
+    local ghost = curve_in_reach()
+    after_ticks(10, function()
+      assert.are.equal(7, player.get_item_count("rail"))
+      ghost.destroy()
+    end)
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(10, player.get_item_count("rail"),
+        "the ghost went, so nothing was built and all three should have come back")
+      assert.are.equal(0, player.surface.count_entities_filtered{
+        name = "item-on-ground", position = world.ORIGIN, radius = 8 },
+        "something was dropped on the floor instead of being handed back")
+    end)
+  end)
+
+  it("leaves nothing behind when it cannot be built at all", function()
+    player.insert{ name = "rail", count = 2 }
+    curve_in_reach()
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(2, player.get_item_count("rail"),
+        "two rails cannot build a curved rail, and should still be in the pockets")
+      assert.are.equal(0, world.count(player, CURVE))
+    end)
+  end)
+end)
+
 --- A half diagonal rail takes two rails and a curved one takes three. The mod used to
 --- build either for anyone holding a single rail, and take only that rail off them.
 describe("a ghost that takes more than one item", function()
@@ -215,6 +288,239 @@ describe("a ghost that takes more than one item", function()
     after_ticks(A_BUILD, function()
       assert.are.equal(8, player.get_item_count("rail"),
         "a half diagonal rail takes two rails, so eight of ten should be left")
+    end)
+  end)
+end)
+
+--- The engine, not the mod, decides when an inserter hand has arrived, and it lands the
+--- hand exactly on its target in a single step that is not bounded by the tier's extension
+--- or rotation speed -- measured at 0.44 tiles for the third tier against a nominal 0.25.
+--- So the mod can miss an arrival however wide its window is, and when it does, the engine
+--- finishes the swing by putting the load on the floor.
+---
+--- That load is not the player's item arriving early. The claw is filled from nothing, so
+--- what lands is a second one, free. Left alone this is both a ghost that never got built
+--- and an item the player was never charged for.
+describe("a load the engine put on the ground", function()
+  -- Capacity research is a force wide setting, so a test that turns it on and walks away
+  -- leaves every test after it with claws that carry more than they expect. Seven of them
+  -- failed that way before this was put back.
+  after_each(function()
+    for n = 1, 7 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = false end
+    end
+    -- force bonuses and where the character is standing are both shared, and a test that
+    -- walks off with either leaves every test after it in a world it did not ask for
+    player.force.inserter_stack_size_bonus = 0
+    player.force.bulk_inserter_capacity_bonus = 0
+    player.teleport(world.ORIGIN, player.surface)
+    -- and the ground away from the arena that one of these tests works on, which world
+    -- .clear knows nothing about
+    for _, thing in pairs(player.surface.find_entities_filtered{
+        position = { x = 29.238, y = 2.918 }, radius = 25 }) do
+      if thing.valid and thing.type ~= "character" then thing.destroy() end
+    end
+  end)
+
+  local BELT = "transport-belt"
+
+  --- Nothing of the mod's should ever reach the floor.
+  ---
+  --- It used to be possible. The claw was aimed at the ghost the whole way out and the
+  --- engine decided for itself what arriving meant: a ghost of something that could take
+  --- the item made the inserter wait, and a ghost of something that could not -- a wall, a
+  --- pole, a solar panel -- had the load put down beside it. The mod then swept the floor
+  --- afterwards to clear up.
+  ---
+  --- There is a box on the ghost now, and an inserter puts things into boxes, so none of
+  --- those cases can arise and the sweeping is gone with them. This is what is left: the
+  --- promise itself.
+  it("never leaves anything of the mod's on the floor", function()
+    local WALL = "stone-wall"
+    world.equipped(player)
+    player.insert{ name = WALL, count = 10 }
+    for _, spot in ipairs({ { 2, 0 }, { -2, 0 }, { 0, 2 }, { 0, -2 } }) do
+      world.ghost(player, WALL, spot[1], spot[2])
+    end
+    after_ticks(world.CYCLE * 4, function()
+      local loose = {}
+      for _, thing in pairs(player.surface.find_entities_filtered{ type = "item-entity",
+          position = world.ORIGIN, radius = 8 }) do
+        if thing.valid and thing.stack.valid_for_read then
+          table.insert(loose, ("%s x%d at %.2f,%.2f"):format(thing.stack.name,
+            thing.stack.count, thing.position.x, thing.position.y))
+        end
+      end
+      assert.are.equal(0, #loose, "on the floor: " .. table.concat(loose, " ; "))
+      assert.is_true(world.count(player, WALL) > 0, "nothing was built at all")
+    end)
+  end)
+
+  --- The sweep is bounded by what the hand was carrying, not by the radius alone, so that
+  --- a stack the player left on the same tile survives.
+  --- The mod does not touch what the player has dropped. It used to sweep the floor near a
+  --- ghost to clear up after its own losses, which meant deciding whose items those were;
+  --- with a box on the ghost there is nothing to clear up and nothing to decide.
+  it("leaves the player's own items where they lie", function()
+    -- a wall rather than a belt: a belt built over items on the ground takes them onto
+    -- itself, which looks exactly like the mod having pocketed them
+    local WALL = "stone-wall"
+    world.equipped(player)
+    player.insert{ name = WALL, count = 5 }
+    local ghost = world.ghost(player, WALL, 2, 0)
+    local mine = { x = ghost.position.x, y = ghost.position.y }
+    player.surface.create_entity{ name = "item-on-ground", position = mine,
+      stack = { name = "iron-plate", count = 1 } }
+    after_ticks(world.CYCLE * 2, function()
+      local left = player.surface.find_entities_filtered{
+        type = "item-entity", position = mine, radius = 0.5 }
+      assert.are.equal(1, #left, "the player's own iron plate was taken")
+    end)
+  end)
+
+  it("is what stops the ghost being revived at all", function()
+    local INSERTER = "inserter"
+    world.equipped(player)
+    local ghost = world.ghost(player, INSERTER, 2, 0)
+    local at = { x = ghost.position.x, y = ghost.position.y }
+    local function revivable(name)
+      return player.surface.can_place_entity{ name = name, position = at,
+        direction = ghost.direction, force = player.force,
+        build_check_type = defines.build_check_type.ghost_revive }
+    end
+    assert.is_true(revivable(INSERTER), "a bare ghost should be revivable to begin with")
+    local litter = player.surface.create_entity{ name = "item-on-ground", position = at,
+      stack = { name = INSERTER, count = 1 } }
+    assert.is_false(revivable(INSERTER), "an item on the ghost should block the revive")
+    assert.is_true(revivable(BELT),
+      "a belt should still be buildable there, since it would take the item onto itself")
+    litter.destroy()
+    assert.is_true(revivable(INSERTER), "taking the item away should allow it again")
+  end)
+
+  --- With the item blocking the revive, the arm arrives, fails to build, and gives up
+  --- still holding its load. If giving up leaves the claw aimed at the ghost, the engine
+  --- finishes the swing and drops a second item, and so on for ever.
+  --- Whether a ghost blocks an inserter's drop turns on what the ghost would become. It
+  --- blocks only if the finished entity could have taken the item: a chest ghost blocks, a
+  --- belt ghost blocks. A wall, a pole, a solar panel could take nothing, so the engine
+  --- drops the load on the floor instead, on the ghost's own tile.
+  ---
+  --- That is the whole of it, and it is why every earlier attempt at this test could not
+  --- fail: they were written with belt ghosts, which cannot produce the fault at all. The
+  --- first player sighting was a wall, and the rest were solar panels.
+  ---
+  --- The arm is aimed at the ghost the whole way out, so an arrival the mod does not notice
+  --- is one the engine finishes itself. A claw pivoting at full stretch crosses the whole
+  --- arrival window in a single tick, and the mod, looking once a tick, never sees it.
+  it("does not drop a load onto a ghost that cannot take it", function()
+    local WALL = "stone-wall"
+    for n = 1, 7 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = n == 1 end
+    end
+    world.equip(player, { tiers.list[4].name, "battery-mk2-equipment",
+      "fission-reactor-equipment" }, true, "power-armor-mk2")
+    player.insert{ name = WALL, count = 60 }
+
+    -- spread right round, so every turn between them is a wide one taken at full stretch
+    local r = tiers.list[4].range
+    local SPOTS = { { r, 0 }, { -r, 0 }, { 0, r }, { 0, -r },
+                    { r - 1, r - 3 }, { -(r - 1), -(r - 3) } }
+    for _, d in ipairs(SPOTS) do world.ghost(player, WALL, d[1], d[2]) end
+    for n = 60, 540, 60 do
+      after_ticks(n, function()
+        for _, d in ipairs(SPOTS) do
+          local at = { x = world.ORIGIN.x + d[1], y = world.ORIGIN.y + d[2] }
+          for _, built in pairs(player.surface.find_entities_filtered{ name = WALL,
+              position = at, radius = 0.6 }) do built.destroy() end
+          if #player.surface.find_entities_filtered{ ghost_name = WALL, position = at,
+              radius = 0.6 } == 0 then
+            player.surface.create_entity{ name = "entity-ghost", inner_name = WALL,
+              position = at, force = player.force }
+          end
+        end
+        if player.get_item_count(WALL) < 20 then player.insert{ name = WALL, count = 40 } end
+      end)
+    end
+
+    after_ticks(560, function()
+      local dropped = {}
+      for _, thing in pairs(player.surface.find_entities_filtered{
+          type = "item-entity", position = world.ORIGIN, radius = 12 }) do
+        if thing.valid and thing.stack.valid_for_read then
+          table.insert(dropped, ("%s x%d at %.2f,%.2f"):format(thing.stack.name,
+            thing.stack.count, thing.position.x, thing.position.y))
+        end
+      end
+      assert.are.equal(0, #dropped,
+        "the engine put the load on the ground: " .. table.concat(dropped, " ; "))
+    end)
+  end)
+
+  --- Walking into the thing being built, which is what both sightings had in common: the
+  --- player was moving towards the ghosts. advance() gives the swing up when the character
+  --- ends up standing in the target, and the claw is full at that moment.
+  ---
+  --- This passes with or without abandon() re-aiming, so it is a property worth holding
+  --- rather than a reproduction of anything. Stepping in front of the claw by teleport
+  --- moves the arm too, since it is mounted on the character, so the hand does not stay
+  --- where it would have to be for the engine to act on the stale aim.
+  it("is not left behind when you walk into the ghost", function()
+    local INSERTER = "inserter"
+    for n = 1, 7 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = true end
+    end
+    world.equip(player, { tiers.list[4].name, "battery-equipment" }, true, "power-armor")
+    player.insert{ name = INSERTER, count = 40 }
+    local r = tiers.list[4].range
+    local ghost = world.ghost(player, INSERTER, r, 0)
+    local at = { x = ghost.position.x, y = ghost.position.y }
+
+    -- step onto it the moment the claw is out and loaded, which is the moment the mod
+    -- gives up and the engine is still holding the aim
+    local stepped = false
+    for n = 5, 200 do
+      after_ticks(n, function()
+        if stepped then return end
+        local arm = world.arms(player)[1]
+        if arm and arm.valid and arm.held_stack.valid_for_read then
+          local hand, mount = arm.held_stack_position, arm.position
+          local out = math.sqrt((hand.x - mount.x) ^ 2 + (hand.y - mount.y) ^ 2)
+          if out > r - 1 then
+            player.teleport(at)
+            stepped = true
+          end
+        end
+      end)
+    end
+
+    after_ticks(world.CYCLE * 4, function()
+      assert.is_true(stepped, "the claw never got out far enough to step in front of")
+      local left = 0
+      for _, thing in pairs(player.surface.find_entities_filtered{ type = "item-entity",
+          position = at, radius = 2 }) do
+        left = left + (thing.stack.valid_for_read and thing.stack.count or 0)
+      end
+      assert.are.equal(0, left,
+        ("%d items were left on the ground where the ghost was"):format(left))
+    end)
+  end)
+
+  it("does not build for free when there was no load at all", function()
+    world.equipped(player)
+    player.insert{ name = BELT, count = 5 }
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(20, function()
+      local arm = world.arms(player)[1]
+      assert.is_not_nil(arm)
+      arm.held_stack.clear()
+    end)
+    after_ticks(40, function()
+      assert.are.equal(0, world.count(player, BELT),
+        "a ghost was built from an empty claw and nothing on the floor")
     end)
   end)
 end)

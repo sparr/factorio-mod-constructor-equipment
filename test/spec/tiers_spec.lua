@@ -47,28 +47,49 @@ describe("the tiers", function()
   end)
 
   -- Nothing caps how often an arm sets off, so the rate is however long the claw takes to
-  -- go out and come back. The hand speeds are the base game's own, which means they do not
-  -- rise at every tier: the fast and bulk inserters share a hand, so the fourth tier swings
-  -- at the third's speed and buys a tile of reach instead.
-  it("swings at the speed of the inserter it borrows", function()
-    local wanted = {
-      { 0.035, 0.014 },  -- inserter
-      { 0.05,  0.02 },   -- long-handed
-      { 0.1,   0.04 },   -- fast
-      { 0.1,   0.04 },   -- bulk
-    }
-    for level, speeds in ipairs(wanted) do
-      assert.are.equal(speeds[1], tiers.list[level].extension, "tier " .. level .. " extension")
-      assert.are.equal(speeds[2], tiers.list[level].rotation, "tier " .. level .. " rotation")
+  -- go out and come back. Extension is the base game's own figure for the inserter each
+  -- tier borrows, which means it does not rise at every tier: the fast and bulk inserters
+  -- share a hand, so the fourth tier extends at the third's speed and buys a tile of reach
+  -- instead.
+  it("extends at the speed of the inserter it borrows", function()
+    local wanted = { 0.035, 0.05, 0.1, 0.1 }  -- inserter, long-handed, fast, bulk
+    for level, speed in ipairs(wanted) do
+      assert.are.equal(speed, tiers.list[level].extension, "tier " .. level .. " extension")
     end
   end)
 
-  it("never swings slower as the tiers go up", function()
+  -- Rotation is not the base game's figure, for the last two tiers. Those numbers are
+  -- tuned against an inserter that reaches one tile, and on a four or five tile arm they
+  -- make the turn look instantaneous against an extension that crawls. Dividing by how
+  -- much further the tier reaches puts the two halves of a swing back in the base game's
+  -- proportion, a shade longer turning round than reaching out.
+  it("turns at a speed its own reach can keep up with", function()
+    local wanted = { 0.014, 0.02, 0.01, 0.008 }
+    for level, speed in ipairs(wanted) do
+      assert.are.equal(speed, tiers.list[level].rotation, "tier " .. level .. " rotation")
+    end
+  end)
+
+  -- A hand at full stretch travels the whole circumference in one rotation, so a turn
+  -- moves it rotation * 2 * pi * range in a tick. That used to be a tile and a quarter for
+  -- the fourth tier, which is four times the width of the window the mod watches for an
+  -- arrival in: the hand stepped straight over it, the arrival went unnoticed, and the
+  -- engine finished the swing itself by dropping a real item where the ghost stood.
+  -- control.lua widens its window to suit, so this is not what makes it correct, but a
+  -- tier whose hand moves a tile a tick is a tier worth looking at again.
+  it("never whips its hand round faster than half a tile a tick", function()
+    for _, tier in ipairs(tiers.list) do
+      local turning = tier.rotation * 2 * math.pi * tier.range
+      assert.is_true(turning < 0.5,
+        ("tier %d moves its hand %.2f tiles a tick while turning"):format(tier.level,
+          turning))
+    end
+  end)
+
+  it("never extends slower as the tiers go up", function()
     for level = 2, #tiers.list do
       assert.is_true(tiers.list[level].extension >= tiers.list[level - 1].extension,
         "tier " .. level .. " extends slower than the tier below")
-      assert.is_true(tiers.list[level].rotation >= tiers.list[level - 1].rotation,
-        "tier " .. level .. " turns slower than the tier below")
     end
   end)
 

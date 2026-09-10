@@ -44,23 +44,19 @@ local REST = 0.2
 --- How close the hand has to get to the character to count as home again, and how close to
 --- the ghost to count as having arrived.
 ---
---- Neither can be tightened, and the faster tiers want them wider rather than narrower. The
---- hand is watched once a tick, so a threshold smaller than the distance it covers in a
---- tick is a band the hand can step clean over: a fourth tier hand moves 0.63 tiles a tick
---- against an arrival threshold of 0.3. It happens to work today because the engine brings
---- the hand to rest exactly on its target, so there is always a tick with the distance at
---- nothing -- but that is the engine being kind, not the numbers being right. So each tier
---- gets whichever is larger, the figure below or the distance its own hand covers in a
---- tick.
+--- Floors rather than answers: lib/reach.lua widens both to cover however fast the hand in
+--- question is actually moving, because a window narrower than a tick of travel is one the
+--- hand steps over, and the engine then finishes the swing by dropping the load.
 local HOME = 0.4
 local ARRIVED = 0.3
 
----How close is close enough for one arm, which depends on how fast its hand moves.
+---How close is close enough for one arm. See lib/reach.lua, which the tests measure the
+---real thing against.
 ---@param tier table
 ---@param threshold number
 ---@return number
-local function within(tier, threshold)
-  return math.max(threshold, tier.extension)
+local function within(tier, threshold, moved)
+  return reach.within(tier, threshold, moved)
 end
 
 --- How long the claw takes to shrink away once the arm is stowed, and how far into that
@@ -598,9 +594,25 @@ end
 ---@return LuaEntity? ghost
 ---@return string? item
 ---@return integer? count
+---@return LuaEntity? ghost the one to reach for, if it can set off now
+---@return string? item
+---@return integer? count
+---@return boolean waiting whether there is work but not yet the charge to do it
 local function job_for(player, nearby, claimed, record, range)
-  if not ready(record) then return nil end
-  return choose(player, nearby, claimed, range)
+  if not ready(record) then
+    -- Still worth knowing whether there is anything to do. Setting off wants a full
+    -- buffer, and a delivery spends some of it, so an arm that has just finished one is
+    -- not ready on the very next tick. Filling it again takes a single tick from charged
+    -- batteries -- measured at every tier -- but a single tick was enough: with no arm
+    -- reporting work the run was declared over, the character started easing back to full
+    -- speed, and a fresh slowdown began a tick later, so they oscillated instead of
+    -- settling. The run ends when the work runs out, not when an arm is a tick short of
+    -- being able to start the next trip.
+    local ghost = choose(player, nearby, claimed, range)
+    return nil, nil, nil, ghost ~= nil
+  end
+  local ghost, item, count = choose(player, nearby, claimed, range)
+  return ghost, item, count, false
 end
 
 ---The list of a player's arms, one per copy of the equipment they are wearing.
@@ -693,14 +705,124 @@ end
 ---
 ---Nothing goes back into the inventory, because nothing ever came out of it: the hand is
 ---filled from nothing and the inventory is only debited when something arrives. So an arm
+---Put items from the box back into the claw, where they are still the player's.
+---@param record table
+---@param name string
+---@param count integer
+local function take_back(record, name, count)
+  if count <= 0 then return end
+  local box, arm = record.catcher, record.entity
+  if box and box.valid then
+    local inside = box.get_inventory(defines.inventory.chest)
+    if inside then inside.remove{ name = name, count = count } end
+  end
+  if arm and arm.valid then
+    local held = arm.held_stack.valid_for_read and arm.held_stack.count or 0
+    arm.held_stack.set_stack{ name = name, count = held + count }
+  end
+end
+
+--- The box that stands on a ghost while an arm is delivering to it.
+---
+--- Without one, what the engine does with a claw arriving at a ghost depends on the ghost:
+--- one whose entity could take the item makes the inserter wait for ever, one whose entity
+--- could not is either built out of the claw or has the load dumped on the floor beside it.
+--- None of those is the mod's decision and all three were reachable in play.
+---
+--- A container on the same tile settles it. An inserter puts things into containers, so
+--- arrival stops being a distance the mod measures once a tick -- and could step clean over
+--- -- and becomes a thing the engine reports by putting the item somewhere the mod owns.
+--- The box collides with nothing, so the ghost underneath it stays revivable.
+local CATCHER = "constructor-equipment-catcher"
+
+--- How near the claw has to be before its box exists at all. Generous on purpose: being
+--- early costs nothing, and the whole point of the box is to stop measuring arrivals
+--- finely. It only has to be absent while the claw is far enough away that somebody else
+--- could get a whole swing in.
+local OPEN = 2.5
+
+---The box belonging to this arm, present only while this claw is near enough to be the one
+---filling it.
+---
+---An open box is a hole in the world: it accepts insertions, so an inserter of the
+---player's own pointing at a tile a ghost stands on would quietly feed it and the mod would
+---take a stranger's item for its own delivery. Whether a container accepts automated
+---insertion is fixed in its prototype and cannot be turned off and on, so the box is
+---created and destroyed instead of being opened and shut.
+---@param record table
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---@param near boolean whether this claw is close enough for a delivery to be possible
+---@return LuaEntity?
+local function catcher_at(record, surface, at, near)
+  local box = record.catcher
+  if not near then
+    -- nothing of ours should be in it yet, and if something is it goes back in the claw
+    if box and box.valid then
+      local inside = box.get_inventory(defines.inventory.chest)
+      if inside then
+        for _, stack in pairs(inside.get_contents()) do
+          take_back(record, stack.name, stack.count)
+        end
+      end
+      box.destroy()
+    end
+    record.catcher = nil
+    return nil
+  end
+  if box and box.valid then
+    if box.position.x ~= at.x or box.position.y ~= at.y then box.teleport(at) end
+    return box
+  end
+  -- The arm's own force, not neutral: an inserter will not put anything into another
+  -- force's container, and a neutral box was quietly ignored while the load went on the
+  -- ground beside it.
+  local owner = record.entity and record.entity.valid and record.entity.force or "player"
+  box = surface.create_entity{ name = CATCHER, position = at, force = owner }
+  record.catcher = box
+  return box
+end
+
+---Take the box away, handing back anything left in it.
+---@param record table
+---@return LuaItemStack[]? what was inside
+local function catcher_away(record)
+  local box = record.catcher
+  record.catcher = nil
+  if not (box and box.valid) then return nil end
+  local left = {}
+  local inside = box.get_inventory(defines.inventory.chest)
+  if inside then
+    for _, stack in pairs(inside.get_contents()) do
+      table.insert(left, { name = stack.name, count = stack.count })
+    end
+  end
+  box.destroy()
+  return left
+end
+
 ---put away mid reach, whether because the character walked off or because they took the
 ---equipment out of their armour, costs them nothing.
 ---@param player LuaPlayer
 ---@param record table
 local function put_away(player, record)
   local arm = record.entity
+  catcher_away(record)
   if arm and arm.valid then
-    if arm.held_stack.valid_for_read then arm.held_stack.clear() end
+    -- whatever it was carrying was paid for out of the pockets, so it goes back in them
+    -- rather than being destroyed with the arm
+    local inventory = player.get_inventory(defines.inventory.character_main)
+    local job = record.job
+    if job and (job.escrow or 0) > 0 and job.item and inventory then
+      inventory.insert{ name = job.item, count = job.escrow }
+      job.escrow = 0
+    end
+    if arm.held_stack.valid_for_read then
+      if inventory then
+        inventory.insert{ name = arm.held_stack.name, count = arm.held_stack.count }
+      end
+      arm.held_stack.clear()
+    end
     -- whatever it was holding in its buffer goes back where it came from, so that taking
     -- the arm out and putting it away again is not itself a way of burning charge
     local character = player.character
@@ -841,9 +963,92 @@ local redirect
 ---gets there. Nothing is given back to the inventory because nothing was ever taken from
 ---it: the hand is filled from nothing and the inventory is only debited on arrival.
 ---@param job table
-local function abandon(job)
+--- Whether this player would rather have a returned item on the ground than in the claw.
+---@param player LuaPlayer
+---@return boolean
+local function spills(player)
+  local chosen = settings.get_player_settings(player)["constructor-equipment-spill-when-full"]
+  return chosen and chosen.value or false
+end
+
+---Hand back what an arm is carrying, because it has already been paid for.
+---
+---The claw is loaded out of the character's pockets, so anything in it is the player's
+---item and not a copy: destroying it on the way home would be taking it off them. If it
+---will not fit, the player has said which they would rather have -- it on the ground, or
+---kept in the claw with the arm holding station until there is room.
+---@param player LuaPlayer
+---@param record table
+---@return boolean whether the claw is empty now
+local function give_back(player, record)
+  local arm = record.entity
+  local job = record.job
+  local inventory = player.get_inventory(defines.inventory.character_main)
+
+  -- What was set aside for this round but never went into the claw goes back first. It
+  -- was taken from the pockets when the arm set off and nothing was built with it, so it
+  -- is simply the player's again. There is nothing holding it and nowhere for it to fall,
+  -- so it does not need the spill or hold question that the claw's own load does.
+  if job and (job.escrow or 0) > 0 and job.item and inventory then
+    local returned = inventory.insert{ name = job.item, count = job.escrow }
+    job.escrow = job.escrow - returned
+    if job.escrow > 0 and spills(player) then
+      local character = player.character
+      if character and character.valid then
+        character.surface.spill_item_stack{
+          position = character.position,
+          stack = { name = job.item, count = job.escrow },
+          enable_looted = true,
+          force = player.force,
+        }
+      end
+      job.escrow = 0
+    end
+    if job.escrow > 0 then return false end
+  end
+
+  if not (arm and arm.valid and arm.held_stack.valid_for_read) then return true end
+  local name, count = arm.held_stack.name, arm.held_stack.count
+  local took = inventory and inventory.insert{ name = name, count = count } or 0
+  if took >= count then
+    arm.held_stack.clear()
+    return true
+  end
+  if took > 0 then arm.held_stack.count = count - took end
+  if spills(player) then
+    local character = player.character
+    if character and character.valid then
+      character.surface.spill_item_stack{
+        position = character.position,
+        stack = { name = name, count = count - took },
+        enable_looted = true,
+        force = player.force,
+      }
+    end
+    arm.held_stack.clear()
+    return true
+  end
+  -- kept in the claw: the arm stays out rather than folding away with the player's item
+  return false
+end
+
+---@param record table the arm giving up
+---@param job table
+local function abandon(record, job)
   job.going = "back"
   job.ghost = nil
+
+  -- Re-aimed now rather than left to the next tick's aim(). The claw is still full and
+  -- still pointed at the ghost, and the engine finishes swings on its own schedule: given
+  -- a tick of grace it puts the load down on the ghost's own tile. That loses the delivery
+  -- and mints a free item, because the claw is filled from nothing rather than from the
+  -- inventory -- and worse, an item lying on a ghost stops that ghost being revived at
+  -- all, so every attempt after the first fails the same way and drops another one.
+  local arm = record and record.entity
+  if arm and arm.valid and arm.held_stack.valid_for_read and record.rest then
+    arm.drop_position = { record.rest.x, record.rest.y }
+  end
+  catcher_away(record)
 end
 
 ---Put the thing down: revive the ghost, pay for it, and let the arm start coming home.
@@ -852,58 +1057,76 @@ end
 ---@param job table
 ---@param claimed table<integer, boolean>? what the other arms are reaching for
 local function deliver(player, record, job, claimed)
-  local inventory = player.get_inventory(defines.inventory.character_main)
   local ghost = job.ghost
+  local box = record.catcher
 
-  -- The character can spend the item while the claw is on its way out to a ghost carrying
-  -- one of their own. There is then nothing to pay with, so this is a reach that failed
-  -- rather than one that arrived, and it ends the same way as walking away does: the claw
-  -- keeps hold of what it is carrying and brings it home. Emptying it here instead would
-  -- have the item vanish at the ghost, having built nothing.
-  if not (ghost and ghost.valid and inventory
-      and inventory.get_item_count(job.item) >= job.count) then
-    abandon(job)
+  -- What the box was given is the delivery. Until something is in it, nothing has
+  -- arrived, and that is the whole of the arrival test: no distance, nothing to step over.
+  local landed = 0
+  if box and box.valid then landed = box.get_item_count(job.item) end
+  if landed < 1 then return end
+
+  -- A ghost can want more than a claw can hold: a plain inserter carries one item and a
+  -- half diagonal rail takes two. The rest was taken from the pockets when the arm set off
+  -- and has been travelling with the job rather than in the claw, so it is here to be
+  -- spent and nothing needs asking of the pockets now.
+  local short = job.count - landed
+  if short > (job.escrow or 0) then
+    -- the round is short of what this ghost wants, which should not happen: everything was
+    -- reserved at the start. Give back what there is rather than build half a thing.
+    take_back(record, job.item, landed)
+    abandon(record, job)
+    return
+  end
+
+  if not (ghost and ghost.valid) then
+    -- the ghost went while the claw was on its way; the load goes back in the claw and
+    -- comes home, since it has already been paid for
+    take_back(record, job.item, landed)
+    abandon(record, job)
     return
   end
 
   local _, built = ghost.revive()
   if not built then
-    abandon(job)
+    take_back(record, job.item, landed)
+    abandon(record, job)
     return
   end
 
-  -- One load comes out of the hand here rather than being dropped by the engine. An
-  -- inserter will not drop onto a tile something is standing on, and a ghost counts: left
-  -- to itself it swings out, finds the ghost in the way, and waits there holding the item
-  -- for ever. So arriving is what counts as delivery, and the item leaves the hand at that
-  -- moment -- which has to be this tick, because the thing just built is a place an
-  -- inserter would happily put a belt into.
-  local arm = record.entity
-  if arm and arm.valid and arm.held_stack.valid_for_read then
-    local rest = arm.held_stack.count - job.count
-    if rest > 0 then arm.held_stack.count = rest else arm.held_stack.clear() end
-  end
-  inventory.remove({ name = job.item, count = job.count })
+  -- The ghost is up, so the items that built it are spent. They came out of the pockets
+  -- when the claw was loaded, so nothing is charged here: this is simply where they stop
+  -- existing.
+  local inside = box.get_inventory(defines.inventory.chest)
+  if inside then inside.remove{ name = job.item, count = math.min(landed, job.count) } end
+  if short > 0 then job.escrow = job.escrow - short end
+  -- whatever else the claw brought is still the player's, and goes back in the claw for
+  -- the next ghost of this round
+  take_back(record, job.item, math.max(0, landed - job.count))
 
   -- More of this trip left, and another of the same thing in reach, means going home would
   -- be a wasted journey. So the claw turns to the next one with the rest of its load still
   -- in hand. That is the whole of what a carrying claw buys: one journey out, several
   -- ghosts, one journey back.
+  local arm = record.entity
   job.left = (job.left or 1) - 1
+  -- What is left of the round is what is left in the claw, not what the job set out to do.
+  -- Those two came apart once: a trip loaded with two put one down, found its hand empty
+  -- and carried on regardless, because only the counter was consulted.
   if job.left > 0 and arm and arm.valid
-      and inventory.get_item_count(job.item) >= job.count
+      and arm.held_stack.valid_for_read and arm.held_stack.count >= job.count
       and afford_another(record, arm)
-      and redirect(player, job, claimed, tier_of(record).range) then
-    -- Re-aim now rather than leaving it to the next tick. The drop position still points
-    -- at the tile just built on, and that tile holds a real belt now rather than a ghost:
-    -- an inserter will not drop into a ghost, but it will happily drop into a belt, and
-    -- what is still in the claw would go straight into the thing it had only just built.
+      and redirect(player, record, job, claimed, tier_of(record).range) then
     arm.drop_position = { job.target.x, job.target.y }
+    -- shut to begin with: the claw is still at the ghost it has just built, and advance
+    -- opens the box once it is near the new one
+    catcher_at(record, arm.surface, job.target, false)
     return
   end
 
   job.going = "back"
   job.ghost = nil
+  catcher_away(record)
 end
 
 ---Point a reach at something else that takes the same item, if there is anything.
@@ -916,11 +1139,35 @@ end
 ---@param claimed table<integer, boolean>? ghosts the other arms are reaching for
 ---@param range number how far this arm reaches
 ---@return boolean whether it found somewhere else to go
-function redirect(player, job, claimed, range)
+function redirect(player, record, job, claimed, range)
   local ghost, item, count =
     choose(player, ghosts_near(player, range), claimed, range)
   if not ghost then return false end
-  if item ~= job.item or count ~= job.count then return false end
+  if item ~= job.item then return false end
+
+  -- A ghost wanting a different number of the same thing is still worth turning to. What
+  -- was set aside covers the ghost the arm set out for, so turning to a smaller one hands
+  -- the difference straight back rather than carrying it around: an arm that set off for a
+  -- curved rail with one in the claw and two put by, and finds a straight rail instead,
+  -- gives the two back on the spot.
+  if count ~= job.count then
+    local arm = record and record.entity
+    local held = arm and arm.valid and arm.held_stack.valid_for_read
+      and arm.held_stack.count or 0
+    if held < count then return false end
+    if (job.escrow or 0) > 0 then
+      local inventory = player.get_inventory(defines.inventory.character_main)
+      if inventory then
+        local returned = inventory.insert{ name = job.item, count = job.escrow }
+        job.escrow = job.escrow - returned
+      end
+      -- anything that would not fit stays put by and goes home with the arm
+    end
+    job.count = count
+    job.left = math.floor(held / count)
+    if job.left < 1 then return false end
+  end
+
   if claimed then claimed[ghost.unit_number] = true end
   job.ghost = ghost
   job.target = ghost.position
@@ -984,35 +1231,48 @@ local function advance(player, record, slot, count, claimed)
   local arm = aim(player, record, slot, count, job)
   if not arm then return end
 
+  -- How far this hand went since the last look. The window for arriving is measured from
+  -- it rather than from the tier's numbers: what the engine does on its last step is not
+  -- what the prototype says its speed is, and a window narrower than the step is one the
+  -- hand jumps clean over.
+  local hand = arm.held_stack_position
+  local moved = record.last_hand and reach.distance(record.last_hand, hand) or 0
+  record.last_hand = { x = hand.x, y = hand.y }
+
   if job.going == "out" then
+    -- The box waiting on the ghost is opened only once this claw is near enough to be the
+    -- one that fills it. Left open the whole way out, any inserter of the player's own
+    -- pointing at that tile could put something in it, and the mod would take a stranger's
+    -- item for its own delivery.
+    catcher_at(record, arm.surface, job.target,
+      reach.distance(hand, job.target) <= within(tier_of(record), OPEN, moved))
+
     -- the character can walk off mid swing, and an arm that stretched to follow would be
     -- no kind of inserter
-    -- An empty hand on the way out has nothing to deliver, so there is nothing to wait
-    -- for. It should not happen, and when it did the arm stood with its claw at rest for
-    -- the whole swing limit before anyone noticed. Cheaper to notice here.
-    if arm.held_stack and not arm.held_stack.valid_for_read then
-      abandon(job)
-    elseif not (job.ghost and job.ghost.valid)
+    if not (job.ghost and job.ghost.valid)
         or standing_in(job.ghost, character.position)
         or reach.out_of_range(character.position, job.ghost.position, tier_of(record).range)
         or game.tick - (job.started or game.tick) > SWING_LIMIT then
       local tier = tier_of(record)
-      if not redirect(player, job, claimed, tier.range) then
-        abandon(job)
+      if not redirect(player, record, job, claimed, tier.range) then
+        abandon(record, job)
       end
-    elseif reach.distance(arm.held_stack_position, job.target)
-        < within(tier_of(record), ARRIVED) then
-      -- the hand has got there, which is as far as the engine will take it
+    else
+      -- deliver() does nothing until the box has been given something, so there is no
+      -- arrival to measure and nothing to step over: it can simply be asked every tick
       deliver(player, record, job, claimed)
     end
   elseif reach.distance(arm.held_stack_position, record.rest or mounting(character, slot, count))
-        < within(tier_of(record), HOME)
+        < within(tier_of(record), HOME, moved)
       or game.tick - (job.started or game.tick) > SWING_LIMIT then
     -- Home is the mounting point, which is not where the character's feet are. Anything
-    -- still in the hand is taken out here rather than dropped: the engine would put a real
-    -- item on the ground the moment the claw reached what it was aimed at.
-    if arm.held_stack.valid_for_read then arm.held_stack.clear() end
-    record.job = nil
+    -- still in the claw was paid for on the way out, so it is handed back rather than
+    -- destroyed. If it will not fit and the player would rather not have it on the ground,
+    -- the arm holds station with it until there is room.
+    if give_back(player, record) then
+      record.job = nil
+      catcher_away(record)
+    end
   end
 end
 
@@ -1041,8 +1301,13 @@ local function assign(player, list, tick)
       working = true
     else
       local tier = tier_of(record)
-      local ghost, item, count =
+      local ghost, item, count, waiting =
         job_for(player, nearby, claimed, record, tier.range)
+      if waiting then
+        -- work in reach, buffer a tick short of full: the run is still on
+        working = true
+        record.run = game.tick
+      end
       if ghost then
         claimed[ghost.unit_number] = true
         record.job = {
@@ -1053,20 +1318,39 @@ local function assign(player, list, tick)
           going = "out",
           started = tick,
         }
-        -- Filled from nothing, not from the inventory: the item is only really spent if
-        -- it arrives, so walking away costs nothing. The last tier fills its claw with as
-        -- many of the same thing as there is work for.
+        -- Paid for on the way out, not on arrival. Filling the claw from nothing made
+        -- every item in it a counterfeit, so any path where the engine put one somewhere
+        -- the mod did not intend -- and there were several -- minted a real item out of
+        -- air. Taking it from the pockets now means whatever happens to it afterwards,
+        -- nothing is created: it is either delivered, brought back, or lost by the player
+        -- who owned it. The last tier fills its claw with as many as there is work for.
         local inventory = player.get_inventory(defines.inventory.character_main)
         record.job.left = loads_for(nearby, claimed, player.character.position, tier.range,
           item, count, inventory and inventory.get_item_count(item) or count,
           trips_for(player.force, tier))
         local arm = aim(player, record, slot, #list, record.job)
         if arm then
-          arm.held_stack.set_stack{ name = item, count = count * record.job.left }
-          -- However many it was asked to take, what it has is what it will deliver
-          record.job.left = math.max(1,
-            math.floor((arm.held_stack.valid_for_read and arm.held_stack.count or count)
-              / count))
+          -- Everything the round will need comes out of the pockets now, whether or not
+          -- the claw can hold it. A claw holds what its inserter holds -- one thing for a
+          -- plain one -- and a curved rail wants three, so the claw takes as many as fit
+          -- and the rest are set aside against this job. A construction robot carries all
+          -- three at once regardless of its cargo size, so this is the same bargain by
+          -- other means: the items are spent when the arm sets off and given back if it
+          -- comes home without building anything.
+          local want = count * record.job.left
+          local taken = inventory and inventory.remove{ name = item, count = want } or 0
+          if taken < count then
+            -- not even one ghost's worth left in the pockets
+            if taken > 0 then inventory.insert{ name = item, count = taken } end
+            arm.held_stack.clear()
+            record.job = nil
+          else
+            record.job.left = math.floor(taken / count)
+            arm.held_stack.set_stack{ name = item, count = taken }
+            -- what the claw actually took, and what is being carried on its behalf
+            record.job.carried = arm.held_stack.valid_for_read and arm.held_stack.count or 0
+            record.job.escrow = taken - record.job.carried
+          end
         end
         working = true
       end

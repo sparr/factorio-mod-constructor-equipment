@@ -1,6 +1,7 @@
 --- The inserter cycle: reach out with the item, put it down, come back.
 ---
 local world = require("test.ft.world")
+local tiers = require("lib.tiers")
 
 local BELT = "transport-belt"
 local player
@@ -29,7 +30,22 @@ describe("reaching for a ghost", function()
       assert.is_not_nil(job(), "no swing was started")
       assert.are.equal("out", job().going)
       assert.are.equal(1, world.ghosts(player), "it built instantly instead of reaching")
-      assert.are.equal(10, player.get_item_count(BELT), "it took the item before delivering")
+    end)
+  end)
+
+  --- Paid for on the way out rather than on arrival. The claw is loaded out of the
+  --- character's pockets, so the item leaves them when the arm sets off and is in the claw
+  --- for the whole journey. Nothing is created and nothing is destroyed on the way: what
+  --- the pockets lose, the claw holds.
+  it("takes the item into the claw when it sets off", function()
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(8, function()
+      assert.are.equal(9, player.get_item_count(BELT),
+        "the item should have been taken when the claw was loaded")
+      local arm = world.arms(player)[1]
+      assert.is_true(arm and arm.held_stack.valid_for_read,
+        "the claw should be holding what the pockets lost")
+      assert.are.equal(BELT, arm.held_stack.name)
     end)
   end)
 
@@ -37,9 +53,10 @@ describe("reaching for a ghost", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(world.SWING_TICKS - 4, function()
       assert.is_not_nil(job(), "the swing ended early")
-      assert.are.equal(10, player.get_item_count(BELT),
-        "the item was taken before the claw arrived")
       assert.are.equal(1, world.ghosts(player), "the ghost went up before the claw arrived")
+      local arm = world.arms(player)[1]
+      assert.is_true(arm and arm.held_stack.valid_for_read,
+        "the claw let go of the item before it arrived")
     end)
   end)
 
@@ -457,76 +474,58 @@ end)
 --- The character can spend the item while the claw is halfway to a ghost holding one of
 --- their own. Nothing is owed either way: the item in the claw was conjured there, and the
 --- inventory is only debited on arrival, so the worst that can happen is a wasted swing.
-describe("spending the item mid delivery", function()
+--- Spending everything while a claw is on its way out.
+---
+--- This used to cancel the delivery: the item was only charged on arrival, so emptying the
+--- pockets left nothing to pay with and the claw brought its load home. It is charged when
+--- the claw is loaded now, so what it is carrying has already been bought and the ghost it
+--- was sent to still goes up. What emptying the pockets stops is the next journey, not the
+--- one already under way.
+describe("spending everything mid delivery", function()
   local function reaching_then_broke()
     world.ghost(player, BELT, 2, 0)
     after_ticks(8, function()
       assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
       assert.are.equal(BELT, world.held(player), "the claw was not carrying anything yet")
-      player.remove_item{ name = BELT, count = 10 }
+      player.remove_item{ name = BELT, count = 100 }
       assert.are.equal(0, player.get_item_count(BELT), "the inventory was not emptied")
     end)
   end
 
-  it("leaves the ghost standing", function()
+  it("still builds the one it is carrying, because it is paid for", function()
     reaching_then_broke()
     after_ticks(world.CYCLE * 2, function()
-      assert.are.equal(1, world.ghosts(player),
-        "it built a belt the character no longer had")
-      assert.are.equal(0, world.count(player, BELT))
+      assert.are.equal(0, world.ghosts(player), "the ghost it had already paid for is still standing")
+      assert.are.equal(1, world.count(player, BELT), "the belt was never built")
     end)
   end)
 
-  it("does not conjure the item out of the claw", function()
+  it("does not put the item back in the pockets", function()
     reaching_then_broke()
     after_ticks(world.CYCLE * 2, function()
       assert.are.equal(0, player.get_item_count(BELT),
-        "it put a belt back that the character had spent")
-      assert.are.equal(0, player.surface.count_entities_filtered{ name = "item-on-ground" },
-        "it dropped the item it was carrying on the ground")
+        "an item that went into a ghost came back to the pockets as well")
     end)
   end)
 
-  it("brings it home in the claw rather than dropping it at the ghost", function()
+  it("leaves nothing on the ground", function()
     reaching_then_broke()
-    local carried_home = false
-    for n = 10, 50, 2 do
-      after_ticks(n, function()
-        if job() and job().going == "back" and world.held(player) == BELT then
-          carried_home = true
-        end
-      end)
-    end
     after_ticks(world.CYCLE * 2, function()
-      assert.is_true(carried_home,
-        "the claw came home empty, so the item vanished at the ghost")
-      assert.is_nil(job(), "the swing never finished")
-      assert.is_nil(world.held(player), "the item should be out of the hand by now")
+      assert.are.equal(0, player.surface.count_entities_filtered{ name = "item-on-ground" },
+        "something ended up on the floor")
     end)
   end)
 
-  it("gets on with it once the character has one again", function()
+  it("starts nothing new once the pockets are empty", function()
     reaching_then_broke()
-    after_ticks(world.CYCLE, function()
-      player.insert{ name = BELT, count = 5 }
-    end)
-    after_ticks(world.CYCLE * 4, function()
-      assert.are.equal(1, world.count(player, BELT),
-        "it never went back for the ghost once the item was available again")
-      assert.are.equal(4, player.get_item_count(BELT), "one belt should have gone")
+    after_ticks(4, function() world.ghost(player, BELT, -2, 0) end)
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(1, world.ghosts(player),
+        "it set off for a second ghost with nothing to pay for it")
     end)
   end)
 end)
 
---- Delivering while the character walks.
----
---- Both ends of the swing are re-aimed every tick, because the arm travels with its owner:
---- the claw comes home to wherever they are now, and the drop position is re-set because
---- an inserter's drop position moves with the inserter. So a walking character is a moving
---- target at both ends, and whether the claw ever lands exactly on either is not something
---- to count on. That is what the arrived and home thresholds are for, and it is why they
---- cannot simply be tightened: standing still, the hand comes to rest exactly on its
---- target and any threshold at all would do.
 describe("walking while the arm is reaching", function()
   local EAST, WEST = defines.direction.east, defines.direction.west
 
