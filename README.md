@@ -1,14 +1,12 @@
 # factorio-mod-constructor-equipment
 A mod for the game Factorio, adding equipment for short range automated construction.
 
-This mod is not finished.
+## Features
 
-The actual construction effect should work as intended.
+* Four tiers of equipment that use inserter arms to build nearby blueprints from your inventory.
+* Four technologies to unlock the equipment.
+* Low tier equipment slows you down.
 
-Variables such as construction frequency, energy cost, etc are subject to change.
+## Screenshots
 
-There are no in-world animations. The built entities simply appear.
-
-The item/research/etc icons are ugly copies of base graphics.
-
-Running speed modification will be incompatible with other speed mods like ProgressiveRunning.e
+![Four tiers of arms building in a range of settings](screenshots.jpg)

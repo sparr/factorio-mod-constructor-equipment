@@ -1,5 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.3
+  Info:
+    - Added a thumbnail, shown beside the mod in the mod manager and on the portal
   Features:
     - The arm sits on whichever side of you is your back, and shrinks away a second after it runs out of work
     - An inserter arm now reaches out of your back to each ghost, carries the item there in its claw and puts it down, then comes back for the next one

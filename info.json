@@ -18,7 +18,11 @@
       ".busted",
       "package.json",
       "package-lock.json",
-      "factorio-test.json"
+      "factorio-test.json",
+      ".gitignore",
+      ".git/**",
+      "*.zip",
+      "screenshots.jpg"
     ]
   }
 }
