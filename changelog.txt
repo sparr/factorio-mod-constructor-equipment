@@ -1,5 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.4
+Date: 2026-09-14
   Features:
     - Equipment in a vehicle's equipment grid now works, building from the vehicle as you drive and spending the vehicle's own inventory
     - A vehicle's arms are mounted along the sides of its hull, shared between the two sides and spread evenly from corner to corner: one on the right, two one a side, four at the corners, and so on
