@@ -369,4 +369,106 @@ function world.ghosts(player)
   return player.surface.count_entities_filtered{ type = "entity-ghost" }
 end
 
+---Put a vehicle at the arena and sit the player in it.
+---
+---Tanks and spidertrons carry an equipment grid in the base game; a car has none, which
+---makes it the thing to test a driver with nothing to build from.
+---@param player LuaPlayer
+---@param name string? which vehicle, defaulting to a tank
+---@return LuaEntity
+function world.vehicle(player, name)
+  local vehicle = player.surface.create_entity{
+    name = name or "tank",
+    position = world.ORIGIN,
+    force = player.force,
+    direction = defines.direction.east,
+  }
+  assert(vehicle, "could not place a " .. (name or "tank"))
+  vehicle.insert{ name = "coal", count = 10 }
+  vehicle.set_driver(player)
+  return vehicle
+end
+
+---Fill a vehicle's own grid with equipment, the way world.equip fills an armour's.
+---@param vehicle LuaEntity
+---@param equipment string[] names to place in the grid
+---@param charged boolean whether to fill the buffers
+---@return LuaEquipmentGrid
+function world.fit(vehicle, equipment, charged)
+  local grid = vehicle.grid
+  assert(grid, vehicle.name .. " has no equipment grid")
+  for _, name in pairs(equipment) do
+    assert(grid.put{ name = name }, "the " .. vehicle.name .. " grid would not take " .. name)
+  end
+  for _, item in pairs(grid.equipment) do
+    item.energy = charged and item.max_energy or 0
+  end
+  return grid
+end
+
+--- The usual vehicle case: one arm's equipment and a charged battery in the vehicle's grid.
+---@param vehicle LuaEntity
+---@return LuaEquipmentGrid
+function world.fitted(vehicle)
+  return world.fit(vehicle, { "constructor-equipment", "battery-equipment" }, true)
+end
+
+---This mod's sticker on anything, character or vehicle.
+---@param entity LuaEntity?
+---@param name string? which sticker, defaulting to the first tier's flat slowdown
+---@return LuaEntity?
+function world.sticker_on(entity, name)
+  if not (entity and entity.valid) then return nil end
+  for _, sticker in pairs(entity.stickers or {}) do
+    if sticker.valid and sticker.name == (name or world.SLOWDOWN) then return sticker end
+  end
+  return nil
+end
+
+---Either half of the slowdown on anything, whichever is on it.
+---@param entity LuaEntity?
+---@return LuaEntity?
+function world.slowing_anything(entity)
+  for _, tier in ipairs(tiers.list) do
+    local set = tier.stickers
+    if set then
+      for _, which in ipairs{ set, set.legs } do
+        local on = world.sticker_on(entity, which.flat) or world.sticker_on(entity, which.slowing)
+        if on then return on end
+      end
+    end
+  end
+  return nil
+end
+
+---A surface with nothing on it, for measuring how fast something goes.
+---
+---Made rather than borrowed. A vehicle at speed covers hundreds of tiles in a run, and the
+---arena's own surface has trees, cliffs and water out there: a free run that hits a tree
+---stops dead and reads as a slowdown of everything. This one generates flat grass and
+---nothing else, so the only thing in the way is the measurement.
+---@return LuaSurface
+function world.flats()
+  local made = game.surfaces["ce-flats"]
+  if made then return made end
+  return game.create_surface("ce-flats", {
+    water = 0,
+    cliff_settings = { cliff_elevation_0 = 1000, richness = 0 },
+    autoplace_settings = {
+      entity = { treat_missing_as_default = false, settings = {} },
+      decorative = { treat_missing_as_default = false, settings = {} },
+      tile = { treat_missing_as_default = false, settings = { ["grass-1"] = {} } },
+    },
+    property_expression_names = { cliffiness = 0, moisture = 0.5, aux = 0.5, elevation = 10 },
+  })
+end
+
+---Get the player out of whatever they are riding, and take it away.
+---@param player LuaPlayer
+function world.unseat(player)
+  local vehicle = player.vehicle
+  if player.driving then player.driving = false end
+  if vehicle and vehicle.valid then vehicle.destroy() end
+end
+
 return world

@@ -14,12 +14,30 @@ local CHECK_PER_SECOND = 10
 --- a couple of that tier's reaches, from lib/tiers.lua -- so that an arm never stops
 --- halfway with an item in its hand.
 
---- Every set of slowdown stickers there is, one per tier that asks for the penalty. See
---- prototypes/sticker.lua for why they are stickers and not a number on the character, and
---- lib/tiers.lua for which tiers have a set at all.
+--- Every set of slowdown stickers there is: two per tier that asks for the penalty, one
+--- for whatever walks or rolls and one for whatever strides. See prototypes/sticker.lua for
+--- why they are stickers rather than a number on the character, and why the same penalty
+--- has to be written down twice, and lib/tiers.lua for which tiers have any at all.
+---
+--- All of them in one list, because the one thing slowing a wearer must do is take every
+--- other set off them: they are separate prototypes, so any two the engine keeps are
+--- multiplied together, and that includes the two kinds of the same tier's own.
 local SETS = {}
 for _, tier in ipairs(tiers.list) do
-  if tier.stickers then table.insert(SETS, tier.stickers) end
+  if tier.stickers then
+    table.insert(SETS, tier.stickers)
+    table.insert(SETS, tier.stickers.legs)
+  end
+end
+
+---Which of a tier's two sets of stickers a wearer takes: the legged one if it strides,
+---and the one that serves characters and wheels otherwise.
+---@param wearer LuaEntity
+---@param set table a tier's stickers, from lib/tiers.lua
+---@return table
+local function stickers_for(wearer, set)
+  if wearer.type == "spider-vehicle" and set.legs then return set.legs end
+  return set
 end
 
 
@@ -126,18 +144,74 @@ local function setup()
   end
 end
 
----One of this mod's stickers on a character, if it is there.
----@param character LuaEntity
+---What a player's arms hang off, and whose grid feeds them.
+---
+---A driver's own armour is out of the question: they are sat in a vehicle rather than
+---walking about in it, so arms strapped to their back would be swinging about inside the
+---cab. What a vehicle has instead is a grid of its own, and the equipment goes in it as
+---readily as into armour -- every grid in the base game takes the same category of
+---equipment -- so while somebody is driving, the vehicle is what wears the arms, pays for
+---them out of its own grid, and takes the slowdown they ask for.
+---
+---The driver's, and nobody else's. One grid worn by two people would put two sets of arms
+---on the same equipment, and a passenger would double what the vehicle can do by climbing
+---in. A passenger is in a vehicle all the same, so their armour is off too: they get
+---nothing until they take the wheel or get out.
+---@param player LuaPlayer
+---@return LuaEntity? the character, or the vehicle they are driving, or nothing at all
+local function wearer_of(player)
+  local vehicle = player.vehicle
+  if not vehicle then return player.character end
+  if not vehicle.valid then return nil end
+  local driver = vehicle.get_driver()
+  if not driver then return nil end
+  -- a driver who has a character is that character; one without is the player themselves
+  if driver == player.character or driver == player then return vehicle end
+  return nil
+end
+
+---The pockets an arm spends out of and hands things back to.
+---
+---Whoever is wearing the arms pays for them. On foot that is the player's own inventory,
+---which is where it has always come from. In a vehicle it is the vehicle's own hold: the
+---arms are the vehicle's, and a driver who loads the boot has said what the vehicle is to
+---build with. It also means a vehicle left to build does not quietly empty the pockets of
+---whoever happens to be sat in it.
+---
+---A vehicle with nowhere to put anything -- a locomotive, say, which has only a fuel box --
+---has no pockets at all, and an arm on one finds nothing to build with rather than reaching
+---into its driver's.
+---@param player LuaPlayer
+---@param wearer LuaEntity? the character or vehicle the arms are on
+---@return LuaInventory?
+local function pockets(player, wearer)
+  if wearer and wearer.valid and wearer.type ~= "character" then
+    return wearer.get_inventory(defines.inventory.car_trunk)
+        or wearer.get_inventory(defines.inventory.spider_trunk)
+        or wearer.get_output_inventory()
+  end
+  -- the separate quickbar went away in 0.17; what is left is the character's own
+  -- inventory, and the quickbar is a set of references into it
+  return player.get_inventory(defines.inventory.character_main)
+end
+
+---One of this mod's stickers on a wearer, if it is there.
+---@param wearer LuaEntity
 ---@param name string
 ---@return LuaEntity?
-local function sticker_on(character, name)
-  for _, sticker in pairs(character.stickers or {}) do
+local function sticker_on(wearer, name)
+  for _, sticker in pairs(wearer.stickers or {}) do
     if sticker.valid and sticker.name == name then return sticker end
   end
   return nil
 end
 
----Slow the character down, or keep them slowed if they already are.
+---Slow whoever is wearing the arms down, or keep them slowed if they already are.
+---
+---Character or vehicle, and the same fraction of speed either way. A sticker carries a
+---figure for a character and a figure for a vehicle and the engine uses whichever suits
+---what it lands on, and where one figure will not do for both kinds of vehicle there is a
+---second set to pick from: see stickers_for above and prototypes/sticker.lua.
 ---
 ---Slowing is in two parts. The first build of a run puts on the slowing sticker, which
 ---interpolates from full speed down to the tier's own figure over its lifetime, so the
@@ -155,25 +229,27 @@ end
 ---reason, plus one of their own: a character who started speeding up and then found
 ---something else to build would otherwise keep the tail of the ramp as well.
 ---@param player LuaPlayer
+---@param wearer LuaEntity? the character or vehicle the arms are on
 ---@param set table which tier's stickers, from lib/tiers.lua
-local function slow(player, set)
-  local character = player.character
+local function slow(player, wearer, set)
+  if not (wearer and wearer.valid) then return end
+  set = stickers_for(wearer, set)
   for _, other in ipairs(SETS) do
-    local recovery = sticker_on(character, other.recovery)
+    local recovery = sticker_on(wearer, other.recovery)
     if recovery then recovery.destroy() end
     if other ~= set then
-      local flat = sticker_on(character, other.flat)
+      local flat = sticker_on(wearer, other.flat)
       if flat then flat.destroy() end
-      local slowing = sticker_on(character, other.slowing)
+      local slowing = sticker_on(wearer, other.slowing)
       if slowing then slowing.destroy() end
     end
   end
 
-  local flat = sticker_on(character, set.flat)
+  local flat = sticker_on(wearer, set.flat)
   if flat then
     -- already at the bottom of the ramp; keep it there
-    character.surface.create_entity{
-      name = set.flat, position = character.position, target = character }
+    wearer.surface.create_entity{
+      name = set.flat, position = wearer.position, target = wearer }
     return
   end
 
@@ -182,7 +258,7 @@ local function slow(player, set)
   -- what this used to do -- the ramp ends at exactly the speed the flat sticker holds, so
   -- letting it expire on its own makes the handover invisible, where swapping out with a
   -- fifth of its life left was a step change in speed.
-  if sticker_on(character, set.slowing) then return end
+  if sticker_on(wearer, set.slowing) then return end
 
   -- Neither is on. Whether that means the ramp has not run yet or that it has been and
   -- gone is not something the character can be asked, because an expired sticker leaves
@@ -193,8 +269,8 @@ local function slow(player, set)
   -- one of those gaps was replaced by a second ramp rather than by the flat sticker. The
   -- character kept easing towards a speed they never reached.
   if storage.constructor_ramped[player.index] then
-    character.surface.create_entity{
-      name = set.flat, position = character.position, target = character }
+    wearer.surface.create_entity{
+      name = set.flat, position = wearer.position, target = wearer }
     return
   end
 
@@ -203,16 +279,16 @@ local function slow(player, set)
   -- scripts but not its prototypes, so a script that has just learnt about a new sticker
   -- runs against data that has never heard of it. That crashed a session.
   if not prototypes.entity[set.slowing] then
-    character.surface.create_entity{
-      name = set.flat, position = character.position, target = character }
+    wearer.surface.create_entity{
+      name = set.flat, position = wearer.position, target = wearer }
     return
   end
   storage.constructor_ramped[player.index] = true
-  character.surface.create_entity{
-    name = set.slowing, position = character.position, target = character }
+  wearer.surface.create_entity{
+    name = set.slowing, position = wearer.position, target = wearer }
 end
 
----Let a character who has run out of things to build come back up to speed.
+---Let a wearer who has run out of things to build come back up to speed.
 ---
 ---The slowdown is flat while there is work, because its own life keeps being restarted
 ---and the interpolation would restart with it -- which would read as stuttering rather
@@ -223,18 +299,19 @@ end
 ---Whichever set is on is the one that ramps off, so the character comes back up from the
 ---speed they were actually walking at rather than from some other tier's.
 ---@param player LuaPlayer
-local function recover(player)
-  local character = player.character
+---@param wearer LuaEntity? the character or vehicle the slowdown is on
+local function recover(player, wearer)
   storage.constructor_ramped[player.index] = nil
+  if not (wearer and wearer.valid) then return end
   for _, set in ipairs(SETS) do
-    local slowdown = sticker_on(character, set.flat) or sticker_on(character, set.slowing)
+    local slowdown = sticker_on(wearer, set.flat) or sticker_on(wearer, set.slowing)
     if slowdown then
       slowdown.destroy()
       if prototypes.entity[set.recovery] then
-        character.surface.create_entity{
+        wearer.surface.create_entity{
           name = set.recovery,
-          position = character.position,
-          target = character,
+          position = wearer.position,
+          target = wearer,
         }
       end
       return
@@ -242,7 +319,7 @@ local function recover(player)
   end
 end
 
----Which tiers of the equipment this character has in their armour, one entry per copy.
+---Which tiers of the equipment this wearer has in its grid, one entry per copy.
 ---
 ---One arm each, whatever mixture they are wearing, and each arm has its own tier's reach
 ---and its own tier's clock. Separate from being able to use them: the arms are strapped to
@@ -253,12 +330,12 @@ end
 ---rather than whichever the grid happened to list first. Deterministic either way, which
 ---matters: the order decides which arm is which slot, and an order that wandered would
 ---have the arms swapping places on someone's back.
----@param character LuaEntity?
+---@param wearer LuaEntity? a character or a vehicle, from wearer_of
 ---@return integer[] the level of each arm
-local function worn(character)
+local function worn(wearer)
   local found = {}
-  if not (character and character.valid) then return found end
-  local grid = character.grid
+  if not (wearer and wearer.valid) then return found end
+  local grid = wearer.grid
   if not (grid and grid.valid) then return found end
 
   local counted = {}
@@ -278,11 +355,11 @@ local function worn(character)
   return found
 end
 
----Whether this character has any of the equipment in their armour at all.
----@param character LuaEntity?
+---Whether this wearer has any of the equipment in its grid at all.
+---@param wearer LuaEntity?
 ---@return boolean
-local function wearing(character)
-  return #worn(character) > 0
+local function wearing(wearer)
+  return #worn(wearer) > 0
 end
 
 ---What one arm is, from what a record remembers of it.
@@ -404,15 +481,177 @@ local function charge(record, arm)
   end
 end
 
----Where an arm is mounted on a character, and so where its hand rests.
----@param character LuaEntity
+--- Which kinds of wearer are turned by an orientation rather than by a direction.
+---
+--- A character faces one of sixteen ways and says so in entity.direction. A vehicle turns
+--- smoothly and says so in entity.orientation, as a fraction of a turn, and asking one for
+--- the other raises rather than returning nothing: reading direction off a car gives the
+--- last thing it was built facing and reading orientation off a character is an error. So
+--- which to ask is decided by type.
+local ORIENTED = {
+  ["car"] = true,
+  ["spider-vehicle"] = true,
+  ["locomotive"] = true,
+  ["cargo-wagon"] = true,
+  ["fluid-wagon"] = true,
+  ["artillery-wagon"] = true,
+}
+
+---Which way a wearer is facing, on the sixteen point scale lib/pack.lua works in.
+---
+---Fractional for a vehicle, which is the point of asking it this way: a car halfway between
+---two of the sixteen has its arms halfway round with it rather than snapping between them.
+---@param wearer LuaEntity
+---@return number
+local function facing_of(wearer)
+  if ORIENTED[wearer.type] then return wearer.orientation * pack.DIRECTIONS end
+  return wearer.direction
+end
+
+---How wide and how long a wearer is, in tiles either side of its middle.
+---
+---The selection box rather than the collision box: what the arms are being arranged around
+---is the hull a player sees, and a vehicle's selection box is drawn round exactly that.
+---@param wearer LuaEntity
+---@return number across half its width
+---@return number along half its length
+local function hull_of(wearer)
+  local box = wearer.prototype.selection_box
+  return (box.right_bottom.x - box.left_top.x) / 2,
+         (box.right_bottom.y - box.left_top.y) / 2
+end
+
+--- How far the near side of a hull is drawn above the ground it stands on, as a share of
+--- the hull's own half width.
+---
+--- Measured on a tank at twice zoom, which is the only way to get at it: nothing in the
+--- prototype says how tall a body is drawn. Its sprite stops 0.78 tiles south of its middle
+--- where the selection box says 0.9, and the treads run from there up to about 0.5, so the
+--- side of the hull an arm should be bolted to is four tenths of a tile above where the box
+--- puts it. Four tenths of a tank's 0.9 is the fraction below, and a smaller vehicle gets a
+--- smaller lift out of it, which is the right way for a guess to be wrong.
+local TREADS = 0.45
+
+---Where an arm stands on the ground, which is where its reach is measured from.
+---
+---Two quite different answers. A character wears their arms on their back, in a knot at the
+---shoulders. A vehicle carries them along the sides of its hull, because the middle of a
+---vehicle is underneath it: an arm bolted there is drawn over by the hull and the player
+---sees a claw coming out of nothing. See lib/pack.lua for both.
+---@param wearer LuaEntity a character or a vehicle
 ---@param slot integer? which arm, from 1
 ---@param count integer? how many arms there are
 ---@return {x: number, y: number}
-local function mounting(character, slot, count)
-  local at = character.position
-  local offset = pack.offset(character.direction, slot, count)
+local function station_on(wearer, slot, count)
+  local at = wearer.position
+  local offset
+  if wearer.type == "character" then
+    offset = pack.offset(facing_of(wearer), slot, count)
+  else
+    local across, along = hull_of(wearer)
+    offset = pack.mount(facing_of(wearer), slot, count, across, along)
+  end
   return { x = at.x + offset.x, y = at.y + offset.y }
+end
+
+---How far an arm is carried up off the ground to be drawn on the body it is bolted to.
+---
+---Perspective rather than distance. The world is flat and the map has no up, so a sprite
+---drawn above its own position is drawn a little to the north of it, and an arm put down
+---where the geometry says belongs at the hull's ground line rather than on the body a player
+---can see.
+---
+---Nothing for a character, who is drawn where their pack is.
+---@param wearer LuaEntity
+---@param at {x: number, y: number} where the arm stands, from station_on
+---@return number how far north to draw it, in tiles
+local function lift_of(wearer, at)
+  if wearer.type == "character" then return 0 end
+
+  local body = wearer.prototype.height
+  if body then
+    -- A body that rides above its own position says so. A spider vehicle's torso is carried
+    -- a tile and a half up its legs, and every arm goes up with it: the torso is all there
+    -- is to bolt one to, and nothing stands in front of it to hide an arm behind.
+    return body
+  end
+
+  -- A hull is a box, and the sprite draws the side of it facing the camera above the ground
+  -- line. An arm out on that side is lifted to meet it; one round the far side stays where
+  -- it is, because the hull is drawn over it either way and lifting it would poke it out
+  -- over the roof.
+  local across = hull_of(wearer)
+  local offset = { x = at.x - wearer.position.x, y = at.y - wearer.position.y }
+  return TREADS * across * pack.nearness(offset)
+end
+
+---Where an arm is drawn, which is where it stands carried up onto the body.
+---@param wearer LuaEntity a character or a vehicle
+---@param slot integer? which arm, from 1
+---@param count integer? how many arms there are
+---@return {x: number, y: number} where the arm goes
+---@return number how far up that is from where it stands
+local function mounting(wearer, slot, count)
+  local at = station_on(wearer, slot, count)
+  local lift = lift_of(wearer, at)
+  return { x = at.x, y = at.y - lift }, lift
+end
+
+---Where a claw is aimed for a ghost: the ghost, carried up into the frame the arm swings in.
+---
+---This is what keeps a lifted arm honest. The engine swings a hand out from wherever the
+---inserter stands, so an arm drawn up on a body and aimed at a ghost on the ground has
+---further to stretch southward than northward -- a spidertron, whose torso rides a tile and
+---a half up, was half again as slow to build behind itself as in front. Lifting the target
+---by the same amount it lifted the arm makes the whole swing a copy of the one it would have
+---made at ground level: same distance, same time, whichever way it faces.
+---
+---What it costs is the claw stopping a little short of the ghost, up where the arm is. That
+---is not a miss. A claw holding something over a tile is drawn exactly there, because this
+---game draws height as distance to the north, and the item lands on the ghost because the
+---box that catches it went up with the claw. The ghost is revived where it stands.
+---@param job table
+---@param record table the arm, which remembers how far up it is drawn
+---@return {x: number, y: number}
+local function aimed_at(job, record)
+  local lift = record.lift or 0
+  if lift == 0 then return job.target end
+  return { x = job.target.x, y = job.target.y - lift }
+end
+
+---Where an arm reaches from.
+---
+---Its own base on a vehicle, and its owner's own position on a character. A character wears
+---every arm in one knot at their shoulders, a hand's breadth from their middle, and the
+---reach a tier promises has always been the reach from the person wearing it. A hull is
+---another matter: a tank is nearly three tiles long, so an arm bolted to the back of one
+---and measuring from the tank's middle would be asked to stretch a tile and a half further
+---than its tier sells, and would take half again as long doing it. It reaches from where it
+---is bolted, so what a tier promises is what every arm wearing it can do.
+---@param wearer LuaEntity
+---@param slot integer? which arm, from 1
+---@param count integer? how many arms there are
+---@return {x: number, y: number}
+local function reaching_from(wearer, slot, count)
+  if wearer.type == "character" then return wearer.position end
+  -- where the arm stands rather than where it is drawn: the lift that puts it on the body
+  -- is a trick of the camera, and a claw that reached a tile and a half less far to the
+  -- south of a spidertron because its torso rides high would be the trick coming true
+  return station_on(wearer, slot, count)
+end
+
+---How far from a wearer's middle an arm's base can sit.
+---
+---Nought for a character, whose arms are near enough their middle to ignore. A corner of a
+---hull for a vehicle, which is what the ghost search has to be widened by: an arm out there
+---reaches its own range from its own base, which can be a corner's worth further out than
+---anything measured from the middle would find.
+---@param wearer LuaEntity
+---@return number
+local function spread_of(wearer)
+  if wearer.type == "character" then return 0 end
+  local across, along = hull_of(wearer)
+  return math.sqrt(across * across + along * along)
 end
 
 ---Whether a ghost could actually be built where it stands, right now.
@@ -456,15 +695,17 @@ local function standing_in(ghost, at)
      and at.y >= middle.y - down and at.y <= middle.y + down
 end
 
----Every ghost near enough to a player that some arm of theirs might reach it.
+---Every ghost near enough to a wearer that some arm of theirs might reach it.
 ---
 ---Searched once and handed to every arm, rather than each arm searching for itself. The
 ---search is the expensive part of a tick and the answer is the same for all of them: only
 ---the range each arm judges it by differs, and that is a comparison rather than a search.
----@param player LuaPlayer
+---Widened by how far out an arm's base can sit, because each arm judges what it found
+---from its own base rather than from the middle of what it is bolted to.
+---@param wearer LuaEntity the character or vehicle the arms are on
 ---@param range number the longest reach any of their arms has
 ---@return LuaEntity[]
-local function ghosts_near(player, range)
+local function ghosts_near(wearer, range)
   -- A radius, and the same radius the reach is judged against below. Two things went wrong
   -- with the square this replaces. A square of side twice the range reaches 1.41 times as
   -- far at its corners, and find_entities_filtered returns anything whose own box merely
@@ -472,9 +713,9 @@ local function ghosts_near(player, range)
   -- a candidate. It was then abandoned as out of range on the very next tick, and found
   -- again the tick after: the arm swung out and back for ever, and because a swing counted
   -- as under way, no ghost that was actually in reach got a turn.
-  return player.surface.find_entities_filtered{
-    position = player.position,
-    radius = range,
+  return wearer.surface.find_entities_filtered{
+    position = wearer.position,
+    radius = range + spread_of(wearer),
     type = "entity-ghost"
   }
 end
@@ -485,22 +726,20 @@ end
 ---reserve to turn to the next ghost. Setting off in the first place does, which is
 ---job_for below.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arms are on
+---@param from {x: number, y: number} where this arm reaches from, from reaching_from
 ---@param nearby LuaEntity[] from ghosts_near
 ---@param claimed table<integer, boolean>? ghosts another arm is already reaching for
 ---@param range number how far this arm can reach
 ---@return LuaEntity? ghost
 ---@return string? item
 ---@return integer? count
-local function choose(player, nearby, claimed, range)
-  local character = player.character
-
-  -- the separate quickbar went away in 0.17; what is left is the character's own
-  -- inventory, and the quickbar is a set of references into it
-  local inventory = player.get_inventory(defines.inventory.character_main)
+local function choose(player, wearer, from, nearby, claimed, range)
+  local inventory = pockets(player, wearer)
   if not inventory then return nil end
   local function carried(name) return inventory.get_item_count(name) end
 
-  local standing = character.position
+  local standing = wearer.position
   for _, ghost in pairs(nearby) do
     if ghost.valid then
       -- 2.0 turned items_to_place_this into a list of { name, count } rather than a table
@@ -519,7 +758,7 @@ local function choose(player, nearby, claimed, range)
       -- space the other had already built in, and coming home having wasted a swing.
       if item and not (claimed and claimed[ghost.unit_number])
           and not standing_in(ghost, standing)
-          and not reach.out_of_range(standing, ghost.position, range)
+          and not reach.out_of_range(from, ghost.position, range)
           and buildable(ghost) then
         return ghost, item, needed
       end
@@ -562,21 +801,22 @@ end
 ---carrying: queueing more than there are ghosts for only means going home early.
 ---@param nearby LuaEntity[]
 ---@param claimed table<integer, boolean>?
----@param standing {x: number, y: number}
+---@param standing {x: number, y: number} where the wearer is, for what it is standing on
+---@param from {x: number, y: number} where the arm reaches from
 ---@param range number
 ---@param item string
 ---@param count integer how many the ghost being reached for takes
 ---@param carried integer how many the character has
 ---@param capacity integer how many loads the claw holds
 ---@return integer
-local function loads_for(nearby, claimed, standing, range, item, count, carried, capacity)
+local function loads_for(nearby, claimed, standing, from, range, item, count, carried, capacity)
   if capacity <= 1 then return 1 end
   local wanted = 1
   for _, ghost in pairs(nearby) do
     if wanted >= capacity then break end
     if ghost.valid and not (claimed and claimed[ghost.unit_number])
         and not standing_in(ghost, standing)
-        and not reach.out_of_range(standing, ghost.position, range) then
+        and not reach.out_of_range(from, ghost.position, range) then
       local other, needed =
         build.placing_item(ghost.ghost_prototype.items_to_place_this, function() return count end)
       if other == item and needed == count then wanted = wanted + 1 end
@@ -587,6 +827,8 @@ end
 
 ---Pick something for an arm to set off after, which it may only do on a full buffer.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arms are on
+---@param from {x: number, y: number} where this arm reaches from
 ---@param nearby LuaEntity[] from ghosts_near
 ---@param claimed table<integer, boolean>? ghosts another arm is already reaching for
 ---@param record table the arm asking, which knows which equipment feeds it
@@ -598,7 +840,7 @@ end
 ---@return string? item
 ---@return integer? count
 ---@return boolean waiting whether there is work but not yet the charge to do it
-local function job_for(player, nearby, claimed, record, range)
+local function job_for(player, wearer, from, nearby, claimed, record, range)
   if not ready(record) then
     -- Still worth knowing whether there is anything to do. Setting off wants a full
     -- buffer, and a delivery spends some of it, so an arm that has just finished one is
@@ -608,10 +850,10 @@ local function job_for(player, nearby, claimed, record, range)
     -- speed, and a fresh slowdown began a tick later, so they oscillated instead of
     -- settling. The run ends when the work runs out, not when an arm is a tick short of
     -- being able to start the next trip.
-    local ghost = choose(player, nearby, claimed, range)
+    local ghost = choose(player, wearer, from, nearby, claimed, range)
     return nil, nil, nil, ghost ~= nil
   end
-  local ghost, item, count = choose(player, nearby, claimed, range)
+  local ghost, item, count = choose(player, wearer, from, nearby, claimed, range)
   return ghost, item, count, false
 end
 
@@ -633,22 +875,22 @@ end
 
 ---The inserter for one arm, made if it is not there yet.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle it is mounted on
 ---@param record table
 ---@return LuaEntity?
-local function arm_of(player, record)
-  local character = player.character
+local function arm_of(player, wearer, record)
   local arm = record.entity
   if not (arm and arm.valid) then
-    arm = character.surface.create_entity{
+    arm = wearer.surface.create_entity{
       name = tier_of(record).inserter,
-      position = character.position,
+      position = wearer.position,
       force = player.force,
     }
     -- Filled the moment it exists, out of its own equipment, so that it never spends a
     -- tick on empty. Out of the equipment, not out of nothing: handing it a free bufferful
     -- here while refunding the remainder when it is put away would have made an arm coming
     -- and going a way of generating power.
-    if arm and character.grid then
+    if arm and wearer.grid then
       charge(record, arm)
     end
     record.entity = arm
@@ -809,9 +1051,11 @@ local function put_away(player, record)
   local arm = record.entity
   catcher_away(record)
   if arm and arm.valid then
-    -- whatever it was carrying was paid for out of the pockets, so it goes back in them
-    -- rather than being destroyed with the arm
-    local inventory = player.get_inventory(defines.inventory.character_main)
+    -- Whatever it was carrying was paid for out of the pockets, so it goes back in them
+    -- rather than being destroyed with the arm. The pockets it was mustered against, for
+    -- the same reason the charge goes back to the grid it was mustered against: an arm put
+    -- away as its owner climbs out of a vehicle is holding the vehicle's belt, not theirs.
+    local inventory = pockets(player, record.wearer or player.character)
     local job = record.job
     if job and (job.escrow or 0) > 0 and job.item and inventory then
       inventory.insert{ name = job.item, count = job.escrow }
@@ -825,9 +1069,13 @@ local function put_away(player, record)
     end
     -- whatever it was holding in its buffer goes back where it came from, so that taking
     -- the arm out and putting it away again is not itself a way of burning charge
-    local character = player.character
-    if character and character.valid and character.grid then
-      refund(character.grid, record.piece, arm.energy)
+    --
+    -- The grid the arm was mustered against, rather than whatever its owner is wearing by
+    -- now. Getting into a vehicle changes which grid that is, and the arms of the one just
+    -- left are put away on that very tick: refunding into the new grid would take charge
+    -- out of the armour and hand it to the car.
+    if record.grid and record.grid.valid then
+      refund(record.grid, record.piece, arm.energy)
     end
     stow(tier_of(record), arm.surface, arm.position)
     arm.destroy()
@@ -836,6 +1084,7 @@ local function put_away(player, record)
   record.job = nil
   record.busy = nil
   record.run = nil
+  record.lift = nil
 end
 
 ---Put every one of a player's arms away and forget they had any.
@@ -853,11 +1102,18 @@ end
 ---has is a different arm: it is put away, and a new one of the right sort takes its place.
 ---Taking a copy out of the grid therefore takes the last arm of that tier away rather than
 ---a particular one, which is not a question worth answering.
+---
+---An arm belongs to the grid it was mustered against as much as to its tier: the same
+---first tier equipment in a car is not the arm that was on its driver's back a tick ago,
+---and carrying one over would have the armour's charge feeding the vehicle's arm. So a
+---change of grid retires an arm exactly as a change of tier does.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle wearing the equipment
 ---@return table[]
-local function muster(player)
+local function muster(player, wearer)
   local list = arms(player)
-  local want = worn(player.character)
+  local want = worn(wearer)
+  local grid = wearer.grid
 
   while #list > #want do
     put_away(player, list[#list])
@@ -867,7 +1123,7 @@ local function muster(player)
     local record = list[slot]
     if not record then
       list[slot] = { level = want[slot] }
-    elseif record.level ~= want[slot] then
+    elseif record.level ~= want[slot] or record.grid ~= grid then
       put_away(player, record)
       list[slot] = { level = want[slot] }
     end
@@ -877,31 +1133,34 @@ local function muster(player)
   -- paired off: the first arm of a tier to the first piece of that tier, and so on. Which
   -- piece is which does not matter, only that two arms never feed from the same one.
   local taken = {}
-  local grid = player.character.grid
   for _, record in ipairs(list) do
     local name = tier_of(record).name
     taken[name] = (taken[name] or 0) + 1
     record.piece = pieces_of(grid, name)[taken[name]]
+    -- remembered so that putting the arm away can hand its charge and its load back where
+    -- they were drawn from, whoever its owner is wearing by then
+    record.grid = grid
+    record.wearer = wearer
   end
   return list
 end
 
----Keep the inserter on the character and pointed at whatever it is reaching for.
+---Keep the inserter on its wearer and pointed at whatever it is reaching for.
 ---
----Both ends are set every tick. The pickup end is the character, so the hand comes home to
+---Both ends are set every tick. The pickup end is the wearer, so the hand comes home to
 ---them rather than to wherever they were standing when the swing began. The drop end has to
 ---be re-aimed as well, because an inserter's drop position travels with the inserter: move
 ---the entity and the target moves with it, so a fixed vector would drift off the ghost as
----the character walked.
+---the character walked -- or, in a vehicle, as they drove.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arm is mounted on
 ---@param record table the arm
 ---@param slot integer which arm it is
 ---@param count integer how many arms there are
 ---@param job table? what it is reaching for, if anything
 ---@return LuaEntity? the inserter
-local function aim(player, record, slot, count, job)
-  local character = player.character
-  local arm = arm_of(player, record)
+local function aim(player, wearer, record, slot, count, job)
+  local arm = arm_of(player, wearer, record)
   if not (arm and arm.valid) then return nil end
 
   -- Fed only while it has something to do. An arm idling on its owner's back still draws
@@ -910,13 +1169,16 @@ local function aim(player, record, slot, count, job)
   -- wants a full buffer, meant waiting the better part of a second between every reach.
   -- Idle, it runs its own buffer down instead, and is filled again when work arrives.
   if job then charge(record, arm) end
-  local mount = mounting(character, slot, count)
+  local mount, lift = mounting(wearer, slot, count)
   arm.teleport(mount)
+  -- Remembered for as long as the arm is out, because everything aimed at from here is
+  -- aimed in the frame the arm was drawn in, and a vehicle that turns moves that frame.
+  record.lift = lift
 
   -- Where the claw rests: a little way out from the mounting point, along the bearing it
   -- is working on, so that coming home is a retraction rather than a swing. With nothing
   -- to work on it rests above the character, which is where a folded arm looks right.
-  local towards = job and job.target
+  local towards = job and aimed_at(job, record)
   local bearing = { x = 0, y = -1 }
   if towards then
     local dx, dy = towards.x - mount.x, towards.y - mount.y
@@ -929,7 +1191,8 @@ local function aim(player, record, slot, count, job)
 
   if job then
     if job.going == "out" then
-      arm.drop_position = { job.target.x, job.target.y }
+      local target = aimed_at(job, record)
+      arm.drop_position = { target.x, target.y }
     elseif arm.held_stack.valid_for_read then
       -- Still carrying something on the way back, which happens when a reach is given up
       -- on: an empty hand comes home by itself, but a full one goes wherever it was told
@@ -978,12 +1241,13 @@ end
 ---will not fit, the player has said which they would rather have -- it on the ground, or
 ---kept in the claw with the arm holding station until there is room.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arm is mounted on
 ---@param record table
 ---@return boolean whether the claw is empty now
-local function give_back(player, record)
+local function give_back(player, wearer, record)
   local arm = record.entity
   local job = record.job
-  local inventory = player.get_inventory(defines.inventory.character_main)
+  local inventory = pockets(player, wearer)
 
   -- What was set aside for this round but never went into the claw goes back first. It
   -- was taken from the pockets when the arm set off and nothing was built with it, so it
@@ -993,10 +1257,9 @@ local function give_back(player, record)
     local returned = inventory.insert{ name = job.item, count = job.escrow }
     job.escrow = job.escrow - returned
     if job.escrow > 0 and spills(player) then
-      local character = player.character
-      if character and character.valid then
-        character.surface.spill_item_stack{
-          position = character.position,
+      if wearer and wearer.valid then
+        wearer.surface.spill_item_stack{
+          position = wearer.position,
           stack = { name = job.item, count = job.escrow },
           enable_looted = true,
           force = player.force,
@@ -1016,10 +1279,9 @@ local function give_back(player, record)
   end
   if took > 0 then arm.held_stack.count = count - took end
   if spills(player) then
-    local character = player.character
-    if character and character.valid then
-      character.surface.spill_item_stack{
-        position = character.position,
+    if wearer and wearer.valid then
+      wearer.surface.spill_item_stack{
+        position = wearer.position,
         stack = { name = name, count = count - took },
         enable_looted = true,
         force = player.force,
@@ -1053,10 +1315,12 @@ end
 
 ---Put the thing down: revive the ghost, pay for it, and let the arm start coming home.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arm is mounted on
+---@param from {x: number, y: number} where this arm reaches from
 ---@param record table the arm making the delivery
 ---@param job table
 ---@param claimed table<integer, boolean>? what the other arms are reaching for
-local function deliver(player, record, job, claimed)
+local function deliver(player, wearer, from, record, job, claimed)
   local ghost = job.ghost
   local box = record.catcher
 
@@ -1116,11 +1380,12 @@ local function deliver(player, record, job, claimed)
   if job.left > 0 and arm and arm.valid
       and arm.held_stack.valid_for_read and arm.held_stack.count >= job.count
       and afford_another(record, arm)
-      and redirect(player, record, job, claimed, tier_of(record).range) then
-    arm.drop_position = { job.target.x, job.target.y }
+      and redirect(player, wearer, from, record, job, claimed, tier_of(record).range) then
+    local target = aimed_at(job, record)
+    arm.drop_position = { target.x, target.y }
     -- shut to begin with: the claw is still at the ghost it has just built, and advance
     -- opens the box once it is near the new one
-    catcher_at(record, arm.surface, job.target, false)
+    catcher_at(record, arm.surface, target, false)
     return
   end
 
@@ -1135,13 +1400,15 @@ end
 ---identical item and coming back out is a wasted trip. Anything that needs something else
 ---does mean a trip home, because the hand can only hold one thing.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arm is mounted on
+---@param from {x: number, y: number} where this arm reaches from
 ---@param job table
 ---@param claimed table<integer, boolean>? ghosts the other arms are reaching for
 ---@param range number how far this arm reaches
 ---@return boolean whether it found somewhere else to go
-function redirect(player, record, job, claimed, range)
+function redirect(player, wearer, from, record, job, claimed, range)
   local ghost, item, count =
-    choose(player, ghosts_near(player, range), claimed, range)
+    choose(player, wearer, from, ghosts_near(wearer, range), claimed, range)
   if not ghost then return false end
   if item ~= job.item then return false end
 
@@ -1156,7 +1423,7 @@ function redirect(player, record, job, claimed, range)
       and arm.held_stack.count or 0
     if held < count then return false end
     if (job.escrow or 0) > 0 then
-      local inventory = player.get_inventory(defines.inventory.character_main)
+      local inventory = pockets(player, wearer)
       if inventory then
         local returned = inventory.insert{ name = job.item, count = job.escrow }
         job.escrow = job.escrow - returned
@@ -1195,18 +1462,23 @@ end
 ---at what it was aimed at, which is the moment of delivery, and the hand coming back to
 ---the character is the end of the job.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arm is mounted on
 ---@param record table the arm
 ---@param slot integer which arm it is
 ---@param count integer how many arms there are
 ---@param claimed table<integer, boolean> what the other arms are reaching for
-local function advance(player, record, slot, count, claimed)
+local function advance(player, wearer, record, slot, count, claimed)
   local job = record.job
-  local character = player.character
 
-  if not (character and character.valid) then
+  if not (wearer and wearer.valid) then
     record.job = nil
     return
   end
+
+  -- Where this arm's own base is, which is what its reach is measured from. Asked again
+  -- every tick rather than remembered: the vehicle it is bolted to turns, and an arm on the
+  -- back of one that has turned round is somewhere else entirely.
+  local from = reaching_from(wearer, slot, count)
 
   if job then
     record.busy = game.tick
@@ -1221,14 +1493,14 @@ local function advance(player, record, slot, count, claimed)
     -- Nothing to do. The arm stays out for a moment in case another ghost turns up, and is
     -- put away if none does, rather than being worn while the character wanders about.
     if record.busy and game.tick - record.busy <= IDLE_TICKS then
-      aim(player, record, slot, count, nil)
+      aim(player, wearer, record, slot, count, nil)
     else
       put_away(player, record)
     end
     return
   end
 
-  local arm = aim(player, record, slot, count, job)
+  local arm = aim(player, wearer, record, slot, count, job)
   if not arm then return end
 
   -- How far this hand went since the last look. The window for arriving is measured from
@@ -1244,32 +1516,33 @@ local function advance(player, record, slot, count, claimed)
     -- one that fills it. Left open the whole way out, any inserter of the player's own
     -- pointing at that tile could put something in it, and the mod would take a stranger's
     -- item for its own delivery.
-    catcher_at(record, arm.surface, job.target,
-      reach.distance(hand, job.target) <= within(tier_of(record), OPEN, moved))
+    local target = aimed_at(job, record)
+    catcher_at(record, arm.surface, target,
+      reach.distance(hand, target) <= within(tier_of(record), OPEN, moved))
 
-    -- the character can walk off mid swing, and an arm that stretched to follow would be
-    -- no kind of inserter
+    -- the character can walk off mid swing, or the vehicle drive off, and an arm that
+    -- stretched to follow would be no kind of inserter
     if not (job.ghost and job.ghost.valid)
-        or standing_in(job.ghost, character.position)
-        or reach.out_of_range(character.position, job.ghost.position, tier_of(record).range)
+        or standing_in(job.ghost, wearer.position)
+        or reach.out_of_range(from, job.ghost.position, tier_of(record).range)
         or game.tick - (job.started or game.tick) > SWING_LIMIT then
       local tier = tier_of(record)
-      if not redirect(player, record, job, claimed, tier.range) then
+      if not redirect(player, wearer, from, record, job, claimed, tier.range) then
         abandon(record, job)
       end
     else
       -- deliver() does nothing until the box has been given something, so there is no
       -- arrival to measure and nothing to step over: it can simply be asked every tick
-      deliver(player, record, job, claimed)
+      deliver(player, wearer, from, record, job, claimed)
     end
-  elseif reach.distance(arm.held_stack_position, record.rest or mounting(character, slot, count))
+  elseif reach.distance(arm.held_stack_position, record.rest or mounting(wearer, slot, count))
         < within(tier_of(record), HOME, moved)
       or game.tick - (job.started or game.tick) > SWING_LIMIT then
     -- Home is the mounting point, which is not where the character's feet are. Anything
     -- still in the claw was paid for on the way out, so it is handed back rather than
     -- destroyed. If it will not fit and the player would rather not have it on the ground,
     -- the arm holds station with it until there is room.
-    if give_back(player, record) then
+    if give_back(player, wearer, record) then
       record.job = nil
       catcher_away(record)
     end
@@ -1289,20 +1562,22 @@ end
 ---One search serves every arm. It is the expensive part, the answer is the same for all of
 ---them, and only the range each judges it by differs.
 ---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arms are on
 ---@param list table[]
 ---@param tick integer
 ---@return boolean whether any arm has anything to do
-local function assign(player, list, tick)
+local function assign(player, wearer, list, tick)
   local claimed = claims(list)
-  local nearby = ghosts_near(player, furthest(list))
+  local nearby = ghosts_near(wearer, furthest(list))
   local working = false
   for slot, record in ipairs(list) do
     if record.job then
       working = true
     else
       local tier = tier_of(record)
+      local from = reaching_from(wearer, slot, #list)
       local ghost, item, count, waiting =
-        job_for(player, nearby, claimed, record, tier.range)
+        job_for(player, wearer, from, nearby, claimed, record, tier.range)
       if waiting then
         -- work in reach, buffer a tick short of full: the run is still on
         working = true
@@ -1324,11 +1599,11 @@ local function assign(player, list, tick)
         -- air. Taking it from the pockets now means whatever happens to it afterwards,
         -- nothing is created: it is either delivered, brought back, or lost by the player
         -- who owned it. The last tier fills its claw with as many as there is work for.
-        local inventory = player.get_inventory(defines.inventory.character_main)
-        record.job.left = loads_for(nearby, claimed, player.character.position, tier.range,
+        local inventory = pockets(player, wearer)
+        record.job.left = loads_for(nearby, claimed, wearer.position, from, tier.range,
           item, count, inventory and inventory.get_item_count(item) or count,
           trips_for(player.force, tier))
-        local arm = aim(player, record, slot, #list, record.job)
+        local arm = aim(player, wearer, record, slot, #list, record.job)
         if arm then
           -- Everything the round will need comes out of the pockets now, whether or not
           -- the claw can hold it. A claw holds what its inserter holds -- one thing for a
@@ -1364,9 +1639,9 @@ local function on_tick(event)
   stowing()
 
   for _, player in pairs(game.players) do
-    local character = player.character
-    if character and character.valid and wearing(character) then
-      local list = muster(player)
+    local wearer = wearer_of(player)
+    if wearer and wearer.valid and wearing(wearer) then
+      local list = muster(player, wearer)
       local claimed = claims(list)
       -- Slowed for as long as an arm is working, not only at the moment one arrives.
       -- Applying it on delivery alone left a gap: the ramp ran out partway through the
@@ -1378,7 +1653,7 @@ local function on_tick(event)
       -- worn alongside an old one it costs whatever the old one costs.
       local worst, running = nil, false
       for slot, record in ipairs(list) do
-        advance(player, record, slot, #list, claimed)
+        advance(player, wearer, record, slot, #list, claimed)
         if record.run then
           running = true
           local set = tier_of(record).stickers
@@ -1386,17 +1661,18 @@ local function on_tick(event)
         end
       end
       if worst then
-        slow(player, worst)
+        slow(player, wearer, worst)
       elseif running then
         -- arms are in a run and none of them asks for any penalty, so give the speed back
         -- rather than waiting for the work to run out
-        recover(player)
+        recover(player, wearer)
       end
       -- An arm in no run at all is deliberately left alone here rather than recovered.
       -- Whether there is anything left to build is asked on the check tick, where it can
       -- be answered properly, and that is what ends a run.
     else
-      -- taken off, or the character is gone: no arms and no half finished swings
+      -- taken off, the character is gone, or they are riding in a vehicle as a passenger:
+      -- no arms and no half finished swings
       dismiss(player)
     end
   end
@@ -1404,8 +1680,8 @@ local function on_tick(event)
   if event.tick % CHECK_INTERVAL ~= CHECK_TICK then return end
 
   for _, player in pairs(game.players) do
-    local character = player.character
-    if character and character.valid then
+    local wearer = wearer_of(player)
+    if wearer and wearer.valid then
       -- Nothing left in reach is when the character starts getting their speed back, not
       -- merely no arm swinging this instant: the search runs ten times a second and a claw
       -- can be home for a few ticks before the next one, and recovering in those gaps had
@@ -1415,18 +1691,40 @@ local function on_tick(event)
       -- No arm working after that means no arm could find anything, because an arm with
       -- nothing to do takes work the instant there is any: without a clock there is no
       -- such thing as free but not yet due. So this needs no second search of its own.
-      if not assign(player, list, event.tick) then
+      if not assign(player, wearer, list, event.tick) then
         -- the run is over, which is what lets the slowdown ramp off
         for _, record in pairs(list) do record.run = nil end
-        recover(player)
+        recover(player, wearer)
       end
     end
   end
 end
 
+---Getting into or out of a vehicle changes which grid the arms come out of.
+---
+---The next tick would notice on its own, because an arm is retired when the grid it was
+---mustered against is no longer the one being worn. This is here so that the handover
+---happens on the tick it is asked for rather than the one after: a claw halfway out when
+---its owner climbs into a car would otherwise spend a tick reaching from the car with the
+---armour's charge behind it.
+---
+---The slowdown is handed back on both sides, because either of them can be carrying one. A
+---driver who gets out while the arms are working leaves the vehicle slowed for as long as
+---the sticker lasts, and a character who climbs in mid run would be walking slowly when
+---they got out again.
+---@param event EventData.on_player_driving_changed_state
+local function on_driving_changed(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+  dismiss(player)
+  recover(player, event.entity)
+  recover(player, player.character)
+end
+
 script.on_init(setup)
 script.on_configuration_changed(setup)
 script.on_event(defines.events.on_tick, on_tick)
+script.on_event(defines.events.on_player_driving_changed_state, on_driving_changed)
 
 --- ce-tests is never published, so this can never fire on a player's machine -- which
 --- matters, because info.json keeps test/ out of the package.
@@ -1441,6 +1739,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.several",
     "test.ft.equipping",
     "test.ft.tiers",
+    "test.ft.vehicles",
   }, {
     load_luassert = true,
     game_speed = 100,

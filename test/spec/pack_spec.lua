@@ -292,3 +292,249 @@ describe("mounting more than one arm", function()
     end
   end)
 end)
+
+--- A hull two tiles wide and three long, near enough a tank, and deliberately not square:
+--- a square one would hide every mistake that swaps the two axes.
+local ACROSS, ALONG = 1, 1.5
+
+--- Where a station is, said in the words the arrangement is written in.
+local function at(point, x, y)
+  return close(point.x, x * ACROSS) and close(point.y, y * ALONG)
+end
+
+local function station(slot, count)
+  return pack.hull(slot, count, ACROSS, ALONG)
+end
+
+describe("where the arms sit on a hull", function()
+  ---Every arm on a hull, as places in the words the arrangement is written in.
+  local function places(count)
+    local found = {}
+    for slot = 1, count do
+      local place = station(slot, count)
+      table.insert(found, ("%.3f,%.3f"):format(place.x / ACROSS, place.y / ALONG))
+    end
+    return found
+  end
+
+  ---Whether a set of arms is exactly these places, in any order.
+  local function holds(count, wanted)
+    local seen = {}
+    for _, where in ipairs(places(count)) do seen[where] = (seen[where] or 0) + 1 end
+    for _, where in ipairs(wanted) do
+      if not seen[where] then return false, where .. " is not among " ..
+        table.concat(places(count), " ") end
+      seen[where] = seen[where] - 1
+      if seen[where] == 0 then seen[where] = nil end
+    end
+    local left = next(seen)
+    if left then return false, left .. " was not wanted, out of "
+      .. table.concat(places(count), " ") end
+    return true
+  end
+
+  local RIGHT, LEFT = "1.000,0.000", "-1.000,0.000"
+  local BACK_RIGHT, FRONT_RIGHT = "1.000,-1.000", "1.000,1.000"
+  local BACK_LEFT, FRONT_LEFT = "-1.000,-1.000", "-1.000,1.000"
+
+  it("puts a lone arm out to the right", function()
+    assert.is_true(holds(1, { RIGHT }))
+  end)
+
+  it("puts two one a side", function()
+    assert.is_true(holds(2, { RIGHT, LEFT }))
+  end)
+
+  it("puts three at the middle of the left and both right hand corners", function()
+    local ok, why = holds(3, { LEFT, BACK_RIGHT, FRONT_RIGHT })
+    assert.is_true(ok, why)
+  end)
+
+  it("puts four at the corners", function()
+    local ok, why = holds(4, { BACK_LEFT, FRONT_LEFT, BACK_RIGHT, FRONT_RIGHT })
+    assert.is_true(ok, why)
+  end)
+
+  it("adds the middle of the right side for five", function()
+    local ok, why = holds(5, { BACK_LEFT, FRONT_LEFT, BACK_RIGHT, FRONT_RIGHT, RIGHT })
+    assert.is_true(ok, why)
+  end)
+
+  it("adds the middle of the left side for six", function()
+    local ok, why = holds(6, { BACK_LEFT, FRONT_LEFT, BACK_RIGHT, FRONT_RIGHT, RIGHT, LEFT })
+    assert.is_true(ok, why)
+  end)
+
+  ---Every arm on one side of the hull, from the back corner forward.
+  local function side_of(count, which)
+    local found = {}
+    for slot = 1, count do
+      local place = station(slot, count)
+      if close(place.x, which * ACROSS) then table.insert(found, place.y / ALONG) end
+    end
+    table.sort(found)
+    return found
+  end
+
+  ---Whether a row of arms runs the whole side and is evenly spaced down it.
+  local function evenly(row)
+    if #row == 1 then return close(row[1], 0), "a lone arm should sit in the middle" end
+    if not (close(row[1], -1) and close(row[#row], 1)) then
+      return false, "the row does not run from corner to corner"
+    end
+    local step = 2 / (#row - 1)
+    for i = 2, #row do
+      if not close(row[i] - row[i - 1], step) then
+        return false, ("the gap from %d to %d is %.3f rather than %.3f")
+          :format(i - 1, i, row[i] - row[i - 1], step)
+      end
+    end
+    return true
+  end
+
+  it("spaces four along the right side, corner to corner, for seven", function()
+    local right, left = side_of(7, 1), side_of(7, -1)
+    assert.are.equal(4, #right, "the right side should carry four of seven")
+    assert.are.equal(3, #left, "the left side should carry three of seven")
+    local ok, why = evenly(right)
+    assert.is_true(ok, why)
+  end)
+
+  it("spaces four along the left side as well for eight", function()
+    local right, left = side_of(8, 1), side_of(8, -1)
+    assert.are.equal(4, #right)
+    assert.are.equal(4, #left)
+    local ok, why = evenly(left)
+    assert.is_true(ok, why)
+  end)
+
+  it("keeps filling the sides in, one side and then the other", function()
+    for count = 1, 24 do
+      local right, left = side_of(count, 1), side_of(count, -1)
+      assert.are.equal(math.ceil(count / 2), #right,
+        ("%d arms put %d on the right"):format(count, #right))
+      assert.are.equal(math.floor(count / 2), #left,
+        ("%d arms put %d on the left"):format(count, #left))
+      for _, row in ipairs{ right, left } do
+        if #row > 0 then
+          local ok, why = evenly(row)
+          assert.is_true(ok, ("%d arms: %s"):format(count, why or ""))
+        end
+      end
+    end
+  end)
+
+  it("never puts an arm anywhere but on a side", function()
+    for count = 1, 24 do
+      for slot = 1, count do
+        local place = station(slot, count)
+        assert.is_true(close(math.abs(place.x), ACROSS),
+          ("%d arms put slot %d at %.3f across, which is not on a side")
+            :format(count, slot, place.x))
+        assert.is_true(math.abs(place.y) <= ALONG + 1e-9,
+          ("%d arms put slot %d past the end of the hull"):format(count, slot))
+      end
+    end
+  end)
+
+  it("never puts two arms in the same place", function()
+    for count = 1, 24 do
+      local seen = {}
+      for slot = 1, count do
+        local place = station(slot, count)
+        local key = ("%.4f,%.4f"):format(place.x, place.y)
+        assert.is_nil(seen[key], ("%d arms put two in %s"):format(count, key))
+        seen[key] = true
+      end
+    end
+  end)
+end)
+
+describe("how much of a lift an arm takes", function()
+  it("gives none to an arm on the far side", function()
+    assert.are.equal(0, pack.nearness{ x = 0, y = -1 }, "an arm due north took a lift")
+    assert.are.equal(0, pack.nearness{ x = 1, y = -1 }, "a far corner took a lift")
+  end)
+
+  it("gives none to an arm square on either beam", function()
+    assert.is_true(close(pack.nearness{ x = 1, y = 0 }, 0))
+    assert.is_true(close(pack.nearness{ x = -1, y = 0 }, 0))
+  end)
+
+  it("gives all of it to an arm due south", function()
+    assert.is_true(close(pack.nearness{ x = 0, y = 2 }, 1))
+  end)
+
+  it("gives a corner its share", function()
+    assert.is_true(close(pack.nearness{ x = 1, y = 1 }, math.sqrt(0.5)),
+      "a south east corner should take the sine of half a right angle")
+  end)
+
+  it("follows the turn as a vehicle comes round", function()
+    -- an arm out on the right of a hull, through a whole turn: nothing facing the camera,
+    -- all of it facing across, and no jumps in between
+    local last = nil
+    for step = 0, 32 do
+      local mount = pack.mount(step / 2, 1, 1, 1, 1.5)
+      local lift = pack.nearness(mount)
+      assert.is_true(lift >= 0 and lift <= 1, "a lift outside nothing and all of it")
+      if last then
+        assert.is_true(math.abs(lift - last) < 0.25,
+          ("the lift jumped from %.3f to %.3f"):format(last, lift))
+      end
+      last = lift
+    end
+  end)
+
+  it("is nothing for an arm in the middle, where there is no side to be on", function()
+    assert.are.equal(0, pack.nearness{ x = 0, y = 0 })
+  end)
+end)
+
+describe("where a hull's arms end up on the map", function()
+  it("puts a lone arm out to the right of a vehicle, whichever way it faces", function()
+    for d = 0, 15 do
+      local fx, fy = pack.facing(d)
+      local mount = pack.mount(d, 1, 1, ACROSS, ALONG)
+      -- its right is a quarter turn clockwise from the way it faces, by its own half width
+      assert.is_true(close(mount.x, -fy * ACROSS) and close(mount.y, fx * ACROSS),
+        ("facing %d put the arm at %.3f,%.3f"):format(d, mount.x, mount.y))
+    end
+  end)
+
+  it("puts the pair out to the sides, turning with the vehicle", function()
+    -- the odd slots go to the right, so the first of a pair is the right hand one; facing
+    -- north, its right is east
+    local right, left = pack.mount(0, 1, 2, ACROSS, ALONG), pack.mount(0, 2, 2, ACROSS, ALONG)
+    assert.is_true(close(right.x, ACROSS) and close(right.y, 0),
+      ("facing north, the right hand arm sat at %.3f,%.3f"):format(right.x, right.y))
+    assert.is_true(close(left.x, -ACROSS) and close(left.y, 0),
+      ("facing north, the left hand arm sat at %.3f,%.3f"):format(left.x, left.y))
+    -- facing east, its right is south
+    local south = pack.mount(4, 1, 2, ACROSS, ALONG)
+    assert.is_true(close(south.x, 0) and close(south.y, ACROSS),
+      ("facing east, the right hand arm sat at %.3f,%.3f"):format(south.x, south.y))
+  end)
+
+  it("takes a fractional facing, which is what a vehicle has", function()
+    local straight = pack.mount(0, 1, 1, ACROSS, ALONG)
+    local barely = pack.mount(0.5, 1, 1, ACROSS, ALONG)
+    assert.is_true(math.abs(barely.y - straight.y) > 1e-3,
+      "half a step round should move the arm")
+    assert.is_true(close(math.sqrt(barely.x ^ 2 + barely.y ^ 2), ACROSS),
+      "turning should not change how far out the arm sits")
+  end)
+
+  it("keeps every arm on the hull it belongs to", function()
+    for count = 1, 20 do
+      for slot = 1, count do
+        for d = 0, 15 do
+          local mount = pack.mount(d, slot, count, ACROSS, ALONG)
+          local out = math.sqrt(mount.x ^ 2 + mount.y ^ 2)
+          assert.is_true(out <= math.sqrt(ACROSS ^ 2 + ALONG ^ 2) + 1e-9,
+            ("%d arms slot %d facing %d sat %.3f out"):format(count, slot, d, out))
+        end
+      end
+    end
+  end)
+end)

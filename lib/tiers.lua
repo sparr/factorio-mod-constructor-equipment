@@ -221,6 +221,17 @@ for level, spec in ipairs(DEFINED) do
       flat = name .. "-slowdown",
       slowing = name .. "-slowing",
       recovery = name .. "-recovery",
+      --- The same three again, for a wearer that walks on legs rather than rolling on
+      --- wheels. What differs is only the number written in the prototype, and why is in
+      --- prototypes/sticker.lua: a wheeled vehicle's top speed goes with the square root
+      --- of the figure and a spider vehicle's goes with the figure itself, so the same
+      --- share of speed has to be asked for twice, in two different currencies.
+      legs = {
+        modifier = 1 - (1 - tiers.SLOWED) * spec.slows,
+        flat = name .. "-slowdown-legs",
+        slowing = name .. "-slowing-legs",
+        recovery = name .. "-recovery-legs",
+      },
     } or nil,
     --- How far it reaches.
     range = reach,
