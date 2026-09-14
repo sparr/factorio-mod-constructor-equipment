@@ -86,9 +86,11 @@ describe("a character wearing the equipment", function()
 
   it("builds one at a time rather than all at once", function()
     world.several(player, BELT, 4)
-    -- one build interval should be one belt, not the whole row: the arm has to go out and
-    -- come back before the next one starts
-    after_ticks(world.BUILD_INTERVAL, function()
+    -- One swing should be one belt, not the whole row: the arm has to go out and come back
+    -- before the next one starts. Asked once a swing has had time to land rather than after
+    -- a build interval, because a reach takes as long as it takes: every spot in the row is
+    -- the same two tiles from the arm, whichever side of its owner it is on.
+    after_ticks(world.DELIVERED, function()
       assert.are.equal(1, world.count(player, BELT),
         "the whole row went up at once, so the arm is not being waited for")
     end)
@@ -97,6 +99,47 @@ describe("a character wearing the equipment", function()
         "it never got to the second one")
       assert.is_true(world.count(player, BELT) < 4,
         "the row went up faster than one a swing")
+    end)
+  end)
+
+  --- An arm is strapped two thirds of the way up its owner, and the map draws that as most
+  --- of a tile to the north of their feet. Aimed at the ground it would have been reaching a
+  --- tile and a half for a ghost two tiles behind them and half a tile for one two tiles in
+  --- front, and built at twice the rate facing the camera; aimed in its own frame it reaches
+  --- the same distance whichever way it is pointed.
+  it("builds as quickly behind its owner as in front of them", function()
+    local took = { north = nil, south = nil }
+
+    ---@param dy number
+    ---@param into string
+    ---@param whenever fun()
+    local function timed(dy, into, whenever)
+      world.equipped(player)
+      player.insert{ name = BELT, count = 5 }
+      world.ghost(player, BELT, 0, dy)
+      local started = game.tick
+      script.on_nth_tick(1, function()
+        if not took[into] and world.count(player, BELT) > 0 then
+          took[into] = game.tick - started
+        end
+      end)
+      after_ticks(world.CYCLE, function()
+        script.on_nth_tick(nil)
+        world.clear(player)
+        whenever()
+      end)
+    end
+
+    timed(-2, "north", function()
+      timed(2, "south", function()
+        assert.is_not_nil(took.north, "nothing was built in front")
+        assert.is_not_nil(took.south, "nothing was built behind")
+        -- the arms are given work ten times a second, so two reaches of the same length can
+        -- still land a handful of ticks apart
+        assert.is_true(math.abs(took.north - took.south) <= 12,
+          ("in front took %d ticks and behind %d, which is not the same reach both ways")
+            :format(took.north, took.south))
+      end)
     end)
   end)
 end)

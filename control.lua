@@ -562,7 +562,9 @@ local function station_on(wearer, slot, count)
   local at = wearer.position
   local offset
   if wearer.type == "character" then
-    offset = pack.offset(facing_of(wearer), slot, count)
+    -- the spot their shoulder is over, not the shoulder: how far up their back the arm is
+    -- strapped is the lift below, and is no kind of distance
+    offset = pack.ground(facing_of(wearer), slot, count)
   else
     local across, along = hull_of(wearer)
     offset = pack.mount(facing_of(wearer), slot, count, across, along)
@@ -577,12 +579,16 @@ end
 ---where the geometry says belongs at the hull's ground line rather than on the body a player
 ---can see.
 ---
----Nothing for a character, who is drawn where their pack is.
+---A character's own is how far up their back the thing is strapped, which is the same
+---trick at a smaller size: two thirds of the way up somebody is most of a tile north of
+---their feet.
 ---@param wearer LuaEntity
 ---@param at {x: number, y: number} where the arm stands, from station_on
+---@param slot integer? which arm, from 1
+---@param count integer? how many arms there are
 ---@return number how far north to draw it, in tiles
-local function lift_of(wearer, at)
-  if wearer.type == "character" then return 0 end
+local function lift_of(wearer, at, slot, count)
+  if wearer.type == "character" then return pack.lift(slot, count) end
 
   local body = wearer.prototype.height
   if body then
@@ -609,7 +615,7 @@ end
 ---@return number how far up that is from where it stands
 local function mounting(wearer, slot, count)
   local at = station_on(wearer, slot, count)
-  local lift = lift_of(wearer, at)
+  local lift = lift_of(wearer, at, slot, count)
   return { x = at.x, y = at.y - lift }, lift
 end
 
@@ -618,9 +624,11 @@ end
 ---This is what keeps a lifted arm honest. The engine swings a hand out from wherever the
 ---inserter stands, so an arm drawn up on a body and aimed at a ghost on the ground has
 ---further to stretch southward than northward -- a spidertron, whose torso rides a tile and
----a half up, was half again as slow to build behind itself as in front. Lifting the target
----by the same amount it lifted the arm makes the whole swing a copy of the one it would have
----made at ground level: same distance, same time, whichever way it faces.
+---a half up, was half again as slow to build behind itself as in front, and a character,
+---whose pack rides two thirds of the way up them, was twice as quick to build in front of
+---themselves as behind. Lifting the target by the same amount it lifted the arm makes the
+---whole swing a copy of the one it would have made at ground level: same distance, same
+---time, whichever way it faces.
 ---
 ---What it costs is the claw stopping a little short of the ghost, up where the arm is. That
 ---is not a miss. A claw holding something over a tile is drawn exactly there, because this

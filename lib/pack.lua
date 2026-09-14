@@ -85,12 +85,41 @@ end
 ---@param count integer? how many arms there are altogether
 ---@return {x: number, y: number}
 function pack.offset(direction, slot, count)
+  local at = pack.ground(direction, slot, count)
+  return { x = at.x, y = at.y - pack.lift(slot, count) }
+end
+
+---Where an arm on a back stands on the ground: the spot its owner's shoulder is over.
+---
+---Only the part of the mounting that is really a distance. Across the shoulders and back
+---along the facing are both displacements on the map, and turn with the character; how far
+---up their back the arm is strapped is not a distance at all, and is pack.lift below.
+---@param direction integer 0 to 15, north being 0
+---@param slot integer? which arm this is, from 1
+---@param count integer? how many arms there are altogether
+---@return {x: number, y: number}
+function pack.ground(direction, slot, count)
   local fx, fy = pack.facing(direction or 0)
-  local across, down = pack.station(slot, count)
+  local across = pack.station(slot, count)
   return {
     x = -fx * pack.BACK - fy * across,
-    y = pack.HEIGHT - fy * pack.BACK + fx * across + down,
+    y = -fy * pack.BACK + fx * across,
   }
+end
+
+---How far up its owner an arm is carried, in tiles.
+---
+---The other half of the mounting, and the half that is not a distance. A character's sprite
+---stands about 1.8 tiles tall and the arm is strapped two thirds of the way up it, which the
+---map has no way of saying except by drawing the arm that far to the north. What that is for
+---is in control.lua: an arm drawn up there has to be aimed up there too, or every reach it
+---makes to the south is longer than the same reach to the north.
+---@param slot integer? which arm this is, from 1
+---@param count integer? how many arms there are altogether
+---@return number
+function pack.lift(slot, count)
+  local _, down = pack.station(slot, count)
+  return -(pack.HEIGHT + down)
 end
 
 --- Where an arm sits on a vehicle, which is a different question from where one sits on a
