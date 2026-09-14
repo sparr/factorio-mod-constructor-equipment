@@ -113,6 +113,8 @@ local function setup()
   storage.constructor_stowing = storage.constructor_stowing or {}
   -- whether the ramp into the slowdown has already been run for the run in progress
   storage.constructor_ramped = storage.constructor_ramped or {}
+  -- who has switched their arms off from the toolbar, by player index
+  storage.constructor_off = storage.constructor_off or {}
 
   -- One arm per player, in four parallel tables, is what a save from before multiple
   -- equipment looks like. The arms themselves are entities in the world, so they are taken
@@ -142,6 +144,20 @@ local function setup()
     end
     storage.constructor_saved_running_speed_modifier = nil
   end
+end
+
+--- The toolbar button, the key binding, and the entry that remembers who has pressed
+--- either. One name, because they are one thing to a player. See prototypes/shortcut.lua.
+local TOGGLE = "constructor-equipment-toggle"
+
+---Whether this player has switched their arms off.
+---
+---Theirs alone. The equipment is worn by one person and the button sits in one person's
+---toolbar, so a player who wants their arms to stop does not stop anybody else's.
+---@param player LuaPlayer
+---@return boolean
+local function switched_off(player)
+  return storage.constructor_off[player.index] or false
 end
 
 ---What a player's arms hang off, and whose grid feeds them.
@@ -1640,7 +1656,7 @@ local function on_tick(event)
 
   for _, player in pairs(game.players) do
     local wearer = wearer_of(player)
-    if wearer and wearer.valid and wearing(wearer) then
+    if wearer and wearer.valid and wearing(wearer) and not switched_off(player) then
       local list = muster(player, wearer)
       local claimed = claims(list)
       -- Slowed for as long as an arm is working, not only at the moment one arrives.
@@ -1671,8 +1687,8 @@ local function on_tick(event)
       -- Whether there is anything left to build is asked on the check tick, where it can
       -- be answered properly, and that is what ends a run.
     else
-      -- taken off, the character is gone, or they are riding in a vehicle as a passenger:
-      -- no arms and no half finished swings
+      -- taken off, switched off, the character is gone, or they are riding in a vehicle as
+      -- a passenger: no arms and no half finished swings
       dismiss(player)
     end
   end
@@ -1681,7 +1697,7 @@ local function on_tick(event)
 
   for _, player in pairs(game.players) do
     local wearer = wearer_of(player)
-    if wearer and wearer.valid then
+    if wearer and wearer.valid and not switched_off(player) then
       -- Nothing left in reach is when the character starts getting their speed back, not
       -- merely no arm swinging this instant: the search runs ten times a second and a claw
       -- can be home for a few ticks before the next one, and recovering in those gaps had
@@ -1721,10 +1737,77 @@ local function on_driving_changed(event)
   recover(player, player.character)
 end
 
+---Switch a player's arms on or off, and put the button in the matching state.
+---
+---Switching off is not merely a refusal to start anything new. A claw halfway out is
+---brought home the same way taking the equipment off brings it home -- items back in the
+---pockets, charge back in the grid -- and whatever speed the arms were costing is handed
+---back on the spot rather than left to expire.
+---@param player LuaPlayer
+---@param on boolean
+local function switch(player, on)
+  storage.constructor_off[player.index] = (not on) or nil
+  if prototypes.shortcut[TOGGLE] then player.set_shortcut_toggled(TOGGLE, on) end
+  if on then return end
+  dismiss(player)
+  -- both, because the arms may be on either and a character who climbs out of a vehicle
+  -- should not find their own legs still slowed
+  recover(player, wearer_of(player))
+  recover(player, player.character)
+end
+
+---Put the button where the save says it should be, for a player who has just turned up or
+---just been given a button by this mod being added.
+---@param player LuaPlayer
+local function show(player)
+  if prototypes.shortcut[TOGGLE] then
+    player.set_shortcut_toggled(TOGGLE, not switched_off(player))
+  end
+end
+
+---Press the button: whatever the arms are doing now, do the other thing.
+---
+---Global, and for one reason: on_lua_shortcut is one of the events the engine will not let
+---a script raise, so a test cannot press the button by pretending to be the toolbar. It can
+---call this, which is what the toolbar reaches in the end.
+---@param player LuaPlayer
+function press(player)
+  switch(player, switched_off(player))
+end
+
+---@param event EventData.on_lua_shortcut
+local function on_shortcut(event)
+  if event.prototype_name ~= TOGGLE then return end
+  local player = game.get_player(event.player_index)
+  if player then press(player) end
+end
+
+---@param event EventData.CustomInputEvent
+local function on_toggle_key(event)
+  local player = game.get_player(event.player_index)
+  if player then press(player) end
+end
+
+---@param event EventData.on_player_created
+local function on_player_created(event)
+  local player = game.get_player(event.player_index)
+  if player then show(player) end
+end
+
+--- Everything setup() does, and then the button, which needs a game to exist and so cannot
+--- be done from on_init.
+local function configured()
+  setup()
+  for _, player in pairs(game.players) do show(player) end
+end
+
 script.on_init(setup)
-script.on_configuration_changed(setup)
+script.on_configuration_changed(configured)
 script.on_event(defines.events.on_tick, on_tick)
 script.on_event(defines.events.on_player_driving_changed_state, on_driving_changed)
+script.on_event(defines.events.on_lua_shortcut, on_shortcut)
+script.on_event(defines.events.on_player_created, on_player_created)
+script.on_event(TOGGLE, on_toggle_key)
 
 --- ce-tests is never published, so this can never fire on a player's machine -- which
 --- matters, because info.json keeps test/ out of the package.
@@ -1740,6 +1823,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.equipping",
     "test.ft.tiers",
     "test.ft.vehicles",
+    "test.ft.toggle",
   }, {
     load_luassert = true,
     game_speed = 100,

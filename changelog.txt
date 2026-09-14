@@ -3,6 +3,7 @@ Version: 2.1.4
   Features:
     - Equipment in a vehicle's equipment grid now works, building from the vehicle as you drive and spending the vehicle's own inventory
     - A vehicle's arms are mounted along the sides of its hull, shared between the two sides and spread evenly from corner to corner: one on the right, two one a side, four at the corners, and so on
+    - Added a toolbar button that switches your own constructor equipment off and on, with a keybinding you can set
   Changes:
     - Equipment in your armour does nothing while you are in a vehicle, whether you are driving it or riding in it
     - A vehicle whose arms are working loses the same share of its top speed that you lose of your walking speed on foot
