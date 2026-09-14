@@ -1,0 +1,15 @@
+{
+  "name": "ce-play",
+  "version": "0.0.1",
+  "title": "Constructor Equipment play test",
+  "author": "Sparr",
+  "contact": "sparr0@gmail.com",
+  "homepage": "http://github.com/sparr/factorio-mod-constructor-equipment/tree/master/test/play/ce-play",
+  "factorio_version": "2.1",
+  "description": "Lays out a game with the equipment researched, worn, and fitted to a car, a tank and a spidertron, with ghosts to build. For trying the mod by hand; never published to the mod portal.",
+  "dependencies": [
+    "base",
+    "? space-age",
+    "constructor-equipment"
+  ]
+}
