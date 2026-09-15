@@ -165,6 +165,43 @@ function world.ghost(player, name, dx, dy)
   return ghost
 end
 
+---A thing standing in the arena with an upgrade order hung on it, which is what the
+---upgrade planner actually leaves behind.
+---
+---There is no ghost anywhere in this: the belt stays where it was and the order sits on
+---it, which is why none of the ghost fixtures above stand in for one.
+---@param player LuaPlayer
+---@param name string what is standing there now
+---@param target string what it is to become
+---@param dx number
+---@param dy number
+---@return LuaEntity
+function world.to_upgrade(player, name, target, dx, dy)
+  local entity = player.surface.create_entity{
+    name = name,
+    position = { world.ORIGIN.x + dx, world.ORIGIN.y + dy },
+    direction = defines.direction.east,
+    force = player.force,
+  }
+  assert(entity, "could not place a " .. name)
+  entity.order_upgrade{ force = player.force, target = prototypes.entity[target] }
+  assert(entity.to_be_upgraded(), name .. " would not take an upgrade order")
+  return entity
+end
+
+---Fill every free slot of the pockets, so that nothing else will fit in them.
+---@param player LuaPlayer
+function world.fill_pockets(player)
+  local main = player.get_inventory(defines.inventory.character_main)
+  assert(main, "the character has no pockets to fill")
+  for index = 1, #main do
+    if not main[index].valid_for_read then
+      main[index].set_stack{ name = "iron-plate", count = 100 }
+    end
+  end
+  assert.are.equal(0, main.count_empty_stacks(), "the pockets did not fill")
+end
+
 --- Spots for several ghosts, all of them inside the arm's reach and none of them under
 --- the character's feet. In this order, so the first n of them are n distinct places.
 ---

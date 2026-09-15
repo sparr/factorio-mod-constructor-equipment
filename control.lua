@@ -678,6 +678,84 @@ local function spread_of(wearer)
   return math.sqrt(across * across + along * along)
 end
 
+---What a piece of work leaves behind: the prototype of the thing that ends up on the tile.
+---
+---A ghost says so itself. An entity marked for upgrade says so through the order the
+---planner hung on it, which names what to replace it with and at what quality.
+---@param work LuaEntity a ghost, or an entity marked for upgrade
+---@return LuaEntityPrototype?
+---@return LuaQualityPrototype?
+local function outcome_of(work)
+  if work.type == "entity-ghost" then return work.ghost_prototype, work.quality end
+  return work.get_upgrade_target()
+end
+
+---Whether a piece of work is a thing standing there waiting to be swapped rather than a
+---ghost waiting to be raised.
+---
+---Asked of the entity every time rather than remembered on the job, so a job whose target
+---has gone cannot be wrong about which of the two it was.
+---@param work LuaEntity
+---@return boolean
+local function upgrading(work)
+  return work.type ~= "entity-ghost"
+end
+
+---Whether a piece of work is still worth reaching for.
+---
+---A ghost is, as long as it is still a ghost. An upgrade is only while the order is still
+---on it: a player can call the planner off between the arm setting out and the claw
+---arriving, and the thing left standing there is then somebody's working belt rather than
+---anything this mod should be pulling up.
+---@param work LuaEntity?
+---@return boolean
+local function still_wanted(work)
+  if not (work and work.valid) then return false end
+  if not upgrading(work) then return true end
+  return work.to_be_upgraded() and not work.to_be_deconstructed()
+end
+
+---Whether the thing an upgrade takes off has somewhere to go.
+---
+---The engine hands the replaced entity's item back to the player named in the swap, the
+---same as a fast replace by hand, and that is the right way round: it carries over the
+---belt's cargo, the modules, the fuel and the recipe, which working the swap out by hand
+---here would get wrong one entity type at a time.
+---
+---What it will not do is refuse when there is nowhere to put what came off. Measured on
+---2.1.17 with every slot of the pockets full: the belt that came off was not in the
+---pockets, not on the ground and not in the cursor. It was gone. So the room is asked for
+---first, and an upgrade with nowhere for its old entity to land is left alone.
+---@param work LuaEntity
+---@param inventory LuaInventory?
+---@return boolean
+local function room_for_what_comes_off(work, inventory)
+  if not inventory then return false end
+  local mineable = work.prototype.mineable_properties
+  for _, product in pairs(mineable and mineable.products or {}) do
+    if product.type == "item" then
+      local amount = product.amount or product.amount_min or 1
+      if not inventory.can_insert{ name = product.name, count = amount } then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+---Which end of a pair a thing is.
+---
+---An underground belt and a loader are each two things wearing one name, and which end
+---this one is does not live in its direction. Left unsaid, both the question of whether
+---the replacement fits and the swap itself treat it as an input, whichever end it is.
+---@param work LuaEntity
+---@return string?
+local function end_of(work)
+  if work.type == "underground-belt" then return work.belt_to_ground_type end
+  if work.type == "loader" or work.type == "loader-1x1" then return work.loader_type end
+  return nil
+end
+
 ---Whether a ghost could actually be built where it stands, right now.
 ---
 ---Asked because reaching for one that cannot be is a wasted journey that repeats: the claw
@@ -689,13 +767,22 @@ end
 ---Asked last of the tests, because it is the only one that costs anything.
 ---@param ghost LuaEntity
 ---@return boolean
-local function buildable(ghost)
-  return ghost.surface.can_place_entity{
-    name = ghost.ghost_name,
-    position = ghost.position,
-    direction = ghost.direction,
-    force = ghost.force,
-    build_check_type = defines.build_check_type.ghost_revive,
+local function buildable(work)
+  local prototype = outcome_of(work)
+  if not prototype then return false end
+  return work.surface.can_place_entity{
+    name = prototype.name,
+    position = work.position,
+    direction = work.direction,
+    type = end_of(work),
+    force = work.force,
+    -- A ghost asks the question a construction robot asks. An upgrade cannot: the thing
+    -- being replaced is standing in the space its replacement needs, so every check but
+    -- the manual one answers no for that reason alone. Measured on 2.1.17, a fast belt
+    -- over a belt marked for upgrade is allowed under manual and refused under each of
+    -- ghost_revive, script, script_ghost, manual_ghost and blueprint_ghost.
+    build_check_type = upgrading(work) and defines.build_check_type.manual
+      or defines.build_check_type.ghost_revive,
   }
 end
 
@@ -711,7 +798,7 @@ end
 ---@param at {x: number, y: number}
 ---@return boolean
 local function standing_in(ghost, at)
-  local prototype = ghost.ghost_prototype
+  local prototype = outcome_of(ghost)
   local across = (prototype and prototype.tile_width or 1) / 2
   local down = (prototype and prototype.tile_height or 1) / 2
   local middle = ghost.position
@@ -719,7 +806,7 @@ local function standing_in(ghost, at)
      and at.y >= middle.y - down and at.y <= middle.y + down
 end
 
----Every ghost near enough to a wearer that some arm of theirs might reach it.
+---Every piece of work near enough to a wearer that some arm of theirs might reach it.
 ---
 ---Searched once and handed to every arm, rather than each arm searching for itself. The
 ---search is the expensive part of a tick and the answer is the same for all of them: only
@@ -729,7 +816,7 @@ end
 ---@param wearer LuaEntity the character or vehicle the arms are on
 ---@param range number the longest reach any of their arms has
 ---@return LuaEntity[]
-local function ghosts_near(wearer, range)
+local function work_near(wearer, range)
   -- A radius, and the same radius the reach is judged against below. Two things went wrong
   -- with the square this replaces. A square of side twice the range reaches 1.41 times as
   -- far at its corners, and find_entities_filtered returns anything whose own box merely
@@ -737,11 +824,31 @@ local function ghosts_near(wearer, range)
   -- a candidate. It was then abandoned as out of range on the very next tick, and found
   -- again the tick after: the arm swung out and back for ever, and because a swing counted
   -- as under way, no ghost that was actually in reach got a turn.
-  return wearer.surface.find_entities_filtered{
+  local radius = range + spread_of(wearer)
+  local found = wearer.surface.find_entities_filtered{
     position = wearer.position,
-    radius = range + spread_of(wearer),
+    radius = radius,
     type = "entity-ghost"
   }
+
+  -- An upgrade order is not a ghost and never was. The planner leaves the belt standing
+  -- where it stood and hangs an order on it, so a search for ghosts finds nothing at all,
+  -- which is the whole of why the arms ignored the upgrade planner. The orders have a
+  -- search of their own.
+  for _, marked in pairs(wearer.surface.find_entities_filtered{
+        position = wearer.position,
+        radius = radius,
+        to_be_upgraded = true,
+      }) do
+    -- A ghost can carry an upgrade order too, and is in the list already. Anything with no
+    -- unit number is left out rather than reached for: two arms are kept off the same
+    -- piece of work by its number, and work that cannot be claimed cannot be shared out.
+    if marked.type ~= "entity-ghost" and marked.unit_number then
+      found[#found + 1] = marked
+    end
+  end
+
+  return found
 end
 
 ---Pick something to build out of what was found near the player.
@@ -752,7 +859,7 @@ end
 ---@param player LuaPlayer
 ---@param wearer LuaEntity the character or vehicle the arms are on
 ---@param from {x: number, y: number} where this arm reaches from, from reaching_from
----@param nearby LuaEntity[] from ghosts_near
+---@param nearby LuaEntity[] from work_near
 ---@param claimed table<integer, boolean>? ghosts another arm is already reaching for
 ---@param range number how far this arm can reach
 ---@return LuaEntity? ghost
@@ -765,11 +872,17 @@ local function choose(player, wearer, from, nearby, claimed, range)
 
   local standing = wearer.position
   for _, ghost in pairs(nearby) do
-    if ghost.valid then
+    if still_wanted(ghost) then
       -- 2.0 turned items_to_place_this into a list of { name, count } rather than a table
       -- keyed by item name
-      local item, needed =
-        build.placing_item(ghost.ghost_prototype.items_to_place_this, carried)
+      -- Written out rather than folded into an and: a Lua and yields one value, so
+      -- `local item, needed = wanted and placing_item(...)` quietly throws the count away
+      -- and every ghost is asked for nil of its item.
+      local outcome = outcome_of(ghost)
+      local item, needed
+      if outcome then
+        item, needed = build.placing_item(outcome.items_to_place_this, carried)
+      end
       -- An inserter will not reach for something underneath its own base. Asked to, it
       -- twitches a tick's worth and springs back, over and over, and because a swing
       -- counts as under way no other ghost gets a look in either: standing on a ghost
@@ -783,6 +896,7 @@ local function choose(player, wearer, from, nearby, claimed, range)
       if item and not (claimed and claimed[ghost.unit_number])
           and not standing_in(ghost, standing)
           and not reach.out_of_range(from, ghost.position, range)
+          and (not upgrading(ghost) or room_for_what_comes_off(ghost, inventory))
           and buildable(ghost) then
         return ghost, item, needed
       end
@@ -838,11 +952,15 @@ local function loads_for(nearby, claimed, standing, from, range, item, count, ca
   local wanted = 1
   for _, ghost in pairs(nearby) do
     if wanted >= capacity then break end
-    if ghost.valid and not (claimed and claimed[ghost.unit_number])
+    if still_wanted(ghost) and not (claimed and claimed[ghost.unit_number])
         and not standing_in(ghost, standing)
         and not reach.out_of_range(from, ghost.position, range) then
-      local other, needed =
-        build.placing_item(ghost.ghost_prototype.items_to_place_this, function() return count end)
+      local outcome = outcome_of(ghost)
+      local other, needed
+      if outcome then
+        other, needed =
+          build.placing_item(outcome.items_to_place_this, function() return count end)
+      end
       if other == item and needed == count then wanted = wanted + 1 end
     end
   end
@@ -853,7 +971,7 @@ end
 ---@param player LuaPlayer
 ---@param wearer LuaEntity the character or vehicle the arms are on
 ---@param from {x: number, y: number} where this arm reaches from
----@param nearby LuaEntity[] from ghosts_near
+---@param nearby LuaEntity[] from work_near
 ---@param claimed table<integer, boolean>? ghosts another arm is already reaching for
 ---@param record table the arm asking, which knows which equipment feeds it
 ---@param range number how far this arm can reach
@@ -1337,7 +1455,41 @@ local function abandon(record, job)
   catcher_away(record)
 end
 
----Put the thing down: revive the ghost, pay for it, and let the arm start coming home.
+---Swap a thing marked for upgrade for what it is marked to become, the way a construction
+---robot does it.
+---
+---fast_replace is what makes this an upgrade rather than a demolition and a rebuild: the
+---belt's cargo, an assembler's recipe and modules, an inserter's filters and its stack size
+---override all carry over, exactly as they do when a player fast replaces by hand.
+---
+---Naming the player is what sends the old entity's item back to them. Neither that nor the
+---swap charges them for the new one: that was taken out of the pockets when the arm set
+---off, the same as for a ghost, and is sitting in the claw.
+---
+---Nothing is raised. The revive below raises nothing either, and the two paths say the
+---same amount about themselves.
+---@param player LuaPlayer
+---@param work LuaEntity
+---@return LuaEntity? placed
+local function swap(player, work)
+  local prototype, quality = work.get_upgrade_target()
+  if not prototype then return nil end
+  return work.surface.create_entity{
+    name = prototype.name,
+    quality = quality,
+    position = work.position,
+    direction = work.direction,
+    type = end_of(work),
+    force = work.force,
+    fast_replace = true,
+    spill = false,
+    player = player,
+    create_build_effect_smoke = false,
+  }
+end
+
+---Put the thing down: raise the ghost or make the swap, pay for it, and let the arm start
+---coming home.
 ---@param player LuaPlayer
 ---@param wearer LuaEntity the character or vehicle the arm is mounted on
 ---@param from {x: number, y: number} where this arm reaches from
@@ -1367,15 +1519,30 @@ local function deliver(player, wearer, from, record, job, claimed)
     return
   end
 
-  if not (ghost and ghost.valid) then
-    -- the ghost went while the claw was on its way; the load goes back in the claw and
-    -- comes home, since it has already been paid for
+  if not still_wanted(ghost) then
+    -- the ghost went, or the upgrade was called off, while the claw was on its way; the
+    -- load goes back in the claw and comes home, since it has already been paid for
     take_back(record, job.item, landed)
     abandon(record, job)
     return
   end
 
-  local _, built = ghost.revive()
+  -- Asked again here and not only before setting off: a claw is seconds in the air, and
+  -- the pockets that had room for what comes off when it left can be full by the time it
+  -- arrives. An upgrade made with nowhere to put the old entity destroys it.
+  if upgrading(ghost)
+      and not room_for_what_comes_off(ghost, pockets(player, wearer)) then
+    take_back(record, job.item, landed)
+    abandon(record, job)
+    return
+  end
+
+  local _, built
+  if upgrading(ghost) then
+    built = swap(player, ghost)
+  else
+    _, built = ghost.revive()
+  end
   if not built then
     take_back(record, job.item, landed)
     abandon(record, job)
@@ -1432,7 +1599,7 @@ end
 ---@return boolean whether it found somewhere else to go
 function redirect(player, wearer, from, record, job, claimed, range)
   local ghost, item, count =
-    choose(player, wearer, from, ghosts_near(wearer, range), claimed, range)
+    choose(player, wearer, from, work_near(wearer, range), claimed, range)
   if not ghost then return false end
   if item ~= job.item then return false end
 
@@ -1546,7 +1713,7 @@ local function advance(player, wearer, record, slot, count, claimed)
 
     -- the character can walk off mid swing, or the vehicle drive off, and an arm that
     -- stretched to follow would be no kind of inserter
-    if not (job.ghost and job.ghost.valid)
+    if not still_wanted(job.ghost)
         or standing_in(job.ghost, wearer.position)
         or reach.out_of_range(from, job.ghost.position, tier_of(record).range)
         or game.tick - (job.started or game.tick) > SWING_LIMIT then
@@ -1592,7 +1759,7 @@ end
 ---@return boolean whether any arm has anything to do
 local function assign(player, wearer, list, tick)
   local claimed = claims(list)
-  local nearby = ghosts_near(wearer, furthest(list))
+  local nearby = work_near(wearer, furthest(list))
   local working = false
   for slot, record in ipairs(list) do
     if record.job then
@@ -1832,6 +1999,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.tiers",
     "test.ft.vehicles",
     "test.ft.toggle",
+    "test.ft.upgrading",
   }, {
     load_luassert = true,
     game_speed = 100,
