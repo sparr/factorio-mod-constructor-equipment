@@ -1,7 +1,9 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.5
   Features:
-    - The arms now carry out upgrade planner orders, swapping the thing standing there for what it is marked to become and handing the old one back to you
+    - The arms now carry out upgrade planner orders, swapping the thing standing there for what it is marked to become and carrying the old one back to you in the claw
+    - An arm making a swap carries one thing at a time, so its claw is free to bring the old one home even when your pockets are full
+    - Anything the replacement cannot hold is left on the ground and marked for deconstruction, the same as a construction robot leaves it, rather than appearing in your inventory or being lost when it is full
   Bugfixes:
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself

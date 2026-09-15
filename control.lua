@@ -715,32 +715,21 @@ local function still_wanted(work)
   return work.to_be_upgraded() and not work.to_be_deconstructed()
 end
 
----Whether the thing an upgrade takes off has somewhere to go.
+---The one item a thing turns into when it is taken up, if it is only one.
 ---
----The engine hands the replaced entity's item back to the player named in the swap, the
----same as a fast replace by hand, and that is the right way round: it carries over the
----belt's cargo, the modules, the fuel and the recipe, which working the swap out by hand
----here would get wrong one entity type at a time.
----
----What it will not do is refuse when there is nowhere to put what came off. Measured on
----2.1.17 with every slot of the pockets full: the belt that came off was not in the
----pockets, not on the ground and not in the cursor. It was gone. So the room is asked for
----first, and an upgrade with nowhere for its old entity to land is left alone.
+---Everything the replacement cannot hold is spilled on the floor by the engine, so what is
+---left to bring home is the entity itself. In the base game that is a single item every
+---time; anything stranger than that is left where the engine put it rather than guessed at.
 ---@param work LuaEntity
----@param inventory LuaInventory?
----@return boolean
-local function room_for_what_comes_off(work, inventory)
-  if not inventory then return false end
+---@return string? name
+---@return integer? count
+local function sole_product(work)
   local mineable = work.prototype.mineable_properties
-  for _, product in pairs(mineable and mineable.products or {}) do
-    if product.type == "item" then
-      local amount = product.amount or product.amount_min or 1
-      if not inventory.can_insert{ name = product.name, count = amount } then
-        return false
-      end
-    end
-  end
-  return true
+  local products = mineable and mineable.products
+  if not products or #products ~= 1 then return nil end
+  local product = products[1]
+  if product.type ~= "item" then return nil end
+  return product.name, product.amount or product.amount_min or 1
 end
 
 ---Which end of a pair a thing is.
@@ -896,7 +885,6 @@ local function choose(player, wearer, from, nearby, claimed, range)
       if item and not (claimed and claimed[ghost.unit_number])
           and not standing_in(ghost, standing)
           and not reach.out_of_range(from, ghost.position, range)
-          and (not upgrading(ghost) or room_for_what_comes_off(ghost, inventory))
           and buildable(ghost) then
         return ghost, item, needed
       end
@@ -1455,6 +1443,30 @@ local function abandon(record, job)
   catcher_away(record)
 end
 
+---A porter to be handed whatever a swap displaces, with room for all of it.
+---
+---A character is what create_entity will accept as the receiver, and this one is the mod's
+---own rather than the player: see prototypes/porter.lua for why. It is given a slot for the
+---thing being replaced and one for every stack that thing is holding, which is as many as
+---the engine can possibly need, so it never has to shed or destroy any of it.
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---@param force LuaForce
+---@param work LuaEntity the thing about to be replaced
+---@return LuaEntity?
+local function porter_for(surface, at, force, work)
+  local porter = surface.create_entity{
+    name = "constructor-equipment-porter", position = at, force = force }
+  if not porter then return nil end
+  local slots = 1
+  for index = 1, work.get_max_inventory_index() do
+    local inventory = work.get_inventory(index)
+    if inventory then slots = slots + (#inventory - inventory.count_empty_stacks()) end
+  end
+  porter.character_inventory_slots_bonus = slots
+  return porter
+end
+
 ---Swap a thing marked for upgrade for what it is marked to become, the way a construction
 ---robot does it.
 ---
@@ -1462,30 +1474,80 @@ end
 ---belt's cargo, an assembler's recipe and modules, an inserter's filters and its stack size
 ---override all carry over, exactly as they do when a player fast replaces by hand.
 ---
----Naming the player is what sends the old entity's item back to them. Neither that nor the
----swap charges them for the new one: that was taken out of the pockets when the arm set
----off, the same as for a ghost, and is sitting in the claw.
----
----Nothing is raised. The revive below raises nothing either, and the two paths say the
----same amount about themselves.
----@param player LuaPlayer
+---Nothing is raised. The revive below raises nothing either, and the two paths say the same
+---amount about themselves.
+---@param porter LuaEntity who is to be handed what the swap displaces
 ---@param work LuaEntity
+---@param quality string?
 ---@return LuaEntity? placed
-local function swap(player, work)
-  local prototype, quality = work.get_upgrade_target()
+local function swap(porter, work, quality)
+  local prototype = work.get_upgrade_target()
   if not prototype then return nil end
   return work.surface.create_entity{
     name = prototype.name,
     quality = quality,
     position = work.position,
     direction = work.direction,
+    -- Which way round a handed thing is built. Every entity answers this, whether or not
+    -- it is the sort of thing that can be mirrored.
+    mirror = work.mirroring,
     type = end_of(work),
     force = work.force,
     fast_replace = true,
     spill = false,
-    player = player,
+    character = porter,
     create_build_effect_smoke = false,
   }
+end
+
+---Put everything an inventory holds on the floor and mark it, which is what a construction
+---robot does with what it cannot carry away.
+---
+---Marked from the entities spill_item_stack hands straight back rather than by looking
+---around afterwards: a pile spreads as the square root of its size, so there is no distance
+---to search that is right for every one of them.
+---
+---The stacks go down as they are rather than by name and number, so a damaged thing stays
+---damaged and a quality one stays that quality.
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---@param force LuaForce
+---@param inventory LuaInventory
+local function shed(surface, at, force, inventory)
+  for index = 1, #inventory do
+    local stack = inventory[index]
+    if stack.valid_for_read then
+      for _, item in pairs(surface.spill_item_stack{
+            position = at,
+            stack = stack,
+            enable_looted = false,
+            force = force,
+            allow_belts = false,
+          } or {}) do
+        if item.valid then item.order_deconstruction(force) end
+      end
+      stack.clear()
+    end
+  end
+end
+
+---Put the thing that came off in the claw, to be carried home the way a robot carries it
+---back to the network.
+---
+---The stack itself rather than its name and number, so that whatever it carries beyond
+---those comes home too: a belt pulled up damaged is still damaged, and stays the quality it
+---was. Nothing is made here -- the porter was handed the real one.
+---
+---The claw has to be empty, which it is: a trip that is going to make a swap carries one
+---thing out and nothing turns to a swap partway through.
+---@param record table the arm
+---@param stack LuaItemStack
+local function fill_claw(record, stack)
+  local arm = record.entity
+  if not (arm and arm.valid) then return false end
+  if arm.held_stack.valid_for_read and arm.held_stack.count > 0 then return false end
+  arm.held_stack.set_stack(stack)
+  return true
 end
 
 ---Put the thing down: raise the ghost or make the swap, pay for it, and let the arm start
@@ -1527,22 +1589,68 @@ local function deliver(player, wearer, from, record, job, claimed)
     return
   end
 
-  -- Asked again here and not only before setting off: a claw is seconds in the air, and
-  -- the pockets that had room for what comes off when it left can be full by the time it
-  -- arrives. An upgrade made with nowhere to put the old entity destroys it.
-  if upgrading(ghost)
-      and not room_for_what_comes_off(ghost, pockets(player, wearer)) then
-    take_back(record, job.item, landed)
-    abandon(record, job)
+  if upgrading(ghost) then
+    -- Everything worth knowing about what comes off is read here rather than afterwards,
+    -- because afterwards there is nothing left standing to ask.
+    local surface, at, force = ghost.surface, ghost.position, ghost.force
+    local product = sole_product(ghost)
+    local quality = ghost.quality and ghost.quality.name or "normal"
+
+    -- Somebody has to be named to catch what the swap displaces -- name nobody and the
+    -- engine destroys it -- and it is not the player: a porter is made for the job, handed
+    -- the lot, emptied and destroyed, all before the tick is out. Naming the player would
+    -- not lose anything either, but it would scatter it between their pockets, the floor
+    -- and the new belt's own lane, and leave the mod taking it back out again.
+    local porter = porter_for(surface, at, force, ghost)
+    if not porter then
+      take_back(record, job.item, landed)
+      abandon(record, job)
+      return
+    end
+
+    local made = swap(porter, ghost, quality)
+    local carried = porter.get_main_inventory()
+
+    if not made then
+      if carried then shed(surface, at, force, carried) end
+      porter.destroy()
+      take_back(record, job.item, landed)
+      abandon(record, job)
+      return
+    end
+
+    -- The swap is made, so what paid for it is spent. It came out of the pockets when the
+    -- arm set off, so nothing is charged here: this is where it stops existing.
+    local inside = box.get_inventory(defines.inventory.chest)
+    if inside then inside.remove{ name = job.item, count = math.min(landed, job.count) } end
+    if short > 0 then job.escrow = job.escrow - short end
+
+    -- The box goes and the claw is turned for home before anything is put in its hand, in
+    -- that order. An inserter standing over a container with something in its hand puts it
+    -- in the container, and the box is about to be taken away with it: the belt that came
+    -- off went into the box and out of the world, once, before this was written down.
+    job.going = "back"
+    job.ghost = nil
+    catcher_away(record)
+    local returning = record.entity
+    if returning and returning.valid and record.rest then
+      returning.drop_position = { record.rest.x, record.rest.y }
+    end
+
+    -- The thing itself rides home in the claw. Everything the replacement could not hold
+    -- goes on the floor, marked, where a robot would have shed it.
+    if carried then
+      if product then
+        local stack = carried.find_item_stack{ name = product, quality = quality }
+        if stack and fill_claw(record, stack) then stack.clear() end
+      end
+      shed(surface, at, force, carried)
+    end
+    porter.destroy()
     return
   end
 
-  local _, built
-  if upgrading(ghost) then
-    built = swap(player, ghost)
-  else
-    _, built = ghost.revive()
-  end
+  local _, built = ghost.revive()
   if not built then
     take_back(record, job.item, landed)
     abandon(record, job)
@@ -1602,6 +1710,9 @@ function redirect(player, wearer, from, record, job, claimed, range)
     choose(player, wearer, from, work_near(wearer, range), claimed, range)
   if not ghost then return false end
   if item ~= job.item then return false end
+  -- Never onto a swap. What comes off one is carried home in the claw, and a claw part way
+  -- through a round is still holding the round.
+  if upgrading(ghost) then return false end
 
   -- A ghost wanting a different number of the same thing is still worth turning to. What
   -- was set aside covers the ghost the arm set out for, so turning to a smaller one hands
@@ -1791,9 +1902,16 @@ local function assign(player, wearer, list, tick)
         -- nothing is created: it is either delivered, brought back, or lost by the player
         -- who owned it. The last tier fills its claw with as many as there is work for.
         local inventory = pockets(player, wearer)
-        record.job.left = loads_for(nearby, claimed, wearer.position, from, tier.range,
-          item, count, inventory and inventory.get_item_count(item) or count,
-          trips_for(player.force, tier))
+        -- A trip that is going to make a swap carries one thing and no more. The claw
+        -- comes home with what came off, and a claw already holding the rest of a round
+        -- has nowhere to put it.
+        if upgrading(ghost) then
+          record.job.left = 1
+        else
+          record.job.left = loads_for(nearby, claimed, wearer.position, from, tier.range,
+            item, count, inventory and inventory.get_item_count(item) or count,
+            trips_for(player.force, tier))
+        end
         local arm = aim(player, wearer, record, slot, #list, record.job)
         if arm then
           -- Everything the round will need comes out of the pockets now, whether or not

@@ -165,6 +165,23 @@ function world.ghost(player, name, dx, dy)
   return ghost
 end
 
+---What an inventory looks like, slot by slot, for a test that cares where things are.
+---
+---Only worth asserting against with the game's own sorting turned off: left on, it
+---rearranges the character's pockets by itself between one tick and the next.
+---@param inventory LuaInventory
+---@param upto integer how many slots to describe
+---@return string
+function world.picture(inventory, upto)
+  local slots = {}
+  for index = 1, upto do
+    local stack = inventory[index]
+    slots[#slots + 1] = index .. "=" .. (stack.valid_for_read
+      and (stack.name .. "x" .. stack.count) or "-")
+  end
+  return table.concat(slots, " ")
+end
+
 ---A thing standing in the arena with an upgrade order hung on it, which is what the
 ---upgrade planner actually leaves behind.
 ---

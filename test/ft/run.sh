@@ -32,6 +32,7 @@ fi
 mkdir -p "$data/mods"
 ln -sfn "$root/test/ft/ce-tests" "$data/mods/ce-tests"
 
+
 exec node_modules/.bin/factorio-test run \
     --factorio-path "$factorio" \
     --data-directory "$data" \
