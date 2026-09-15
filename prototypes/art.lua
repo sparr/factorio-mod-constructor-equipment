@@ -48,9 +48,8 @@ end
 ---One of the hand pictures of the inserter a tier borrows.
 ---@param tier table
 ---@param part "base"|"closed"|"open"
----@param shadow boolean?
 ---@return table
-function art.hand(tier, part, shadow)
+function art.hand(tier, part)
   local size = tier.sizes[part]
   return {
     filename = "__base__/graphics/entity/" .. tier.hand .. "/"
@@ -59,8 +58,41 @@ function art.hand(tier, part, shadow)
     width = size[1],
     height = size[2],
     scale = require("lib.tiers").SCALE,
-    draw_as_shadow = shadow or nil,
   }
+end
+
+---The shadow that goes with one of those hand pictures, taken from the inserter the tier
+---borrows rather than written out here.
+---
+---The base game draws a hand's shadow from its own file, and which file that is does not
+---follow from the hand's name: every tier of inserter but the bulk one shares the burner
+---inserter's hand shadows, and the bulk one shares only its base. Pointing these at the
+---colour art with draw_as_shadow set was wrong twice over -- it drew the silhouette of the
+---wrong shape, and it left this mod claiming a shadow lived in a file that holds a hand.
+---A mod that reskins inserter shadows by swapping the mod name in those filenames then
+---looked for a hand where its own shadows are kept, found nothing, and took the load down
+---with it (Enhanced Shadows, reported on the mod portal).
+---
+---Copying the prototype keeps the two ends together: whatever file the source inserter
+---says its shadow is in is the file this asks for, at this mod's own scale.
+---
+---draw_as_shadow has to be said out loud even though the field is called a shadow and the
+---base game leaves it off. Without it the picture is drawn in the ordinary pass, over the
+---arm rather than under it, and the soft edge each of these files is drawn with paints a
+---pale rim around every part of the hand and over the shadow beside it. With it, the two
+---shadows go into the shadow pass and lie flat, which is what a hand's shadow looks like
+---everywhere else in the factory.
+---@param tier table
+---@param part "base"|"closed"|"open"
+---@return table?
+function art.hand_shadow(tier, part)
+  local source = data.raw.inserter[tier.hand]
+  local shadow = source and source["hand_" .. part .. "_shadow"]
+  if not shadow then return nil end
+  local copy = table.deepcopy(shadow)
+  copy.scale = require("lib.tiers").SCALE
+  copy.draw_as_shadow = true
+  return copy
 end
 
 return art

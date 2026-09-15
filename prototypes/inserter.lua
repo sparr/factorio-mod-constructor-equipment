@@ -81,9 +81,9 @@ for _, tier in ipairs(tiers.list) do
     hand_base_picture = art.hand(tier, "base"),
     hand_closed_picture = art.hand(tier, "closed"),
     hand_open_picture = art.hand(tier, "open"),
-    hand_base_shadow = art.hand(tier, "base", true),
-    hand_closed_shadow = art.hand(tier, "closed", true),
-    hand_open_shadow = art.hand(tier, "open", true),
+    hand_base_shadow = art.hand_shadow(tier, "base"),
+    hand_closed_shadow = art.hand_shadow(tier, "closed"),
+    hand_open_shadow = art.hand_shadow(tier, "open"),
     collision_box = { { -0.15, -0.15 }, { 0.15, 0.15 } },
     collision_mask = { layers = {} },
     -- No selection box at all rather than a small one. Hovering something an inserter is

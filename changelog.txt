@@ -1,5 +1,8 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.5
+  Bugfixes:
+    - Fixed the game failing to load alongside Enhanced Shadows
+    - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.4
 Date: 2026-09-14
