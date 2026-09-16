@@ -206,6 +206,32 @@ function world.to_upgrade(player, name, target, dx, dy)
   return entity
 end
 
+---A cliff in the arena, marked for deconstruction.
+---
+---Cliffs are placed rather than generated, so which way it lies is said outright. Returns
+---nothing if the game will not put one there, which a test should skip on rather than fail.
+---@param player LuaPlayer
+---@param dx number
+---@param dy number
+---@return LuaEntity?
+function world.cliff(player, dx, dy)
+  -- A cliff cannot be marked at all until the force knows how to blow one up, which is the
+  -- game's own gate rather than the mod's.
+  local technology = player.force.technologies["cliff-explosives"]
+  if technology then technology.researched = true end
+  local ok, cliff = pcall(function()
+    return player.surface.create_entity{
+      name = "cliff",
+      position = { world.ORIGIN.x + dx, world.ORIGIN.y + dy },
+      cliff_orientation = "west-to-east",
+      force = "neutral",
+    }
+  end)
+  if not (ok and cliff) then return nil end
+  cliff.order_deconstruction(player.force)
+  return cliff
+end
+
 ---Fill every free slot of the pockets, so that nothing else will fit in them.
 ---@param player LuaPlayer
 function world.fill_pockets(player)

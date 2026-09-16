@@ -7,6 +7,7 @@ Version: 2.1.5
     - The arms now pay for quality work with items of that quality, whether they are raising a ghost or carrying out an upgrade
     - Mirroring carries across an upgrade
     - Both ends of an underground belt go up together, from whichever end an arm can reach, for the price of two, and whatever was travelling in the tunnel stays in the tunnel rather than being turned out onto the ground
+    - An arm now carries a cliff explosive out to a cliff you have marked for deconstruction, at the cost of one, the same as a construction robot spends
   Bugfixes:
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself

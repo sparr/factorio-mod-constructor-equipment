@@ -687,7 +687,64 @@ end
 ---@return LuaQualityPrototype?
 local function outcome_of(work)
   if work.type == "entity-ghost" then return work.ghost_prototype, work.quality end
+  if work.type == "cliff" then return nil end
   return work.get_upgrade_target()
+end
+
+---How one piece of work is told from another, so that no two arms set off for the same one.
+---
+---A unit number where there is one, and where there is not, the ground it stands on. A
+---cliff has no unit number: it is scenery the map generator laid down rather than something
+---built, and a search for one comes back with nothing to key a claim on.
+---@param work LuaEntity
+---@return string|integer
+local function claim_of(work)
+  return work.unit_number or ("at " .. work.position.x .. "," .. work.position.y)
+end
+
+---Whether a piece of work is a cliff waiting to be blown up.
+---
+---A cliff marked for deconstruction is not a demolition the arm can carry out. It is a
+---delivery: the claw brings an explosive and comes home empty, which is what a construction
+---robot does with one. Measured on 2.1.17, a marked cliff stood untouched while a network
+---with no explosives in it finished everything else, and went the moment one was put in a
+---chest, at a cost of exactly one.
+---@param work LuaEntity
+---@return boolean
+local function exploding(work)
+  return work.type == "cliff"
+end
+
+---What a cliff asks to be brought, in the shape items_to_place_this comes in.
+---
+---Read off the cliff rather than named here: which explosive a cliff wants is a property of
+---the cliff, and a planet that wants a different one says so in its own prototype.
+---@param work LuaEntity
+---@return {name: string, count: integer}[]?
+local function explosive_for(work)
+  local wanted = work.prototype.cliff_explosive_prototype
+  if not wanted then return nil end
+  return { { name = wanted, count = 1 } }
+end
+
+---The projectile an explosive throws, which is what actually breaks the cliffs.
+---
+---Thrown rather than the cliff simply being destroyed, so that the blast does what a blast
+---does: it takes the neighbours in its radius with it, which is why a robot clearing a wall
+---of cliffs does not spend one charge per cliff.
+---@param name string the explosive item
+---@return string?
+local function projectile_of(name)
+  local item = prototypes.item[name]
+  local capsule = item and item.capsule_action
+  local attack = capsule and capsule.attack_parameters
+  local ammo = attack and attack.ammo_type
+  for _, action in pairs(ammo and ammo.action or {}) do
+    for _, delivery in pairs(action.action_delivery or {}) do
+      if delivery.type == "projectile" then return delivery.projectile end
+    end
+  end
+  return nil
 end
 
 ---Whether a piece of work is a thing standing there waiting to be swapped rather than a
@@ -711,7 +768,9 @@ end
 ---@return boolean
 local function still_wanted(work)
   if not (work and work.valid) then return false end
-  if not upgrading(work) then return true end
+  if exploding(work) then return work.to_be_deconstructed() end
+  -- a ghost somebody has since marked for deconstruction is not something to build
+  if not upgrading(work) then return not work.to_be_deconstructed() end
   return work.to_be_upgraded() and not work.to_be_deconstructed()
 end
 
@@ -775,6 +834,9 @@ end
 ---@param ghost LuaEntity
 ---@return boolean
 local function buildable(work)
+  -- Nothing is put down on a cliff, so there is no room to ask about. The blast makes its
+  -- own space.
+  if exploding(work) then return true end
   local prototype = outcome_of(work)
   if not prototype then return false end
   return work.surface.can_place_entity{
@@ -805,7 +867,11 @@ end
 ---@param at {x: number, y: number}
 ---@return boolean
 local function standing_in(ghost, at)
-  local prototype = outcome_of(ghost)
+  -- Nobody stands in a cliff: it is solid, and a character next to one would otherwise
+  -- count as inside it, because a cliff is four tiles across and the question is asked of
+  -- the footprint rather than the collision box.
+  if exploding(ghost) then return false end
+  local prototype = outcome_of(ghost) or ghost.prototype
   local across = (prototype and prototype.tile_width or 1) / 2
   local down = (prototype and prototype.tile_height or 1) / 2
   local middle = ghost.position
@@ -842,6 +908,14 @@ local function work_near(wearer, range)
   -- where it stood and hangs an order on it, so a search for ghosts finds nothing at all,
   -- which is the whole of why the arms ignored the upgrade planner. The orders have a
   -- search of their own.
+  for _, cliff in pairs(wearer.surface.find_entities_filtered{
+        position = wearer.position,
+        radius = radius,
+        type = "cliff",
+        to_be_deconstructed = true,
+      }) do
+    found[#found + 1] = cliff
+  end
   for _, marked in pairs(wearer.surface.find_entities_filtered{
         position = wearer.position,
         radius = radius,
@@ -850,9 +924,7 @@ local function work_near(wearer, range)
     -- A ghost can carry an upgrade order too, and is in the list already. Anything with no
     -- unit number is left out rather than reached for: two arms are kept off the same
     -- piece of work by its number, and work that cannot be claimed cannot be shared out.
-    if marked.type ~= "entity-ghost" and marked.unit_number then
-      found[#found + 1] = marked
-    end
+    if marked.type ~= "entity-ghost" then found[#found + 1] = marked end
   end
 
   return found
@@ -898,7 +970,9 @@ local function choose(player, wearer, from, nearby, claimed, range)
       local outcome, outcome_quality = outcome_of(ghost)
       local quality = outcome_quality and outcome_quality.name or "normal"
       local item, needed
-      if outcome then
+      if exploding(ghost) then
+        item, needed = build.placing_item(explosive_for(ghost), carried_at(quality))
+      elseif outcome then
         item, needed = build.placing_item(outcome.items_to_place_this, carried_at(quality))
         -- Both ends of a pair go up together, so both are paid for together. Asked for
         -- after the item is chosen, and re-asked of the pockets: a player holding one is
@@ -918,7 +992,7 @@ local function choose(player, wearer, from, nearby, claimed, range)
       --
       -- Two arms both reaching for the same ghost would mean one of them delivering into a
       -- space the other had already built in, and coming home having wasted a swing.
-      if item and not (claimed and claimed[ghost.unit_number])
+      if item and not (claimed and claimed[claim_of(ghost)])
           and not standing_in(ghost, standing)
           and not reach.out_of_range(from, ghost.position, range)
           and buildable(ghost) then
@@ -977,7 +1051,7 @@ local function loads_for(nearby, claimed, standing, from, range, item, quality, 
   local wanted = 1
   for _, ghost in pairs(nearby) do
     if wanted >= capacity then break end
-    if still_wanted(ghost) and not (claimed and claimed[ghost.unit_number])
+    if still_wanted(ghost) and not (claimed and claimed[claim_of(ghost)])
         and not standing_in(ghost, standing)
         and not reach.out_of_range(from, ghost.position, range) then
       local outcome, outcome_quality = outcome_of(ghost)
@@ -1704,6 +1778,36 @@ local function deliver(player, wearer, from, record, job, claimed)
     return
   end
 
+  if exploding(ghost) then
+    local surface, at, force = ghost.surface, ghost.position, ghost.force
+    local thrown = projectile_of(job.item)
+
+    -- The charge is spent whatever happens next: it came out of the pockets when the arm
+    -- set off and it has just been handed over.
+    local inside = box.get_inventory(defines.inventory.chest)
+    if inside then
+      inside.remove{ name = job.item, quality = job.quality,
+        count = math.min(landed, job.count) }
+    end
+    if short > 0 then job.escrow = job.escrow - short end
+
+    job.going = "back"
+    job.ghost = nil
+    catcher_away(record)
+
+    if thrown then
+      -- Thrown rather than the cliff simply being taken away, so the blast takes the
+      -- neighbours in its radius with it the way a robot's charge does.
+      surface.create_entity{ name = thrown, position = at, target = at, speed = 1,
+        force = force }
+    else
+      -- An explosive with no projectile to throw is not something the base game has. Take
+      -- the cliff down by hand rather than charging for nothing.
+      ghost.destroy{ do_cliff_correction = true, raise_destroy = true }
+    end
+    return
+  end
+
   if upgrading(ghost) then
     -- Everything worth knowing about what comes off is read here rather than afterwards,
     -- because afterwards there is nothing left standing to ask.
@@ -1840,9 +1944,9 @@ function redirect(player, wearer, from, record, job, claimed, range)
   -- The claw is already carrying this item at the quality it set off with, and a ghost
   -- wanting another quality of the same thing is a different errand.
   if quality ~= job.quality then return false end
-  -- Never onto a swap. What comes off one is carried home in the claw, and a claw part way
-  -- through a round is still holding the round.
-  if upgrading(ghost) then return false end
+  -- Never onto a swap or a cliff. What comes off a swap is carried home in the claw, and a
+  -- claw part way through a round is still holding the round; a charge is a round of its own.
+  if upgrading(ghost) or exploding(ghost) then return false end
 
   -- A ghost wanting a different number of the same thing is still worth turning to. What
   -- was set aside covers the ghost the arm set out for, so turning to a smaller one hands
@@ -1867,7 +1971,7 @@ function redirect(player, wearer, from, record, job, claimed, range)
     if job.left < 1 then return false end
   end
 
-  if claimed then claimed[ghost.unit_number] = true end
+  if claimed then claimed[claim_of(ghost)] = true end
   job.ghost = ghost
   job.target = ghost.position
   return true
@@ -1882,9 +1986,9 @@ local function claims(list)
   for _, record in pairs(list) do
     local job = record.job
     if job and job.ghost and job.ghost.valid then
-      claimed[job.ghost.unit_number] = true
+      claimed[claim_of(job.ghost)] = true
       local partner = paired_with(job.ghost)
-      if partner and partner.unit_number then claimed[partner.unit_number] = true end
+      if partner then claimed[claim_of(partner)] = true end
     end
   end
   return claimed
@@ -2018,10 +2122,10 @@ local function assign(player, wearer, list, tick)
         record.run = game.tick
       end
       if ghost then
-        claimed[ghost.unit_number] = true
+        claimed[claim_of(ghost)] = true
         -- The far end of a pair goes up with this one, so it is spoken for too.
         local partner = paired_with(ghost)
-        if partner and partner.unit_number then claimed[partner.unit_number] = true end
+        if partner then claimed[claim_of(partner)] = true end
         record.job = {
           ghost = ghost,
           target = ghost.position,
@@ -2044,7 +2148,9 @@ local function assign(player, wearer, list, tick)
         -- A trip that is going to make a swap carries one thing and no more. The claw
         -- comes home with what came off, and a claw already holding the rest of a round
         -- has nowhere to put it.
-        if upgrading(ghost) then
+        if upgrading(ghost) or exploding(ghost) then
+          -- A trip that is going to make a swap carries one thing; so does one carrying a
+          -- charge, because the blast may take the next cliff on the list with it.
           record.job.left = 1
         else
           record.job.left = loads_for(nearby, claimed, wearer.position, from, tier.range,
@@ -2261,6 +2367,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.vehicles",
     "test.ft.toggle",
     "test.ft.upgrading",
+    "test.ft.cliffs",
   }, {
     load_luassert = true,
     game_speed = 100,
