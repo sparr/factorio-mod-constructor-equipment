@@ -687,7 +687,9 @@ end
 ---@return LuaQualityPrototype?
 local function outcome_of(work)
   if work.type == "entity-ghost" then return work.ghost_prototype, work.quality end
-  if work.type == "cliff" then return nil end
+  -- Nothing is put down on a cliff or on something being taken away, so neither has an
+  -- outcome to ask about.
+  if work.type == "cliff" or work.to_be_deconstructed() then return nil end
   return work.get_upgrade_target()
 end
 
@@ -700,6 +702,17 @@ end
 ---@return string|integer
 local function claim_of(work)
   return work.unit_number or ("at " .. work.position.x .. "," .. work.position.y)
+end
+
+---Whether a piece of work is something to be taken up rather than put down.
+---
+---Asked before the upgrade question, because a thing marked for deconstruction is still a
+---thing standing there and answers yes to both otherwise.
+---@param work LuaEntity
+---@return boolean
+local function taking(work)
+  if work.type == "entity-ghost" or work.type == "cliff" then return false end
+  return work.to_be_deconstructed()
 end
 
 ---Whether a piece of work is a cliff waiting to be blown up.
@@ -768,7 +781,7 @@ end
 ---@return boolean
 local function still_wanted(work)
   if not (work and work.valid) then return false end
-  if exploding(work) then return work.to_be_deconstructed() end
+  if exploding(work) or taking(work) then return work.to_be_deconstructed() end
   -- a ghost somebody has since marked for deconstruction is not something to build
   if not upgrading(work) then return not work.to_be_deconstructed() end
   return work.to_be_upgraded() and not work.to_be_deconstructed()
@@ -834,9 +847,10 @@ end
 ---@param ghost LuaEntity
 ---@return boolean
 local function buildable(work)
-  -- Nothing is put down on a cliff, so there is no room to ask about. The blast makes its
-  -- own space.
-  if exploding(work) then return true end
+  -- Nothing is put down on a cliff or in the place of a thing being taken away, so there is
+  -- no room to ask about. The blast makes its own space, and taking a thing up makes room
+  -- rather than wanting it.
+  if exploding(work) or taking(work) then return true end
   local prototype = outcome_of(work)
   if not prototype then return false end
   return work.surface.can_place_entity{
@@ -908,6 +922,19 @@ local function work_near(wearer, range)
   -- where it stood and hangs an order on it, so a search for ghosts finds nothing at all,
   -- which is the whole of why the arms ignored the upgrade planner. The orders have a
   -- search of their own.
+  -- A deconstruction order is not a ghost either, and a tile marked for removal is an
+  -- entity of its own -- a deconstructible-tile-proxy standing on the tile -- so the same
+  -- search finds both.
+  for _, marked in pairs(wearer.surface.find_entities_filtered{
+        position = wearer.position,
+        radius = radius,
+        to_be_deconstructed = true,
+      }) do
+    if marked.type ~= "entity-ghost" and marked.type ~= "cliff" then
+      found[#found + 1] = marked
+    end
+  end
+
   for _, cliff in pairs(wearer.surface.find_entities_filtered{
         position = wearer.position,
         radius = radius,
@@ -970,7 +997,10 @@ local function choose(player, wearer, from, nearby, claimed, range)
       local outcome, outcome_quality = outcome_of(ghost)
       local quality = outcome_quality and outcome_quality.name or "normal"
       local item, needed
-      if exploding(ghost) then
+      if taking(ghost) then
+        -- Nothing is carried out to it. The claw goes empty and comes back full.
+        item, needed = nil, 0
+      elseif exploding(ghost) then
         item, needed = build.placing_item(explosive_for(ghost), carried_at(quality))
       elseif outcome then
         item, needed = build.placing_item(outcome.items_to_place_this, carried_at(quality))
@@ -992,7 +1022,7 @@ local function choose(player, wearer, from, nearby, claimed, range)
       --
       -- Two arms both reaching for the same ghost would mean one of them delivering into a
       -- space the other had already built in, and coming home having wasted a swing.
-      if item and not (claimed and claimed[claim_of(ghost)])
+      if (item or taking(ghost)) and not (claimed and claimed[claim_of(ghost)])
           and not standing_in(ghost, standing)
           and not reach.out_of_range(from, ghost.position, range)
           and buildable(ghost) then
@@ -1437,7 +1467,14 @@ local function aim(player, wearer, record, slot, count, job)
   if job then
     if job.going == "out" then
       local target = aimed_at(job, record)
-      arm.drop_position = { target.x, target.y }
+      if job.take then
+        -- The other way round: the claw reaches for the thing rather than at it, and what
+        -- it picks up comes back to where home is measured from.
+        arm.pickup_position = { target.x, target.y }
+        arm.drop_position = { rest.x, rest.y }
+      else
+        arm.drop_position = { target.x, target.y }
+      end
     elseif arm.held_stack.valid_for_read then
       -- Still carrying something on the way back, which happens when a reach is given up
       -- on: an empty hand comes home by itself, but a full one goes wherever it was told
@@ -1737,6 +1774,135 @@ local function fill_claw(record, stack)
   return true
 end
 
+---Put one trip's worth of a thing into the box, for the claw to carry home.
+---
+---What it is holding goes first, a stack at a time, and the thing itself comes up only once
+---it is empty. That is what a robot does: measured on 2.1.17, fifty of them took a full
+---steel chest away in hundred plate mouthfuls over a minute, and the chest went last. A claw
+---carries one thing at a time, so it works that way by nature rather than by arrangement,
+---and mining is only ever asked of something empty -- which matters, because mining into an
+---inventory too small to take the whole yield empties what it can and then fails, leaving
+---the thing standing and lighter than it was.
+---Only ever a clawful. A hand holds what its inserter holds, and anything put in the box
+---beyond that is left there when the box goes: a hundred plates went in and one came home.
+---Putting in what the claw can carry makes the box a step on the way rather than a place
+---something can be left behind in.
+---@param box LuaEntity
+---@param work LuaEntity
+---@param capacity integer how many the claw can hold
+---@return boolean whether anything was put in
+local function loot_into(box, work, capacity)
+  local inside = box.get_inventory(defines.inventory.chest)
+  if not inside then return false end
+
+  for index = 1, work.get_max_inventory_index() do
+    local held = work.get_inventory(index)
+    if held and not held.is_empty() then
+      for slot = 1, #held do
+        local stack = held[slot]
+        if stack.valid_for_read then
+          local quality = stack.quality and stack.quality.name or nil
+          local moved = inside.insert{ name = stack.name, quality = quality,
+            count = math.min(capacity, stack.count) }
+          if moved > 0 then
+            if moved >= stack.count then stack.clear() else stack.count = stack.count - moved end
+            return true
+          end
+          return false
+        end
+      end
+    end
+  end
+
+  local surface, at, force = work.surface, work.position, work.force
+  local products = work.prototype.mineable_properties.products
+  local size = math.max(1, products and #products or 1)
+  local room = game.create_inventory(size)
+  local mined = work.mine{ inventory = room, force = false, raise_destroyed = true }
+  -- Grown a slot at a time until it fits, the way Blueprint Shotgun does it: what a thing
+  -- yields is not always as long as its product list, and a mine that will not fit is a
+  -- mine that half happened.
+  local tries = 0
+  while not mined and tries < 8 do
+    size = size + 1
+    room.resize(size)
+    mined = work.mine{ inventory = room, force = false, raise_destroyed = true }
+    tries = tries + 1
+  end
+  if not mined then room.destroy() return false end
+
+  local took = false
+  if room[1].valid_for_read then
+    local quality = room[1].quality and room[1].quality.name or nil
+    local moved = inside.insert{ name = room[1].name, quality = quality,
+      count = math.min(capacity, room[1].count) }
+    if moved > 0 then
+      took = true
+      if moved >= room[1].count then room[1].clear()
+      else room[1].count = room[1].count - moved end
+    end
+  end
+  -- More than a claw can carry goes on the floor marked, where a robot leaves what it
+  -- cannot take, rather than waiting on a trip that would have nowhere to put it.
+  shed(surface, at, force, room)
+  room.destroy()
+  return took
+end
+
+---Take something up: wait for the claw to arrive, give it a load, and send it home.
+---
+---The mirror of a delivery, and it leans on the same box. An inserter with a container at
+---its pickup position reaches out to it and waits there with an open hand -- measured, the
+---hand sits at full stretch reporting no source items until something appears, and takes it
+---the moment it does. So arrival is not a distance this has to measure either: it is the
+---box being near enough to exist, and the claw filling itself is the engine's own report
+---that it got there.
+---@param player LuaPlayer
+---@param wearer LuaEntity
+---@param record table
+---@param job table
+local function take_up(player, wearer, record, job)
+  local arm = record.entity
+  if not (arm and arm.valid) then return end
+
+  if arm.held_stack.valid_for_read and arm.held_stack.count > 0 then
+    job.going = "back"
+    job.ghost = nil
+    -- Belt and braces: the box should be empty, since only a clawful ever goes in it, and
+    -- anything still there would go with it.
+    local box = record.catcher
+    if box and box.valid then
+      local inside = box.get_inventory(defines.inventory.chest)
+      if inside and not inside.is_empty() then
+        shed(arm.surface, box.position, arm.force, inside)
+      end
+    end
+    catcher_away(record)
+    if record.rest then arm.drop_position = { record.rest.x, record.rest.y } end
+    return
+  end
+
+  -- Arrival is the inserter's own word for it. An arm reaching for a source with nothing in
+  -- it stretches out and reports that it is waiting for source items, and it says so only
+  -- once it is there: measured, the hand sat at full stretch in that state until something
+  -- appeared and took it the tick after.
+  --
+  -- The box's own existence will not do, the way it does for a delivery. It is made as soon
+  -- as the claw is near enough that it might arrive between one tick and the next, and that
+  -- window is widened by how far the hand moved, which on the first tick of a swing is the
+  -- whole re-aiming. A delivery does not mind -- the engine fills the box when it gets
+  -- there -- but a fetch fills the box itself, and an early box means a thing mined while
+  -- the claw is still two tiles off.
+  if arm.status ~= defines.entity_status.waiting_for_source_items then return end
+
+  local box = record.catcher
+  if not (box and box.valid) then return end
+  local inside = box.get_inventory(defines.inventory.chest)
+  if inside and not inside.is_empty() then return end
+
+  loot_into(box, job.ghost, trips_for(player.force, tier_of(record)))
+end
+
 ---Put the thing down: raise the ghost or make the swap, pay for it, and let the arm start
 ---coming home.
 ---@param player LuaPlayer
@@ -1946,7 +2112,7 @@ function redirect(player, wearer, from, record, job, claimed, range)
   if quality ~= job.quality then return false end
   -- Never onto a swap or a cliff. What comes off a swap is carried home in the claw, and a
   -- claw part way through a round is still holding the round; a charge is a round of its own.
-  if upgrading(ghost) or exploding(ghost) then return false end
+  if upgrading(ghost) or exploding(ghost) or taking(ghost) then return false end
 
   -- A ghost wanting a different number of the same thing is still worth turning to. What
   -- was set aside covers the ghost the arm set out for, so turning to a smaller one hands
@@ -2068,6 +2234,8 @@ local function advance(player, wearer, record, slot, count, claimed)
       if not redirect(player, wearer, from, record, job, claimed, tier.range) then
         abandon(record, job)
       end
+    elseif job.take then
+      take_up(player, wearer, record, job)
     else
       -- deliver() does nothing until the box has been given something, so there is no
       -- arrival to measure and nothing to step over: it can simply be asked every tick
@@ -2148,7 +2316,11 @@ local function assign(player, wearer, list, tick)
         -- A trip that is going to make a swap carries one thing and no more. The claw
         -- comes home with what came off, and a claw already holding the rest of a round
         -- has nowhere to put it.
-        if upgrading(ghost) or exploding(ghost) then
+        if taking(ghost) then
+          -- Nothing is carried out and one thing comes back, so there is nothing to queue.
+          record.job.left = 1
+          record.job.take = true
+        elseif upgrading(ghost) or exploding(ghost) then
           -- A trip that is going to make a swap carries one thing; so does one carrying a
           -- charge, because the blast may take the next cliff on the list with it.
           record.job.left = 1
@@ -2159,7 +2331,11 @@ local function assign(player, wearer, list, tick)
             trips_for(player.force, tier))
         end
         local arm = aim(player, wearer, record, slot, #list, record.job)
-        if arm then
+        if arm and record.job.take then
+          -- Nothing leaves the pockets for a fetch. The claw sets off empty.
+          record.job.carried = 0
+          record.job.escrow = 0
+        elseif arm then
           -- Everything the round will need comes out of the pockets now, whether or not
           -- the claw can hold it. A claw holds what its inserter holds -- one thing for a
           -- plain one -- and a curved rail wants three, so the claw takes as many as fit
@@ -2368,6 +2544,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.toggle",
     "test.ft.upgrading",
     "test.ft.cliffs",
+    "test.ft.taking",
   }, {
     load_luassert = true,
     game_speed = 100,
