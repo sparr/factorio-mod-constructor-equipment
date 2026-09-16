@@ -427,6 +427,42 @@ describe("a character wearing the equipment", function()
     end)
   end)
 
+  -- Nothing about a swap wants the player's own pockets any more -- a porter of the mod's
+  -- own catches what comes off -- so a driver with no character upgrades like anybody else.
+  -- They are not exotic: the map editor and the opening cutscene both make one.
+  it("upgrades for a driver with no character", function()
+    local tank = player.surface.create_entity{
+      name = "tank", position = world.ORIGIN, force = player.force,
+      direction = defines.direction.east }
+    assert(tank, "could not put the tank down")
+    tank.insert{ name = "coal", count = 10 }
+    world.fitted(tank)
+    tank.insert{ name = FASTER, count = 5 }
+
+    -- The character goes before anybody takes the wheel. Destroying it while seated puts
+    -- the player out of the vehicle, and a player out of a vehicle with no character is
+    -- wearing nothing at all.
+    player.character.destroy()
+    assert.is_nil(player.character, "the character did not actually go away")
+    tank.set_driver(player)
+    assert.is_true(player.driving, "a player with no character could not take the wheel")
+
+    -- Beside the hull, not in front of it: a vehicle's arms are mounted along its sides and
+    -- reach from where they are bolted.
+    local box = tank.prototype.selection_box
+    local away = (box.right_bottom.x - box.left_top.x) / 2 + 1.5
+    local turns = tank.orientation * 2 * math.pi
+    world.to_upgrade(player, BELT, FASTER,
+      math.cos(turns) * away, math.sin(turns) * away)
+
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(1, world.count(player, FASTER), "the belt was never upgraded")
+      assert.are.equal(0, world.count(player, BELT), "the old belt is still standing there")
+      assert.are.equal(4, tank.get_item_count(FASTER),
+        "the vehicle's own hold should have paid for it")
+    end)
+  end)
+
   it("stops when the order is called off mid reach", function()
     local belt = world.to_upgrade(player, BELT, FASTER, 2, 0)
     after_ticks(12, function()
