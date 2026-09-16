@@ -854,10 +854,20 @@ end
 ---@return LuaEntity? ghost
 ---@return string? item
 ---@return integer? count
+---@return string? quality what quality of that item it has to be
 local function choose(player, wearer, from, nearby, claimed, range)
   local inventory = pockets(player, wearer)
   if not inventory then return nil end
-  local function carried(name) return inventory.get_item_count(name) end
+  ---How many of an item the wearer has at a given quality.
+  ---
+  ---At that quality and no other. A ghost of a legendary belt is raised legendary and an
+  ---order to upgrade to one puts a legendary one down, so paying for either with a normal
+  ---belt out of the pocket would be minting the difference.
+  local function carried_at(quality)
+    return function(name)
+      return inventory.get_item_count{ name = name, quality = quality }
+    end
+  end
 
   local standing = wearer.position
   for _, ghost in pairs(nearby) do
@@ -867,10 +877,11 @@ local function choose(player, wearer, from, nearby, claimed, range)
       -- Written out rather than folded into an and: a Lua and yields one value, so
       -- `local item, needed = wanted and placing_item(...)` quietly throws the count away
       -- and every ghost is asked for nil of its item.
-      local outcome = outcome_of(ghost)
+      local outcome, outcome_quality = outcome_of(ghost)
+      local quality = outcome_quality and outcome_quality.name or "normal"
       local item, needed
       if outcome then
-        item, needed = build.placing_item(outcome.items_to_place_this, carried)
+        item, needed = build.placing_item(outcome.items_to_place_this, carried_at(quality))
       end
       -- An inserter will not reach for something underneath its own base. Asked to, it
       -- twitches a tick's worth and springs back, over and over, and because a swing
@@ -886,7 +897,7 @@ local function choose(player, wearer, from, nearby, claimed, range)
           and not standing_in(ghost, standing)
           and not reach.out_of_range(from, ghost.position, range)
           and buildable(ghost) then
-        return ghost, item, needed
+        return ghost, item, needed, quality
       end
     end
   end
@@ -935,7 +946,8 @@ end
 ---@param carried integer how many the character has
 ---@param capacity integer how many loads the claw holds
 ---@return integer
-local function loads_for(nearby, claimed, standing, from, range, item, count, carried, capacity)
+local function loads_for(nearby, claimed, standing, from, range, item, quality, count,
+                         carried, capacity)
   if capacity <= 1 then return 1 end
   local wanted = 1
   for _, ghost in pairs(nearby) do
@@ -943,13 +955,16 @@ local function loads_for(nearby, claimed, standing, from, range, item, count, ca
     if still_wanted(ghost) and not (claimed and claimed[ghost.unit_number])
         and not standing_in(ghost, standing)
         and not reach.out_of_range(from, ghost.position, range) then
-      local outcome = outcome_of(ghost)
+      local outcome, outcome_quality = outcome_of(ghost)
       local other, needed
       if outcome then
         other, needed =
           build.placing_item(outcome.items_to_place_this, function() return count end)
       end
-      if other == item and needed == count then wanted = wanted + 1 end
+      if other == item and needed == count
+          and (outcome_quality and outcome_quality.name or "normal") == quality then
+        wanted = wanted + 1
+      end
     end
   end
   return math.max(1, math.min(wanted, math.floor(carried / count)))
@@ -981,10 +996,10 @@ local function job_for(player, wearer, from, nearby, claimed, record, range)
     -- settling. The run ends when the work runs out, not when an arm is a tick short of
     -- being able to start the next trip.
     local ghost = choose(player, wearer, from, nearby, claimed, range)
-    return nil, nil, nil, ghost ~= nil
+    return nil, nil, nil, nil, ghost ~= nil
   end
-  local ghost, item, count = choose(player, wearer, from, nearby, claimed, range)
-  return ghost, item, count, false
+  local ghost, item, count, quality = choose(player, wearer, from, nearby, claimed, range)
+  return ghost, item, count, quality, false
 end
 
 ---The list of a player's arms, one per copy of the equipment they are wearing.
@@ -1080,17 +1095,18 @@ end
 ---Put items from the box back into the claw, where they are still the player's.
 ---@param record table
 ---@param name string
+---@param quality string?
 ---@param count integer
-local function take_back(record, name, count)
+local function take_back(record, name, quality, count)
   if count <= 0 then return end
   local box, arm = record.catcher, record.entity
   if box and box.valid then
     local inside = box.get_inventory(defines.inventory.chest)
-    if inside then inside.remove{ name = name, count = count } end
+    if inside then inside.remove{ name = name, quality = quality, count = count } end
   end
   if arm and arm.valid then
     local held = arm.held_stack.valid_for_read and arm.held_stack.count or 0
-    arm.held_stack.set_stack{ name = name, count = held + count }
+    arm.held_stack.set_stack{ name = name, quality = quality, count = held + count }
   end
 end
 
@@ -1134,7 +1150,7 @@ local function catcher_at(record, surface, at, near)
       local inside = box.get_inventory(defines.inventory.chest)
       if inside then
         for _, stack in pairs(inside.get_contents()) do
-          take_back(record, stack.name, stack.count)
+          take_back(record, stack.name, stack.quality and stack.quality.name or nil, stack.count)
         end
       end
       box.destroy()
@@ -1188,12 +1204,12 @@ local function put_away(player, record)
     local inventory = pockets(player, record.wearer or player.character)
     local job = record.job
     if job and (job.escrow or 0) > 0 and job.item and inventory then
-      inventory.insert{ name = job.item, count = job.escrow }
+      inventory.insert{ name = job.item, quality = job.quality, count = job.escrow }
       job.escrow = 0
     end
     if arm.held_stack.valid_for_read then
       if inventory then
-        inventory.insert{ name = arm.held_stack.name, count = arm.held_stack.count }
+        inventory.insert(arm.held_stack)
       end
       arm.held_stack.clear()
     end
@@ -1384,13 +1400,13 @@ local function give_back(player, wearer, record)
   -- is simply the player's again. There is nothing holding it and nowhere for it to fall,
   -- so it does not need the spill or hold question that the claw's own load does.
   if job and (job.escrow or 0) > 0 and job.item and inventory then
-    local returned = inventory.insert{ name = job.item, count = job.escrow }
+    local returned = inventory.insert{ name = job.item, quality = job.quality, count = job.escrow }
     job.escrow = job.escrow - returned
     if job.escrow > 0 and spills(player) then
       if wearer and wearer.valid then
         wearer.surface.spill_item_stack{
           position = wearer.position,
-          stack = { name = job.item, count = job.escrow },
+          stack = { name = job.item, quality = job.quality, count = job.escrow },
           enable_looted = true,
           force = player.force,
         }
@@ -1401,8 +1417,10 @@ local function give_back(player, wearer, record)
   end
 
   if not (arm and arm.valid and arm.held_stack.valid_for_read) then return true end
-  local name, count = arm.held_stack.name, arm.held_stack.count
-  local took = inventory and inventory.insert{ name = name, count = count } or 0
+  -- The stack as it stands rather than its name and number: what the claw is carrying may
+  -- be the very thing an upgrade pulled up, which can be damaged and can be any quality.
+  local count = arm.held_stack.count
+  local took = inventory and inventory.insert(arm.held_stack) or 0
   if took >= count then
     arm.held_stack.clear()
     return true
@@ -1412,7 +1430,7 @@ local function give_back(player, wearer, record)
     if wearer and wearer.valid then
       wearer.surface.spill_item_stack{
         position = wearer.position,
-        stack = { name = name, count = count - took },
+        stack = arm.held_stack,
         enable_looted = true,
         force = player.force,
       }
@@ -1565,7 +1583,9 @@ local function deliver(player, wearer, from, record, job, claimed)
   -- What the box was given is the delivery. Until something is in it, nothing has
   -- arrived, and that is the whole of the arrival test: no distance, nothing to step over.
   local landed = 0
-  if box and box.valid then landed = box.get_item_count(job.item) end
+  if box and box.valid then
+    landed = box.get_item_count{ name = job.item, quality = job.quality }
+  end
   if landed < 1 then return end
 
   -- A ghost can want more than a claw can hold: a plain inserter carries one item and a
@@ -1576,7 +1596,7 @@ local function deliver(player, wearer, from, record, job, claimed)
   if short > (job.escrow or 0) then
     -- the round is short of what this ghost wants, which should not happen: everything was
     -- reserved at the start. Give back what there is rather than build half a thing.
-    take_back(record, job.item, landed)
+    take_back(record, job.item, job.quality, landed)
     abandon(record, job)
     return
   end
@@ -1584,7 +1604,7 @@ local function deliver(player, wearer, from, record, job, claimed)
   if not still_wanted(ghost) then
     -- the ghost went, or the upgrade was called off, while the claw was on its way; the
     -- load goes back in the claw and comes home, since it has already been paid for
-    take_back(record, job.item, landed)
+    take_back(record, job.item, job.quality, landed)
     abandon(record, job)
     return
   end
@@ -1603,7 +1623,7 @@ local function deliver(player, wearer, from, record, job, claimed)
     -- and the new belt's own lane, and leave the mod taking it back out again.
     local porter = porter_for(surface, at, force, ghost)
     if not porter then
-      take_back(record, job.item, landed)
+      take_back(record, job.item, job.quality, landed)
       abandon(record, job)
       return
     end
@@ -1614,7 +1634,7 @@ local function deliver(player, wearer, from, record, job, claimed)
     if not made then
       if carried then shed(surface, at, force, carried) end
       porter.destroy()
-      take_back(record, job.item, landed)
+      take_back(record, job.item, job.quality, landed)
       abandon(record, job)
       return
     end
@@ -1622,7 +1642,10 @@ local function deliver(player, wearer, from, record, job, claimed)
     -- The swap is made, so what paid for it is spent. It came out of the pockets when the
     -- arm set off, so nothing is charged here: this is where it stops existing.
     local inside = box.get_inventory(defines.inventory.chest)
-    if inside then inside.remove{ name = job.item, count = math.min(landed, job.count) } end
+    if inside then
+      inside.remove{ name = job.item, quality = job.quality,
+        count = math.min(landed, job.count) }
+    end
     if short > 0 then job.escrow = job.escrow - short end
 
     -- The box goes and the claw is turned for home before anything is put in its hand, in
@@ -1652,7 +1675,7 @@ local function deliver(player, wearer, from, record, job, claimed)
 
   local _, built = ghost.revive()
   if not built then
-    take_back(record, job.item, landed)
+    take_back(record, job.item, job.quality, landed)
     abandon(record, job)
     return
   end
@@ -1661,11 +1684,14 @@ local function deliver(player, wearer, from, record, job, claimed)
   -- when the claw was loaded, so nothing is charged here: this is simply where they stop
   -- existing.
   local inside = box.get_inventory(defines.inventory.chest)
-  if inside then inside.remove{ name = job.item, count = math.min(landed, job.count) } end
+  if inside then
+      inside.remove{ name = job.item, quality = job.quality,
+        count = math.min(landed, job.count) }
+    end
   if short > 0 then job.escrow = job.escrow - short end
   -- whatever else the claw brought is still the player's, and goes back in the claw for
   -- the next ghost of this round
-  take_back(record, job.item, math.max(0, landed - job.count))
+  take_back(record, job.item, job.quality, math.max(0, landed - job.count))
 
   -- More of this trip left, and another of the same thing in reach, means going home would
   -- be a wasted journey. So the claw turns to the next one with the rest of its load still
@@ -1706,10 +1732,13 @@ end
 ---@param range number how far this arm reaches
 ---@return boolean whether it found somewhere else to go
 function redirect(player, wearer, from, record, job, claimed, range)
-  local ghost, item, count =
+  local ghost, item, count, quality =
     choose(player, wearer, from, work_near(wearer, range), claimed, range)
   if not ghost then return false end
   if item ~= job.item then return false end
+  -- The claw is already carrying this item at the quality it set off with, and a ghost
+  -- wanting another quality of the same thing is a different errand.
+  if quality ~= job.quality then return false end
   -- Never onto a swap. What comes off one is carried home in the claw, and a claw part way
   -- through a round is still holding the round.
   if upgrading(ghost) then return false end
@@ -1727,7 +1756,7 @@ function redirect(player, wearer, from, record, job, claimed, range)
     if (job.escrow or 0) > 0 then
       local inventory = pockets(player, wearer)
       if inventory then
-        local returned = inventory.insert{ name = job.item, count = job.escrow }
+        local returned = inventory.insert{ name = job.item, quality = job.quality, count = job.escrow }
         job.escrow = job.escrow - returned
       end
       -- anything that would not fit stays put by and goes home with the arm
@@ -1878,7 +1907,7 @@ local function assign(player, wearer, list, tick)
     else
       local tier = tier_of(record)
       local from = reaching_from(wearer, slot, #list)
-      local ghost, item, count, waiting =
+      local ghost, item, count, quality, waiting =
         job_for(player, wearer, from, nearby, claimed, record, tier.range)
       if waiting then
         -- work in reach, buffer a tick short of full: the run is still on
@@ -1891,6 +1920,10 @@ local function assign(player, wearer, list, tick)
           ghost = ghost,
           target = ghost.position,
           item = item,
+          -- What quality of it, since a ghost of a legendary belt takes a legendary belt
+          -- and an order to upgrade to one takes a legendary one. Everything that moves
+          -- this item afterwards moves it at this quality.
+          quality = quality,
           count = count,
           going = "out",
           started = tick,
@@ -1909,7 +1942,8 @@ local function assign(player, wearer, list, tick)
           record.job.left = 1
         else
           record.job.left = loads_for(nearby, claimed, wearer.position, from, tier.range,
-            item, count, inventory and inventory.get_item_count(item) or count,
+            item, quality, count,
+            inventory and inventory.get_item_count{ name = item, quality = quality } or count,
             trips_for(player.force, tier))
         end
         local arm = aim(player, wearer, record, slot, #list, record.job)
@@ -1922,15 +1956,18 @@ local function assign(player, wearer, list, tick)
           -- other means: the items are spent when the arm sets off and given back if it
           -- comes home without building anything.
           local want = count * record.job.left
-          local taken = inventory and inventory.remove{ name = item, count = want } or 0
+          local taken =
+            inventory and inventory.remove{ name = item, quality = quality, count = want } or 0
           if taken < count then
             -- not even one ghost's worth left in the pockets
-            if taken > 0 then inventory.insert{ name = item, count = taken } end
+            if taken > 0 then
+              inventory.insert{ name = item, quality = quality, count = taken }
+            end
             arm.held_stack.clear()
             record.job = nil
           else
             record.job.left = math.floor(taken / count)
-            arm.held_stack.set_stack{ name = item, count = taken }
+            arm.held_stack.set_stack{ name = item, quality = quality, count = taken }
             -- what the claw actually took, and what is being carried on its behalf
             record.job.carried = arm.held_stack.valid_for_read and arm.held_stack.count or 0
             record.job.escrow = taken - record.job.carried

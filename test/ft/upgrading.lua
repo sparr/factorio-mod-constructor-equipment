@@ -301,6 +301,60 @@ describe("a character wearing the equipment", function()
     end)
   end)
 
+  -- The quality a piece of work asks for is the quality it has to be paid in. Putting a
+  -- legendary belt down for a normal one would be minting the difference, and the hole was
+  -- open on both paths before this.
+  --
+  -- Through ghosts rather than upgrade orders, because an order cannot be given a quality
+  -- from script: order_upgrade takes a quality and hands back normal regardless. The gate
+  -- and the paying are the same code either way.
+  describe("work that asks for a better quality", function()
+    local BETTER = "uncommon"
+
+    local function quality_ghost()
+      return player.surface.create_entity{
+        name = "entity-ghost",
+        inner_name = BELT,
+        quality = BETTER,
+        position = { world.ORIGIN.x + 2, world.ORIGIN.y },
+        force = player.force,
+      }
+    end
+
+    before_each(function()
+      player.get_inventory(defines.inventory.character_main).clear()
+    end)
+
+    it("is left alone when only the plain item is carried", function()
+      player.insert{ name = BELT, count = 5 }
+      local ghost = quality_ghost()
+      assert.are.equal(BETTER, ghost.quality.name, "the ghost did not keep its quality")
+      after_ticks(A_BUILD, function()
+        assert.are.equal(1, world.ghosts(player),
+          "a plain belt paid for a better one")
+        assert.are.equal(5, player.get_item_count(BELT), "something was spent anyway")
+      end)
+    end)
+
+    it("is built with the better item, and spends that one", function()
+      local pockets = player.get_inventory(defines.inventory.character_main)
+      player.insert{ name = BELT, count = 5 }
+      player.insert{ name = BELT, quality = BETTER, count = 2 }
+      quality_ghost()
+      after_ticks(A_BUILD, function()
+        assert.are.equal(0, world.ghosts(player), "the ghost was never built")
+        local made = player.surface.find_entities_filtered{ name = BELT }[1]
+        assert.is_not_nil(made, "nothing was built")
+        assert.are.equal(BETTER, made.quality.name,
+          "what went up is not the quality that was asked for")
+        assert.are.equal(5, pockets.get_item_count{ name = BELT, quality = "normal" },
+          "a plain belt was spent on a better one")
+        assert.are.equal(1, pockets.get_item_count{ name = BELT, quality = BETTER },
+          "the better belt was not the one spent")
+      end)
+    end)
+  end)
+
   it("stops when the order is called off mid reach", function()
     local belt = world.to_upgrade(player, BELT, FASTER, 2, 0)
     after_ticks(12, function()
