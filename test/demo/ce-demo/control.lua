@@ -254,7 +254,7 @@ local ROWS = {
     },
     bays = {
       { "The toolbar button",
-        "Stand on the mark, then press the arm button on the toolbar. It stops, mid reach and all.",
+        "Stand on the mark, then press the arm button on the toolbar. It stops mid reach, and what the claw was carrying comes back. Take the arm out of your armour and the button greys out.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           for i = 0, 7 do ghost("transport-belt", x + 5, y + 2 + i) end
@@ -366,20 +366,29 @@ local ROWS = {
             chest.order_deconstruction(game.forces.player)
           end
         end },
-      { "A tile taken up",
-        "Stand on the mark. A tile marked for removal is an entity standing on it, so the same claw does it.",
+      { "A patch of tiles",
+        "Stand on the mark. A tile marked for removal is an entity standing on it, and a hand that holds several takes several in one trip.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           local tiles = {}
           for dx = 0, 2 do
             for dy = -1, 1 do
-              tiles[#tiles + 1] = { name = "concrete", position = { x + 5 + dx, y + 6 + dy } }
+              tiles[#tiles + 1] = { name = "concrete", position = { x + 4 + dx, y + 6 + dy } }
             end
           end
           ground().set_tiles(tiles)
           for _, tile in pairs(tiles) do
             local one = ground().get_tile(tile.position[1], tile.position[2])
             if one then one.order_deconstruction(game.forces.player) end
+          end
+        end },
+      { "Both sides in one trip",
+        "Stand on the mark, between them. The claw fills its hand from anything in reach, not just from what it is standing over, so these go together.",
+        function(x, y)
+          pad(x + 5, y + 6, "refined-hazard-concrete-left")
+          for _, away in pairs{ -4, -3, 3, 4 } do
+            local belt = place("transport-belt", x + 5 + away, y + 6)
+            if belt then belt.order_deconstruction(game.forces.player) end
           end
         end },
       { "A cliff wants a charge",

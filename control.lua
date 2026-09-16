@@ -1884,7 +1884,7 @@ end
 ---@param record table
 ---@param job table
 ---@param claimed table<string|integer, boolean>? what the other arms are reaching for
----@param nearby LuaEntity[]? what the tick's own search found, from work_near
+---@param nearby fun(): LuaEntity[] the tick's own search, made when first asked for
 ---@param from {x: number, y: number} where this arm reaches from
 ---@param range number how far it reaches
 local function take_up(player, wearer, record, job, claimed, nearby, from, range)
@@ -1942,7 +1942,7 @@ local function take_up(player, wearer, record, job, claimed, nearby, from, range
   -- it happens to be standing on.
   local inside = box.get_inventory(defines.inventory.chest)
   local carrying = inside and inside.get_item_count() or room
-  for _, other in pairs(nearby or {}) do
+  for _, other in pairs(nearby and nearby() or {}) do
     if carrying >= room then break end
     if other ~= job.ghost and still_wanted(other) and taking(other)
         and not (claimed and claimed[claim_of(other)])
@@ -2331,7 +2331,9 @@ end
 ---@return boolean whether any arm has anything to do
 local function assign(player, wearer, list, tick, nearby)
   local claimed = claims(list)
-  nearby = nearby or work_near(wearer, furthest(list))
+  nearby = nearby or function()
+    return work_near(wearer, furthest(list))
+  end
   local working = false
   for slot, record in ipairs(list) do
     if record.job then
@@ -2340,7 +2342,7 @@ local function assign(player, wearer, list, tick, nearby)
       local tier = tier_of(record)
       local from = reaching_from(wearer, slot, #list)
       local ghost, item, count, quality, waiting =
-        job_for(player, wearer, from, nearby, claimed, record, tier.range)
+        job_for(player, wearer, from, nearby(), claimed, record, tier.range)
       if waiting then
         -- work in reach, buffer a tick short of full: the run is still on
         working = true
@@ -2382,7 +2384,7 @@ local function assign(player, wearer, list, tick, nearby)
           -- charge, because the blast may take the next cliff on the list with it.
           record.job.left = 1
         else
-          record.job.left = loads_for(nearby, claimed, wearer.position, from, tier.range,
+          record.job.left = loads_for(nearby(), claimed, wearer.position, from, tier.range,
             item, quality, count,
             inventory and inventory.get_item_count{ name = item, quality = quality } or count,
             trips_for(player.force, tier))
@@ -2445,11 +2447,15 @@ local function on_tick(event)
     if wearer and wearer.valid and wearing(wearer) and not switched_off(player) then
       local list = muster(player, wearer)
       local claimed = claims(list)
-      -- One search a tick, shared by the arms that are already out and the ones about to
-      -- set off. A claw filling its hand picks what else to take out of this same list
-      -- rather than looking round itself, which would be both a second search and a
-      -- narrower answer.
-      local nearby = work_near(wearer, furthest(list))
+      -- One search a tick at most, shared by the arms already out and the ones about to set
+      -- off, and only made if one of them asks. Most ticks nobody does: every arm is out on
+      -- a job it already has, and searching the ground round somebody who has nothing to
+      -- decide is four find_entities_filtered calls spent on an answer nothing reads.
+      local searched
+      local function nearby()
+        if not searched then searched = work_near(wearer, furthest(list)) end
+        return searched
+      end
       -- Slowed for as long as an arm is working, not only at the moment one arrives.
       -- Applying it on delivery alone left a gap: the ramp ran out partway through the
       -- next swing and the character surged until the next thing was delivered.
