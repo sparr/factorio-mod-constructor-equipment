@@ -6,6 +6,7 @@ Version: 2.1.5
     - Anything the replacement cannot hold is left on the ground and marked for deconstruction, the same as a construction robot leaves it, rather than appearing in your inventory or being lost when it is full
     - The arms now pay for quality work with items of that quality, whether they are raising a ghost or carrying out an upgrade
     - Mirroring carries across an upgrade
+    - Both ends of an underground belt go up together, from whichever end an arm can reach, for the price of two, and whatever was travelling in the tunnel stays in the tunnel rather than being turned out onto the ground
   Bugfixes:
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself

@@ -745,6 +745,24 @@ local function end_of(work)
   return nil
 end
 
+---The other end of an underground belt's pair, when that end is marked for upgrade too.
+---
+---A pair is one thing wearing two hulls. Replacing one end alone leaves a fast belt joined
+---to a slow one until the arm comes back for the other, and turns the tunnel out: measured
+---on 2.1.17, a robot upgrading one end put the eight items that were in the tunnel on the
+---floor, where its network then collected them. Nothing is lost by it; it is simply a mess
+---somebody has to clear up. So both ends are one piece of work, reached from whichever end
+---the arm found, paid for with two items the way a curved rail is paid for with several.
+---@param work LuaEntity
+---@return LuaEntity? other
+local function paired_with(work)
+  if work.type ~= "underground-belt" then return nil end
+  local other = work.underground_belt_neighbour
+  if not (other and other.valid and other.to_be_upgraded()) then return nil end
+  if other.to_be_deconstructed() then return nil end
+  return other
+end
+
 ---Whether a ghost could actually be built where it stands, right now.
 ---
 ---Asked because reaching for one that cannot be is a wasted journey that repeats: the claw
@@ -882,6 +900,13 @@ local function choose(player, wearer, from, nearby, claimed, range)
       local item, needed
       if outcome then
         item, needed = build.placing_item(outcome.items_to_place_this, carried_at(quality))
+        -- Both ends of a pair go up together, so both are paid for together. Asked for
+        -- after the item is chosen, and re-asked of the pockets: a player holding one is
+        -- not holding enough for a pair.
+        if item and paired_with(ghost) then
+          needed = needed * 2
+          if carried_at(quality)(item) < needed then item = nil end
+        end
       end
       -- An inserter will not reach for something underneath its own base. Asked to, it
       -- twitches a tick's worth and springs back, over and over, and because a swing
@@ -1518,7 +1543,77 @@ local function swap(porter, work, quality)
   }
 end
 
----Put everything an inventory holds on the floor and mark it, which is what a construction
+---Replace both ends of an underground pair at once, keeping what is in the tunnel.
+---
+---The items between the two ends sit on the third and fourth transport lines, and replacing
+---either end turns them out: the base game drops them on the floor for its network to pick
+---up, and this mod would hand them to the porter and shed them. Neither loses anything, and
+---both leave the player's belt line short of what was travelling in it.
+---
+---So they are lifted into an inventory of the mod's own before either end is touched and
+---laid back down on the new pair afterwards, at the positions they were at. What was in the
+---tunnel is still in the tunnel.
+---
+---Both ends are emptied rather than the one that holds the cargo, which is the input end:
+---measured on 2.1.17, a tunnel loaded through the input kept all of it on that end's third
+---and fourth lines, with nothing on the output end's. Reading the wrong one of the two left
+---two of six items behind, and reading both cannot be wrong whichever end the arm reached
+---for. Blueprint Shotgun picks the input end deliberately, through a variable it calls
+---output.
+---@param porter LuaEntity
+---@param work LuaEntity the end the arm reached for
+---@param partner LuaEntity the other end
+---@param quality string?
+---@return LuaEntity? made
+---@return LuaEntity? other
+local function swap_pair(porter, work, partner, quality)
+  local surface, at, force = work.surface, work.position, work.force
+
+  ---Lift the tunnel's share of one end into an inventory of our own.
+  local function lift(from)
+    local lines = {}
+    for line = 3, 4 do
+      local contents = from.get_transport_line(line).get_detailed_contents()
+      local held = game.create_inventory(math.max(1, #contents))
+      for index = #contents, 1, -1 do
+        held[index].transfer_stack(contents[index].stack)
+      end
+      lines[line - 2] = { contents = contents, held = held }
+    end
+    return { was = from.belt_to_ground_type, lines = lines }
+  end
+
+  local rescued = { lift(work), lift(partner) }
+
+  local made = swap(porter, work, quality)
+  local other = made and swap(porter, partner, quality) or nil
+
+  ---Put one end's share back on whichever new end is the same end of the pair.
+  local function lay_back(saved)
+    local onto = (made and made.belt_to_ground_type == saved.was) and made
+      or ((other and other.belt_to_ground_type == saved.was) and other)
+    for index, line in ipairs(saved.lines) do
+      local insert = onto and onto.get_transport_line(index + 2).force_insert_at
+      for slot = 1, #line.held do
+        local stack = line.held[slot]
+        if stack.valid_for_read then
+          -- Half a swap, or a line that will not take it back, and it goes on the floor
+          -- rather than into the void, which is where the base game would have left it.
+          if not (insert and insert(line.contents[slot].position, stack)) then
+            surface.spill_item_stack{ position = at, stack = stack,
+              enable_looted = false, force = force, allow_belts = false }
+          end
+        end
+      end
+      line.held.destroy()
+    end
+  end
+
+  for _, saved in ipairs(rescued) do lay_back(saved) end
+  return made, other
+end
+
+---Put everything an inventory holds on the floor and mark it---Put everything an inventory holds on the floor and mark it, which is what a construction
 ---robot does with what it cannot carry away.
 ---
 ---Marked from the entities spill_item_stack hands straight back rather than by looking
@@ -1628,7 +1723,13 @@ local function deliver(player, wearer, from, record, job, claimed)
       return
     end
 
-    local made = swap(porter, ghost, quality)
+    local partner = paired_with(ghost)
+    local made
+    if partner then
+      made = swap_pair(porter, ghost, partner, quality)
+    else
+      made = swap(porter, ghost, quality)
+    end
     local carried = porter.get_main_inventory()
 
     if not made then
@@ -1782,6 +1883,8 @@ local function claims(list)
     local job = record.job
     if job and job.ghost and job.ghost.valid then
       claimed[job.ghost.unit_number] = true
+      local partner = paired_with(job.ghost)
+      if partner and partner.unit_number then claimed[partner.unit_number] = true end
     end
   end
   return claimed
@@ -1916,6 +2019,9 @@ local function assign(player, wearer, list, tick)
       end
       if ghost then
         claimed[ghost.unit_number] = true
+        -- The far end of a pair goes up with this one, so it is spoken for too.
+        local partner = paired_with(ghost)
+        if partner and partner.unit_number then claimed[partner.unit_number] = true end
         record.job = {
           ghost = ghost,
           target = ghost.position,

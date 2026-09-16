@@ -116,6 +116,78 @@ describe("a character wearing the equipment", function()
     end)
   end)
 
+  -- A pair is one thing in two hulls. The base game upgrades an end at a time and turns the
+  -- tunnel out doing it: measured on 2.1.17, a robot put the eight items that were in there
+  -- on the floor and its network collected them afterwards. Nothing lost, but the line is
+  -- short of what was travelling in it, and somebody has to tidy up.
+  describe("an underground pair", function()
+    local UNDER = "underground-belt"
+    local FASTER_UNDER = "fast-underground-belt"
+
+    ---A pair with both ends marked, the near one within reach and the far one not.
+    local function pair(cargo)
+      local surface, force = player.surface, player.force
+      local near = surface.create_entity{ name = UNDER, direction = defines.direction.east,
+        position = { world.ORIGIN.x + 2, world.ORIGIN.y }, type = "input", force = force }
+      local far = surface.create_entity{ name = UNDER, direction = defines.direction.east,
+        position = { world.ORIGIN.x + 6, world.ORIGIN.y }, type = "output", force = force }
+      assert(near and far, "could not lay the pair down")
+      assert.are.equal(far.unit_number, near.underground_belt_neighbour.unit_number,
+        "the two ends did not pair up")
+      for line = 3, 4 do
+        for spot = 0.2, 1.4, 0.6 do
+          near.get_transport_line(line).insert_at(spot, { name = cargo })
+        end
+      end
+      near.order_upgrade{ force = force, target = prototypes.entity[FASTER_UNDER] }
+      far.order_upgrade{ force = force, target = prototypes.entity[FASTER_UNDER] }
+      return near, far
+    end
+
+    it("goes up as one job, both ends, from the end within reach", function()
+      pair("iron-plate")
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      after_ticks(A_BUILD, function()
+        assert.are.equal(2, world.count(player, FASTER_UNDER),
+          "the far end was left joined to a faster near one")
+        assert.are.equal(0, world.count(player, UNDER), "an old end is still standing")
+      end)
+    end)
+
+    it("costs two, one for each end", function()
+      pair("iron-plate")
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      after_ticks(A_BUILD, function()
+        assert.are.equal(3, player.get_item_count(FASTER_UNDER),
+          "a pair should cost two of the five")
+      end)
+    end)
+
+    it("is left alone when only one is carried", function()
+      pair("iron-plate")
+      player.insert{ name = FASTER_UNDER, count = 1 }
+      after_ticks(A_BUILD, function()
+        assert.are.equal(2, world.count(player, UNDER), "half a pair was paid for")
+        assert.are.equal(1, player.get_item_count(FASTER_UNDER), "something was spent")
+      end)
+    end)
+
+    -- what the base game throws away
+    it("keeps what was in the tunnel", function()
+      local near = pair("iron-plate")
+      local before = near.get_item_count()
+      assert.is_true(before > 0, "the tunnel was empty to begin with")
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      after_ticks(A_BUILD, function()
+        local ends = player.surface.find_entities_filtered{ name = FASTER_UNDER }
+        assert.are.equal(2, #ends, "the pair was not upgraded")
+        local held = 0
+        for _, one in pairs(ends) do held = held + one.get_item_count() end
+        assert.are.equal(before, held, "the tunnel's cargo was lost in the swap")
+      end)
+    end)
+  end)
+
   it("leaves one out of reach alone", function()
     world.to_upgrade(player, BELT, FASTER, world.BUILD_RANGE + 6, 0)
     after_ticks(A_BUILD, function()
