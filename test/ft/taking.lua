@@ -171,3 +171,68 @@ describe("several things marked at once", function()
     end)
   end)
 end)
+
+describe("a claw with room left in its hand", function()
+  local BULK = "constructor-equipment-4"
+
+  before_each(function()
+    player = world.player()
+    world.clear(player)
+    for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1",
+                          "inserter-capacity-bonus-2" } do
+      local technology = player.force.technologies[name]
+      if technology then technology.researched = true end
+    end
+    world.equip(player, { BULK, "battery-mk2-equipment" }, true)
+    player.get_inventory(defines.inventory.character_main).clear()
+  end)
+
+  after_each(function()
+    for _, name in pairs{ "inserter-capacity-bonus-1", "inserter-capacity-bonus-2" } do
+      local technology = player.force.technologies[name]
+      if technology then technology.researched = false end
+    end
+  end)
+
+  -- The engine will not take a part full hand to a second source, so what it can carry is
+  -- gathered to it instead.
+  it("sweeps up what else is marked beside the thing it came for", function()
+    local at = { world.ORIGIN.x + 3, world.ORIGIN.y }
+    local tiles = {}
+    for dx = 0, 1 do
+      for dy = -1, 0 do
+        tiles[#tiles + 1] = { name = "concrete", position = { at[1] + dx, at[2] + dy } }
+      end
+    end
+    player.surface.set_tiles(tiles)
+    for _, tile in pairs(tiles) do
+      player.surface.get_tile(tile.position[1], tile.position[2])
+        .order_deconstruction(player.force)
+    end
+    assert.are.equal(4, player.surface.count_entities_filtered{
+      type = "deconstructible-tile-proxy" }, "the tiles were not all marked")
+
+    after_ticks(world.CYCLE, function()
+      assert.is_true(player.get_item_count("concrete") > 1,
+        "the claw brought one tile home when it had room for more")
+    end)
+  end)
+
+  -- What it fills up with comes out of the tick's own search, which is everything within
+  -- the arm's reach, rather than a second look round the claw. A thing on the far side of
+  -- its owner is as much in reach as one beside the tile it is standing on.
+  it("takes one from either side of its owner in the same trip", function()
+    for _, dx in pairs{ 3, -3 } do
+      local belt = player.surface.create_entity{ name = "transport-belt",
+        position = { world.ORIGIN.x + dx, world.ORIGIN.y }, force = player.force }
+      belt.order_deconstruction(player.force)
+    end
+    after_ticks(world.CYCLE, function()
+      assert.are.equal(0, world.count(player, "transport-belt"),
+        "one of them is still standing, so it took two trips")
+      assert.are.equal(2, player.get_item_count("transport-belt"),
+        "both should have come home together")
+    end)
+  end)
+
+end)

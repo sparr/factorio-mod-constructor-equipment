@@ -1813,9 +1813,11 @@ end
 ---@return boolean whether anything was put in
 local function loot_into(box, work, capacity)
   local inside = box.get_inventory(defines.inventory.chest)
-  if not inside then return false end
+  if not (inside and capacity > 0) then return false end
 
-  for index = 1, work.get_max_inventory_index() do
+  -- A thing lying on the ground holds nothing; asking it what its inventories are is asking
+  -- a stack of plates to open its pockets.
+  for index = 1, (work.type == "item-entity") and 0 or work.get_max_inventory_index() do
     local held = work.get_inventory(index)
     if held and not held.is_empty() then
       for slot = 1, #held do
@@ -1881,7 +1883,11 @@ end
 ---@param wearer LuaEntity
 ---@param record table
 ---@param job table
-local function take_up(player, wearer, record, job)
+---@param claimed table<string|integer, boolean>? what the other arms are reaching for
+---@param nearby LuaEntity[]? what the tick's own search found, from work_near
+---@param from {x: number, y: number} where this arm reaches from
+---@param range number how far it reaches
+local function take_up(player, wearer, record, job, claimed, nearby, from, range)
   local arm = record.entity
   if not (arm and arm.valid) then return end
 
@@ -1920,7 +1926,31 @@ local function take_up(player, wearer, record, job)
   local inside = box.get_inventory(defines.inventory.chest)
   if inside and not inside.is_empty() then return end
 
-  loot_into(box, job.ghost, trips_for(player.force, tier_of(record)))
+  local room = trips_for(player.force, tier_of(record))
+  if not loot_into(box, job.ghost, room) then return end
+
+  -- The hand has room left and there is more marked in reach, so it is filled here rather
+  -- than by another journey. Only what stacks with the first thing it took, since the box is
+  -- one slot: a patch of the same tile, or a heap of the same plate, which is what this is
+  -- for.
+  --
+  -- Taken out of what the tick's own search already found rather than by looking again. That
+  -- list is everything within the longest reach on this wearer, sorted nearest first, and it
+  -- has already been filtered of what the other arms are reaching for. Searching a second
+  -- time round the claw would be both a second search and a smaller answer: a thing five
+  -- tiles the other side of its owner is as much in this arm's reach as one beside the tile
+  -- it happens to be standing on.
+  local inside = box.get_inventory(defines.inventory.chest)
+  local carrying = inside and inside.get_item_count() or room
+  for _, other in pairs(nearby or {}) do
+    if carrying >= room then break end
+    if other ~= job.ghost and still_wanted(other) and taking(other)
+        and not (claimed and claimed[claim_of(other)])
+        and not reach.out_of_range(from, other.position, range) then
+      loot_into(box, other, room - carrying)
+      carrying = inside.get_item_count()
+    end
+  end
 end
 
 ---Put the thing down: raise the ghost or make the swap, pay for it, and let the arm start
@@ -2191,7 +2221,7 @@ end
 ---@param slot integer which arm it is
 ---@param count integer how many arms there are
 ---@param claimed table<integer, boolean> what the other arms are reaching for
-local function advance(player, wearer, record, slot, count, claimed)
+local function advance(player, wearer, record, slot, count, claimed, nearby)
   local job = record.job
 
   if not (wearer and wearer.valid) then
@@ -2261,7 +2291,8 @@ local function advance(player, wearer, record, slot, count, claimed)
         abandon(record, job)
       end
     elseif job.take then
-      take_up(player, wearer, record, job)
+      take_up(player, wearer, record, job, claimed, nearby,
+        from, tier_of(record).range)
     else
       -- deliver() does nothing until the box has been given something, so there is no
       -- arrival to measure and nothing to step over: it can simply be asked every tick
@@ -2298,9 +2329,9 @@ end
 ---@param list table[]
 ---@param tick integer
 ---@return boolean whether any arm has anything to do
-local function assign(player, wearer, list, tick)
+local function assign(player, wearer, list, tick, nearby)
   local claimed = claims(list)
-  local nearby = work_near(wearer, furthest(list))
+  nearby = nearby or work_near(wearer, furthest(list))
   local working = false
   for slot, record in ipairs(list) do
     if record.job then
@@ -2414,6 +2445,11 @@ local function on_tick(event)
     if wearer and wearer.valid and wearing(wearer) and not switched_off(player) then
       local list = muster(player, wearer)
       local claimed = claims(list)
+      -- One search a tick, shared by the arms that are already out and the ones about to
+      -- set off. A claw filling its hand picks what else to take out of this same list
+      -- rather than looking round itself, which would be both a second search and a
+      -- narrower answer.
+      local nearby = work_near(wearer, furthest(list))
       -- Slowed for as long as an arm is working, not only at the moment one arrives.
       -- Applying it on delivery alone left a gap: the ramp ran out partway through the
       -- next swing and the character surged until the next thing was delivered.
@@ -2424,7 +2460,7 @@ local function on_tick(event)
       -- worn alongside an old one it costs whatever the old one costs.
       local worst, running = nil, false
       for slot, record in ipairs(list) do
-        advance(player, wearer, record, slot, #list, claimed)
+        advance(player, wearer, record, slot, #list, claimed, nearby)
         if record.run then
           running = true
           local set = tier_of(record).stickers
@@ -2462,7 +2498,7 @@ local function on_tick(event)
       -- No arm working after that means no arm could find anything, because an arm with
       -- nothing to do takes work the instant there is any: without a clock there is no
       -- such thing as free but not yet due. So this needs no second search of its own.
-      if not assign(player, wearer, list, event.tick) then
+      if not assign(player, wearer, list, event.tick, nearby) then
         -- the run is over, which is what lets the slowdown ramp off
         for _, record in pairs(list) do record.run = nil end
         recover(player, wearer)
