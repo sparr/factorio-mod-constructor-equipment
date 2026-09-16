@@ -1,0 +1,15 @@
+{
+  "name": "ce-demo",
+  "version": "0.0.1",
+  "title": "Constructor Equipment showroom",
+  "author": "Sparr",
+  "contact": "sparr0@gmail.com",
+  "factorio_version": "2.1",
+  "description": "Builds one of every thing Constructor Equipment does, in labelled bays laid out in rows on a surface of its own, so they can be walked round and watched. Never published to the mod portal.",
+  "dependencies": [
+    "base",
+    "constructor-equipment",
+    "? quality",
+    "? space-age"
+  ]
+}
