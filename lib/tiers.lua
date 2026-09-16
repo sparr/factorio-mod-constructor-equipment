@@ -85,7 +85,7 @@ local DEFINED = {
     reach = 2,
     hand = "inserter", colour = "yellow",
     extension = 0.035, rotation = 0.014,
-    width = 2, height = 4, movement = 5000, drain = "0.4kW",
+    width = 2, height = 3, movement = 5000, drain = "0.4kW",
     slows = 1,
     craft = 10,
     ingredients = {
@@ -99,7 +99,7 @@ local DEFINED = {
     reach = 3,
     hand = "long-handed-inserter", colour = "red",
     extension = 0.05, rotation = 0.02,
-    width = 2, height = 5, movement = 5000, drain = "0.4kW",
+    width = 2, height = 4, movement = 5000, drain = "0.4kW",
     slows = 0.5,
     craft = 15,
     ingredients = {
@@ -118,7 +118,7 @@ local DEFINED = {
     -- tile; keeping its 0.04 on a four tile arm made the turn look instant against a
     -- crawling extension. Dividing by the reach puts the two back in vanilla's proportion.
     extension = 0.1, rotation = 0.01,
-    width = 3, height = 5, movement = 7000, drain = "0.5kW",
+    width = 2, height = 5, movement = 7000, drain = "0.5kW",
     slows = 0,
     craft = 20,
     ingredients = {
@@ -154,7 +154,7 @@ local DEFINED = {
     -- this, and a fifth tile buys more of that than the throughput figure shows. This tier
     -- is two upgrades bought together and priced as two.
     bulk = true,
-    width = 3, height = 5, movement = 20000, drain = "1kW",
+    width = 2, height = 6, movement = 20000, drain = "1kW",
     slows = 0,
     craft = 25,
     ingredients = {

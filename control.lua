@@ -115,6 +115,8 @@ local function setup()
   storage.constructor_ramped = storage.constructor_ramped or {}
   -- who has switched their arms off from the toolbar, by player index
   storage.constructor_off = storage.constructor_off or {}
+  -- what each player's button was last told, so it is only set when it changes
+  storage.constructor_button = storage.constructor_button or {}
 
   -- One arm per player, in four parallel tables, is what a save from before multiple
   -- equipment looks like. The arms themselves are entities in the world, so they are taken
@@ -986,7 +988,16 @@ local function choose(player, wearer, from, nearby, claimed, range)
     end
   end
 
+  -- Nearest first. The order find_entities_filtered hands things back in is the order they
+  -- sit in the map's own index, which walks rows and then columns, so a claw clearing a
+  -- patch crossed it in bands rather than working outward from itself. Sorting by how far
+  -- each is from the arm makes every trip the shortest one available, which matters most to
+  -- somebody walking while it works.
   local standing = wearer.position
+  table.sort(nearby, function(one, other)
+    if not (one.valid and other.valid) then return false end
+    return reach.distance(from, one.position) < reach.distance(from, other.position)
+  end)
   for _, ghost in pairs(nearby) do
     if still_wanted(ghost) then
       -- 2.0 turned items_to_place_this into a list of { name, count } rather than a table
@@ -1311,7 +1322,7 @@ local function catcher_away(record)
   local inside = box.get_inventory(defines.inventory.chest)
   if inside then
     for _, stack in pairs(inside.get_contents()) do
-      table.insert(left, { name = stack.name, count = stack.count })
+      table.insert(left, { name = stack.name, quality = stack.quality, count = stack.count })
     end
   end
   box.destroy()
@@ -1324,13 +1335,22 @@ end
 ---@param record table
 local function put_away(player, record)
   local arm = record.entity
-  catcher_away(record)
+  local inventory = pockets(player, record.wearer or player.character)
+
+  -- The box goes with the arm, and what it was holding is not the box's. A claw that had
+  -- just put a belt in it, or one being handed what it had come to fetch, had that thrown
+  -- away with the box: catcher_away says what was left in it and nobody was listening.
+  for _, stack in pairs(catcher_away(record) or {}) do
+    if inventory then
+      inventory.insert{ name = stack.name, quality = stack.quality, count = stack.count }
+    end
+  end
+
   if arm and arm.valid then
     -- Whatever it was carrying was paid for out of the pockets, so it goes back in them
     -- rather than being destroyed with the arm. The pockets it was mustered against, for
     -- the same reason the charge goes back to the grid it was mustered against: an arm put
     -- away as its owner climbs out of a vehicle is holding the vehicle's belt, not theirs.
-    local inventory = pockets(player, record.wearer or player.character)
     local job = record.job
     if job and (job.escrow or 0) > 0 and job.item and inventory then
       inventory.insert{ name = job.item, quality = job.quality, count = job.escrow }
@@ -2221,8 +2241,14 @@ local function advance(player, wearer, record, slot, count, claimed)
     -- pointing at that tile could put something in it, and the mod would take a stranger's
     -- item for its own delivery.
     local target = aimed_at(job, record)
-    catcher_at(record, arm.surface, target,
-      reach.distance(hand, target) <= within(tier_of(record), OPEN, moved))
+    -- A fetch wants its box from the first tick, not once the claw is near. An inserter
+    -- reaches for a source because there is a container at its pickup position: with no box
+    -- there, nothing tells the claw to go, so it never gets near, so the box is never made
+    -- and the arm stands out of its owner's back doing nothing at all. A delivery is the
+    -- other way round and the box is held back until the claw is close, so that no other
+    -- inserter of the player's can fill it first.
+    catcher_at(record, arm.surface, target, job.take
+      or reach.distance(hand, target) <= within(tier_of(record), OPEN, moved))
 
     -- the character can walk off mid swing, or the vehicle drive off, and an arm that
     -- stretched to follow would be no kind of inserter
@@ -2374,6 +2400,17 @@ local function on_tick(event)
 
   for _, player in pairs(game.players) do
     local wearer = wearer_of(player)
+    -- Greyed out when there is no arm to switch off, the way the exoskeleton's button is.
+    -- Asked here rather than on an event because the answer changes for half a dozen
+    -- reasons -- a piece put in, one taken out, an armour swapped, a vehicle climbed into
+    -- or out of -- and only one of those has an event worth hanging it on.
+    if prototypes.shortcut[TOGGLE] then
+      local available = #worn(wearer) > 0
+      if storage.constructor_button[player.index] ~= available then
+        storage.constructor_button[player.index] = available
+        player.set_shortcut_available(TOGGLE, available)
+      end
+    end
     if wearer and wearer.valid and wearing(wearer) and not switched_off(player) then
       local list = muster(player, wearer)
       local claimed = claims(list)
@@ -2474,13 +2511,20 @@ local function switch(player, on)
   recover(player, player.character)
 end
 
----Put the button where the save says it should be, for a player who has just turned up or
----just been given a button by this mod being added.
+---Put the button where the save says it should be, and grey it out when there is nothing
+---for it to switch off.
+---
+---The exoskeleton's button does the same: a toggle nobody can act on reads as a thing that
+---is broken rather than a thing that is not there. Available means an arm is worn, which is
+---a question about the grid in front of the player rather than about the technology, since
+---the technology only decides whether the button exists at all.
 ---@param player LuaPlayer
 local function show(player)
-  if prototypes.shortcut[TOGGLE] then
-    player.set_shortcut_toggled(TOGGLE, not switched_off(player))
-  end
+  if not prototypes.shortcut[TOGGLE] then return end
+  player.set_shortcut_toggled(TOGGLE, not switched_off(player))
+  local available = #worn(wearer_of(player)) > 0
+  storage.constructor_button[player.index] = available
+  player.set_shortcut_available(TOGGLE, available)
 end
 
 ---Press the button: whatever the arms are doing now, do the other thing.

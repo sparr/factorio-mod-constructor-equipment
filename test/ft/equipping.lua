@@ -43,13 +43,16 @@ describe("the way to a working arm at tier " .. tier.level, function()
     assert.are.equal(NAME, item.place_as_equipment_result.name)
   end)
 
-  it("fits in the armour it is researched alongside", function()
-    -- the technology comes after modular armour, so the equipment has to fit in one
+  it("fits in an armour a player could be wearing by then", function()
+    -- The first three fit a modular armour, which their technologies come after. The
+    -- fourth is two by six and a modular grid is five tall, so it wants a power armour --
+    -- which is the company it keeps anyway, being the tier that wants logistics 3.
     local shape = prototypes.equipment[NAME].shape
-    local grid = prototypes.equipment_grid["small-equipment-grid"]
+    local wanted = tier.level < 4 and "modular-armor" or "power-armor"
+    local grid = prototypes.item[wanted].equipment_grid
     assert.is_true(shape.width <= grid.width and shape.height <= grid.height,
-      ("the equipment is %dx%d and a modular armour grid is %dx%d")
-        :format(shape.width, shape.height, grid.width, grid.height))
+      ("the equipment is %dx%d and a %s grid is %dx%d")
+        :format(shape.width, shape.height, wanted, grid.width, grid.height))
   end)
 
   it("has an arm of its own to swing", function()

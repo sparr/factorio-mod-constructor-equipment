@@ -10,7 +10,13 @@ Version: 2.1.5
     - An arm now carries a cliff explosive out to a cliff you have marked for deconstruction, at the cost of one, the same as a construction robot spends
     - The arms now clear away what you mark with a deconstruction planner, entities and tiles alike, carrying it home in the claw
     - A thing with something in it is emptied a clawful at a time and taken up last, once it is empty, the way construction robots do it
+  Changes:
+    - The equipment is narrower and taller: two by three, four, five and six as the tiers go up, so the fourth wants a power armour rather than a modular one
+    - An arm goes for the nearest thing it can reach rather than whatever the map listed first, so a run of work is crossed by the shortest way round
+    - The toolbar button greys out when you are wearing no arm, the way the exoskeleton's does
   Bugfixes:
+    - Fixed an arm coming out of your back and never setting off for something marked for deconstruction
+    - Fixed losing what the claw had just been handed when the arms were switched off or taken away
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
 ---------------------------------------------------------------------------------------------------

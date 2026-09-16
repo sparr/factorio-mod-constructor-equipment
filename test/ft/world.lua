@@ -101,8 +101,31 @@ end
 ---@param charged boolean whether to fill the batteries
 ---@param armour string? which armour, defaulting to modular
 ---@return LuaEquipmentGrid
+---The smallest armour every one of these will fit in.
+---
+---Asked rather than assumed, because the equipment does not all fit the same grid: the
+---fourth tier is two by six and a modular armour is five by five, so a test naming modular
+---armour by habit would get an armour with no room in it and an arm that never appeared.
+---@param equipment string[]
+---@return string
+local function armour_for(equipment)
+  local tall, wide = 0, 0
+  for _, name in pairs(equipment) do
+    local shape = prototypes.equipment[name] and prototypes.equipment[name].shape
+    if shape then
+      tall = math.max(tall, shape.height)
+      wide = math.max(wide, shape.width)
+    end
+  end
+  for _, try in ipairs{ "modular-armor", "power-armor", "power-armor-mk2" } do
+    local grid = prototypes.item[try] and prototypes.item[try].equipment_grid
+    if grid and grid.width >= wide and grid.height >= tall then return try end
+  end
+  return "power-armor-mk2"
+end
+
 function world.equip(player, equipment, charged, armour)
-  player.insert{ name = armour or "modular-armor" }
+  player.insert{ name = armour or armour_for(equipment) }
   local armour = player.get_inventory(defines.inventory.character_armor)[1]
   local grid = armour.grid
   for _, name in pairs(equipment) do grid.put{ name = name } end

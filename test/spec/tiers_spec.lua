@@ -135,7 +135,7 @@ describe("the tiers", function()
   end)
 
   it("takes the room in an armour it is meant to", function()
-    local wanted = { { 2, 4 }, { 2, 5 }, { 3, 5 }, { 3, 5 } }
+    local wanted = { { 2, 3 }, { 2, 4 }, { 2, 5 }, { 2, 6 } }
     for level, size in ipairs(wanted) do
       assert.are.equal(size[1], tiers.list[level].width, "tier " .. level .. " width")
       assert.are.equal(size[2], tiers.list[level].height, "tier " .. level .. " height")
@@ -162,12 +162,25 @@ describe("the tiers", function()
     assert.is_nil(tiers.of("constructor-equipment-9"))
   end)
 
-  it("fits every tier in a modular armour", function()
-    -- a small equipment grid is five by five, and the technology comes after modular armour
+  -- A modular armour is five by five and a power armour seven by seven. The first three
+  -- tiers fit the small one, whose technology theirs come after. The fourth is two by six
+  -- and wants the larger, which is the company it keeps anyway: it is the tier that asks
+  -- for logistics 3.
+  it("fits every tier in an armour a player could be wearing by then", function()
     for _, tier in ipairs(tiers.list) do
-      assert.is_true(tier.width <= 5 and tier.height <= 5,
-        ("tier %d is %dx%d, which will not go in a modular armour")
-          :format(tier.level, tier.width, tier.height))
+      local side = tier.level < 4 and 5 or 7
+      assert.is_true(tier.width <= side and tier.height <= side,
+        ("tier %d is %dx%d, which will not go in a %dx%d grid")
+          :format(tier.level, tier.width, tier.height, side, side))
+    end
+  end)
+
+  it("grows a slot taller with every tier and never wider", function()
+    for level = 2, #tiers.list do
+      assert.are.equal(tiers.list[level - 1].width, tiers.list[level].width,
+        "tier " .. level .. " is a different width from the one below")
+      assert.are.equal(tiers.list[level - 1].height + 1, tiers.list[level].height,
+        "tier " .. level .. " is not one taller than the one below")
     end
   end)
 end)

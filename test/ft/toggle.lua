@@ -130,3 +130,39 @@ describe("the constructor equipment toggle", function()
       "switching back on left the player written down as off")
   end)
 end)
+
+describe("switching off while the box has something in it", function()
+  local player
+
+  before_each(function()
+    player = world.player()
+    world.clear(player)
+    storage.constructor_off = {}
+    world.equipped(player)
+  end)
+
+  after_each(function()
+    player = world.player()
+    world.clear(player)
+    storage.constructor_off = {}
+  end)
+
+  -- The box is taken away with the arm, and what it was holding is not the box's: it was
+  -- thrown away with it, because catcher_away says what was left in it and nobody was
+  -- listening. A fetch is where it shows -- the claw is handed its load through the box and
+  -- carries it home -- rather than a delivery, where the box holds something for about a
+  -- tick before the ghost it is standing on consumes it.
+  it("keeps what a fetch had been handed", function()
+    local belt = player.surface.create_entity{ name = "transport-belt",
+      position = { world.ORIGIN.x + 2, world.ORIGIN.y }, force = player.force }
+    belt.order_deconstruction(player.force)
+    player.get_inventory(defines.inventory.character_main).clear()
+    after_ticks(world.DELIVERED, function()
+      press(player)
+      after_ticks(4, function()
+        assert.are.equal(1, player.get_item_count("transport-belt"),
+          "what the claw had been given went with the box")
+      end)
+    end)
+  end)
+end)

@@ -14,8 +14,8 @@
 -- The last four rows are vehicles. Two of them are vehicles the base game gives no
 -- equipment grid: the showroom adds one so there is something to look at, and says so.
 
-local BAY = 22          -- how wide a bay is: past the longest reach, and past its own words
-local ROW = 18          -- how far apart the rows are
+local BAY = 12          -- how wide a bay is: past the longest reach, and past its own words
+local ROW = 14          -- how far apart the rows are
 local SURFACE = "ce-demo"
 
 local TIERS = { "constructor-equipment", "constructor-equipment-2",
@@ -88,18 +88,14 @@ local function ghost(name, x, y, extra)
   return place("entity-ghost", x, y, args)
 end
 
----A patch of floor that says stand here.
+---The mark to stand on: one tile, so that standing on it means standing where the bay was
+---measured from. A three by three patch let you stand a tile and a half off, which on a two
+---tile arm is the difference between working and not.
 ---@param x number
 ---@param y number
 ---@param tile string
 local function pad(x, y, tile)
-  local tiles = {}
-  for dx = -1, 1 do
-    for dy = -1, 1 do
-      tiles[#tiles + 1] = { name = tile, position = { x + dx, y + dy } }
-    end
-  end
-  ground().set_tiles(tiles)
+  ground().set_tiles{ { name = tile, position = { x, y } } }
 end
 
 -- --------------------------------------------------------------------------- the rows
@@ -150,10 +146,11 @@ local ROWS = {
           ghost("curved-rail-a", x + 6, y + 6, { direction = defines.direction.north })
         end },
       { "The slowdown",
-        "Stand on the mark and then walk. A first tier arm costs you speed while it works.",
+        "Stand on the mark and walk east along them. A first tier arm costs you speed while it works.",
         function(x, y)
-          pad(x + 3, y + 6, "refined-hazard-concrete-left")
-          for i = 0, 5 do ghost("transport-belt", x + 5, y + 4 + i) end
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- laid the way you will be walking, so the work keeps up with you
+          for i = 0, 8 do ghost("transport-belt", x + 3 + i, y + 6) end
         end },
     },
   },
@@ -166,14 +163,23 @@ local ROWS = {
       equipment = { TIERS[1], TIERS[2], TIERS[3], TIERS[4],
                     "fission-reactor-equipment", "battery-mk2-equipment" },
       items = { ["transport-belt"] = 200 },
-      research = { "inserter-capacity-bonus-1", "inserter-capacity-bonus-2" },
+      -- inserter-capacity-bonus-1 is the one that raises a bulk hand; the others raise a
+      -- plain one. The bulk arm reads the first, so it is here along with what it follows.
+      research = { "bulk-inserter", "inserter-capacity-bonus-1",
+                   "inserter-capacity-bonus-2", "inserter-capacity-bonus-3" },
     },
     bays = {
       { "Four arms, four reaches",
-        "Stand on the mark. Ghosts at two, three, four and five tiles: each tier takes its own.",
+        "Walk east along the mark. Each is set so the arm that suits it meets it first: five tiles, then four, three, two.",
         function(x, y)
-          pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          for step = 2, 5 do ghost("transport-belt", x + 2 + step, y + 6) end
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- Staggered rather than in a line. Four ghosts at two, three, four and five
+          -- tiles from one spot are all inside the green arm's five, and it takes the lot.
+          -- Set out along the walk with the furthest first, each arm meets its own a moment
+          -- before a longer one is free to take it.
+          for step = 5, 2, -1 do
+            ghost("transport-belt", x + 2 + (5 - step) * 3, y + 6 - step)
+          end
         end },
       { "One arm for every copy",
         "Stand on the mark. Four arms work at once, and none of them reaches for the same thing.",
@@ -185,10 +191,13 @@ local ROWS = {
           end
         end },
       { "The bulk claw",
-        "Stand on the mark. The green arm carries several and turns from ghost to ghost",
+        "Stand on the mark. Five tiles out, so only the green arm reaches: it carries several and turns from one to the next.",
         function(x, y)
-          pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          for i = 0, 5 do ghost("transport-belt", x + 6, y + 3 + i) end
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- Five tiles, which is the green arm's reach and past every other arm's, so the
+          -- blue one cannot take the work and make it look like the green one is carrying
+          -- them singly.
+          for i = -2, 2 do ghost("transport-belt", x + 6, y + 6 + i) end
         end },
     },
   },
@@ -209,14 +218,17 @@ local ROWS = {
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           for i = 0, 3 do ghost("transport-belt", x + 5, y + 5 + i) end
         end },
-      { "Take the panel",
-        "Take the solar panel out of the chest and put it in your armour. Now it builds.",
+      { "Take the reactor",
+        "Put the reactor and the battery from this chest into your armour. Now it builds, and the battery is what the next bay is watched on.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
-          local chest = place("iron-chest", x + 4, y + 6)
+          local chest = place("iron-chest", x + 3, y + 6)
           if chest then
             chest.insert{ name = "fission-reactor-equipment", count = 1 }
-            chest.insert{ name = "battery-mk2-equipment", count = 2 }
+            -- The small battery, not the mark two. A mark two holds so much that a swing
+            -- takes an invisible bite out of it, and the next bay is about watching it go
+            -- down.
+            chest.insert{ name = "battery-equipment", count = 1 }
           end
           for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
         end },
@@ -236,6 +248,9 @@ local ROWS = {
       armour = "power-armor",
       equipment = { "constructor-equipment", "battery-mk2-equipment" },
       items = { ["transport-belt"] = 100 },
+      -- The button is unlocked by the first tier's technology, and without it there is no
+      -- button on the toolbar to press.
+      research = { "constructor-equipment" },
     },
     bays = {
       { "The toolbar button",
@@ -245,15 +260,18 @@ local ROWS = {
           for i = 0, 7 do ghost("transport-belt", x + 5, y + 2 + i) end
         end },
       { "Pockets full",
-        "Take the stone from the chest until you cannot carry another thing, then mark these",
+        "Empty these chests into your pockets until nothing more will fit, then mark the belts for deconstruction yourself.",
         function(x, y)
-          pad(x + 3, y + 6, "refined-hazard-concrete-left")
-          local chest = place("steel-chest", x + 4, y + 6)
-          if chest then chest.insert{ name = "stone", count = 8000 } end
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- Four full chests rather than one. A character's pockets grow with research and
+          -- with what they are wearing, and one chest of stone is not always enough to fill
+          -- them.
           for i = 0, 3 do
-            local belt = place("transport-belt", x + 6, y + 5 + i)
-            if belt then belt.order_deconstruction(game.forces.player) end
+            local chest = place("steel-chest", x + 3, y + 4 + i)
+            if chest then chest.insert{ name = "stone", count = 48 * 50 } end
           end
+          -- Left unmarked on purpose: marking them is the thing to do here.
+          for i = 0, 3 do place("transport-belt", x + 5, y + 4 + i) end
         end },
     },
   },
@@ -367,10 +385,18 @@ local ROWS = {
       { "A cliff wants a charge",
         "Stand on the mark. The claw carries one explosive out and comes home with nothing.",
         function(x, y)
-          pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          local cliff = place("cliff", x + 6, y + 6,
+          -- The mark goes where the cliff ended up rather than where it was asked for. A
+          -- cliff lies on a grid of its own and comes to rest a tile or two off, which on a
+          -- five tile arm is the difference between reaching it and standing there.
+          local cliff = place("cliff", x + 7, y + 6,
             { cliff_orientation = "west-to-east", force = "neutral" })
-          if cliff then cliff.order_deconstruction(game.forces.player) end
+          if cliff then
+            cliff.order_deconstruction(game.forces.player)
+            pad(math.floor(cliff.position.x) - 3, math.floor(cliff.position.y),
+              "refined-hazard-concrete-left")
+          else
+            pad(x + 2, y + 6, "refined-hazard-concrete-left")
+          end
         end },
       },
   },
@@ -516,10 +542,15 @@ local function clear_and_build()
   end
   for _, drawn in pairs(rendering.get_all_objects("ce-demo")) do drawn.destroy() end
 
+  -- The checkerboard the testing scenarios use. Solid white is too bright to look at for
+  -- long, and a floor with no pattern in it gives the eye nothing to judge a tile against.
   local floor = {}
   for x = left, right do
     for y = top, bottom do
-      floor[#floor + 1] = { name = "lab-white", position = { x, y } }
+      floor[#floor + 1] = {
+        name = ((x + y) % 2 == 0) and "lab-dark-1" or "lab-dark-2",
+        position = { x, y },
+      }
     end
   end
   made.set_tiles(floor)
@@ -536,7 +567,7 @@ local function clear_and_build()
 
     -- the west pad, which kits whoever stands on it, and the east one, which moves them on
     pad(rx + 1, ry + 6, "refined-concrete")
-    label(rx - 1, ry + 8.6, "STAND HERE",
+    label(rx - 1, ry + 7.6, "STAND HERE",
       "for what this row wants", { 0.55, 0.9, 0.6 })
     storage.pads[index] = { west = { x = rx + 1.5, y = ry + 6.5 } }
 
@@ -549,8 +580,8 @@ local function clear_and_build()
     local east = rx + (#row.bays + 1) * BAY
     if index < #ROWS then
       pad(east, ry + 6, "refined-hazard-concrete-right")
-      label(east - 2, ry + 8.6, "STAND HERE",
-        ("to go to row %d"):format(index + 1), { 0.95, 0.8, 0.4 })
+      label(east - 2, ry + 7.6, "STAND HERE",
+        ("to go to row %d, vehicle and all"):format(index + 1), { 0.95, 0.8, 0.4 })
       storage.pads[index].east = { x = east + 0.5, y = ry + 6.5 }
     end
 
@@ -634,11 +665,18 @@ script.on_event(defines.events.on_tick, function()
       for index, pads in pairs(storage.pads) do
         if pads.east and on_pad(player, pads.east) then
           local next_row = storage.pads[index + 1]
-          if next_row then
+          if next_row and storage.kitted ~= index + 1 then
+            -- A player in a vehicle cannot be teleported out from under it: the vehicle
+            -- goes too, or nothing moves and the message repeats at somebody sitting still
+            -- on the pad.
+            local riding = player.vehicle
+            if riding and riding.valid then
+              riding.teleport({ next_row.west.x + 3, next_row.west.y })
+            end
             player.teleport({ next_row.west.x, next_row.west.y }, made)
             kit(player, ROWS[index + 1])
             storage.kitted = index + 1
-            player.print(ROWS[index + 1].title)
+            player.print(ROWS[index + 1].title .. " -- " .. ROWS[index + 1].note)
           end
           break
         elseif on_pad(player, pads.west) and storage.kitted ~= index then

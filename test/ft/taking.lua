@@ -146,3 +146,28 @@ describe("a thing marked for deconstruction", function()
     end)
   end)
 end)
+
+describe("several things marked at once", function()
+  before_each(function()
+    player = world.player()
+    world.clear(player)
+    world.equipped(player)
+    player.get_inventory(defines.inventory.character_main).clear()
+  end)
+
+  -- The order find_entities_filtered hands things back in walks the map's own index, which
+  -- had a claw crossing a patch in bands rather than working outward from itself.
+  it("goes for the nearest first", function()
+    local near = player.surface.create_entity{ name = "transport-belt",
+      position = { world.ORIGIN.x + 1, world.ORIGIN.y }, force = player.force }
+    local far = player.surface.create_entity{ name = "transport-belt",
+      position = { world.ORIGIN.x + 2, world.ORIGIN.y }, force = player.force }
+    -- marked far first, so index order and distance order disagree
+    far.order_deconstruction(player.force)
+    near.order_deconstruction(player.force)
+    after_ticks(world.DELIVERED, function()
+      assert.is_false(near.valid, "it went for the far one first")
+      assert.is_true(far.valid, "both went at once")
+    end)
+  end)
+end)
