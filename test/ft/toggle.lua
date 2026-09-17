@@ -78,6 +78,36 @@ describe("the constructor equipment toggle", function()
     end)
   end)
 
+  -- The pockets an arm was paid out of can be full by the time it comes home, and a
+  -- vehicle's hold can be the wrong shape entirely. Inserting and clearing regardless quietly
+  -- destroyed whatever would not fit, which the button made easy to do by accident.
+  it("puts on the floor what full pockets will not take back", function()
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(12, function()
+      assert.are.equal(4, player.get_item_count(BELT),
+        "the arm should have taken a belt out of the pockets to carry")
+      -- Filled now rather than at the start, so that the arm had a belt to pick up and the
+      -- pockets have no room for it by the time it is handed back. The belts left behind go
+      -- first: a part full stack of the very thing being handed back has room in it, and an
+      -- inventory with no empty slot is not a full one while that stack is there.
+      player.get_main_inventory().remove{ name = BELT, count = 100 }
+      world.fill_pockets(player)
+      local before = player.get_item_count(BELT)
+      press(player)
+      after_ticks(2, function()
+        local loose = 0
+        for _, item in pairs(player.surface.find_entities_filtered{
+            position = player.position, radius = 10, type = "item-entity" }) do
+          if item.stack.valid_for_read and item.stack.name == BELT then
+            loose = loose + item.stack.count
+          end
+        end
+        assert.are.equal(before + 1, player.get_item_count(BELT) + loose,
+          "the belt the claw was carrying was destroyed rather than handed back or dropped")
+      end)
+    end)
+  end)
+
   it("hands the speed back at once rather than waiting for the sticker to run out", function()
     world.several(player, BELT, 4)
     after_ticks(world.DELIVERED, function()

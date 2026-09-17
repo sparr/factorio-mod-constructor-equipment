@@ -82,6 +82,10 @@ end
 --- should have to wait through.
 local STOW_TICKS = 18
 
+--- How big the thing in the claw is drawn while the claw is being put away. An item icon
+--- is a tile across at its own scale, which is five times the size of the claw holding it.
+local HELD_SCALE = 0.25
+
 --- How long the arm stays out after the last thing it did. An arm that vanished the moment
 --- a swing ended would flicker between one ghost and the next; one that never vanished
 --- would be worn to bed.
@@ -979,7 +983,7 @@ end
 ---@return string? item
 ---@return integer? count
 ---@return string? quality what quality of that item it has to be
-local function choose(player, wearer, from, nearby, claimed, range)
+local function choose(player, wearer, from, nearby, claimed, range, record)
   local inventory = pockets(player, wearer)
   if not inventory then return nil end
   ---How many of an item the wearer has at a given quality.
@@ -993,15 +997,45 @@ local function choose(player, wearer, from, nearby, claimed, range)
     end
   end
 
-  -- Nearest first. The order find_entities_filtered hands things back in is the order they
+  -- Soonest first. The order find_entities_filtered hands things back in is the order they
   -- sit in the map's own index, which walks rows and then columns, so a claw clearing a
-  -- patch crossed it in bands rather than working outward from itself. Sorting by how far
-  -- each is from the arm makes every trip the shortest one available, which matters most to
-  -- somebody walking while it works.
+  -- patch crossed it in bands rather than working outward from itself.
+  --
+  -- Nearest first was the fix for that and is not quite the right question either. An
+  -- inserter turns and extends at once, so what a target costs is whichever of those two
+  -- is slower, and on the later tiers the turn is nearly always the slower one: a fourth
+  -- tier arm crosses its five tiles in fifty ticks and turns right round in sixty-two. So
+  -- a belt a tile away behind the claw costs more than one four tiles out in front of it,
+  -- and sorting by distance sends the hand back and forth across the character while
+  -- nearer work in front of it waits.
+  --
+  -- Where the hand is now is the whole of what makes this different from distance, so an
+  -- arm still in its box is sorted by distance alone -- which is what the cost comes to
+  -- anyway once there is no bearing to turn away from.
   local standing = wearer.position
+  local tier = record and tier_of(record)
+  local arm = record and record.entity
+  local hand = tier and arm and arm.valid and arm.held_stack_position or nil
+  local cost = {}
+  for _, work in pairs(nearby) do
+    if work.valid then
+      cost[work.unit_number or work] = hand
+          and reach.swing_ticks(tier, from, hand, work.position)
+          or reach.distance(from, work.position)
+    end
+  end
+  local function costs(work)
+    return cost[work.unit_number or work] or math.huge
+  end
   table.sort(nearby, function(one, other)
     if not (one.valid and other.valid) then return false end
-    return reach.distance(from, one.position) < reach.distance(from, other.position)
+    local mine, theirs = costs(one), costs(other)
+    -- Ties are common, because a swing that is all turn costs the same whatever its
+    -- reach. Distance breaks them, so the claw still works outward from itself.
+    if mine == theirs then
+      return reach.distance(from, one.position) < reach.distance(from, other.position)
+    end
+    return mine < theirs
   end)
   for _, ghost in pairs(nearby) do
     if still_wanted(ghost) then
@@ -1140,10 +1174,11 @@ local function job_for(player, wearer, from, nearby, claimed, record, range)
     -- speed, and a fresh slowdown began a tick later, so they oscillated instead of
     -- settling. The run ends when the work runs out, not when an arm is a tick short of
     -- being able to start the next trip.
-    local ghost = choose(player, wearer, from, nearby, claimed, range)
+    local ghost = choose(player, wearer, from, nearby, claimed, range, record)
     return nil, nil, nil, nil, ghost ~= nil
   end
-  local ghost, item, count, quality = choose(player, wearer, from, nearby, claimed, range)
+  local ghost, item, count, quality = choose(player, wearer, from, nearby, claimed, range,
+    record)
   return ghost, item, count, quality, false
 end
 
@@ -1196,22 +1231,29 @@ end
 ---@param tier table
 ---@param surface LuaSurface
 ---@param at {x: number, y: number}
-local function stow(tier, surface, at)
+local function stow(tier, surface, at, carrying)
   -- Sprites are not among the prototypes script can look up, so the path is checked rather
   -- than the prototype. Worth checking at all for the same reason the stickers are: a
   -- script reloaded without its data stage runs against prototypes that never heard of it.
   if not helpers.is_valid_sprite_path(tier.claw) then return end
-  local drawn = rendering.draw_sprite{
-    sprite = tier.claw,
-    surface = surface,
-    target = { at.x, at.y },
-    x_scale = tiers.SCALE,
-    y_scale = tiers.SCALE,
-    render_layer = "object",
-  }
-  if drawn then
-    storage.constructor_stowing = storage.constructor_stowing or {}
-    storage.constructor_stowing[drawn.id] = game.tick
+  storage.constructor_stowing = storage.constructor_stowing or {}
+  local function fading(sprite, scale)
+    local drawn = rendering.draw_sprite{
+      sprite = sprite,
+      surface = surface,
+      target = { at.x, at.y },
+      x_scale = scale,
+      y_scale = scale,
+      render_layer = "object",
+    }
+    if drawn then storage.constructor_stowing[drawn.id] = game.tick end
+  end
+  fading(tier.claw, tiers.SCALE)
+  -- What it was holding fades with it. The item itself has gone back into the pockets it
+  -- was paid for out of, so this is only the picture catching up: a claw that winked out
+  -- empty read as the load having been dropped somewhere.
+  if carrying and helpers.is_valid_sprite_path("item/" .. carrying) then
+    fading("item/" .. carrying, HELD_SCALE)
   end
 end
 
@@ -1340,15 +1382,42 @@ end
 ---@param record table
 local function put_away(player, record)
   local arm = record.entity
-  local inventory = pockets(player, record.wearer or player.character)
+  local wearer = record.wearer or player.character
+  local inventory = pockets(player, wearer)
+
+  ---Hand something back to whoever the arm was mustered against, and put on the floor
+  ---whatever they cannot take.
+  ---
+  ---Pockets fill, and an arm being put away is holding things that were paid for out of
+  ---those pockets or fetched on their behalf. Inserting and then clearing regardless
+  ---destroys the difference, which is a stack lost every time the toolbar button is pressed
+  ---with a full inventory. A vehicle makes it worse than an edge case: a locomotive has no
+  ---hold at all, only a three slot burner box, so every insert into one takes nothing.
+  ---
+  ---Spilling is what the game does with what a character cannot hold, and the stack goes
+  ---down as it stands so that a damaged or a quality thing stays what it was. Unmarked: it
+  ---is the player's own, not a shed.
+  ---@param stack LuaItemStack|table
+  local function give_back(stack)
+    local count = stack.count or 0
+    if count <= 0 then return end
+    local took = inventory and inventory.insert(stack) or 0
+    if took >= count then return end
+    if not (wearer and wearer.valid) then return end
+    if took > 0 then stack.count = count - took end
+    wearer.surface.spill_item_stack{
+      position = wearer.position,
+      stack = stack,
+      enable_looted = true,
+      force = player.force,
+    }
+  end
 
   -- The box goes with the arm, and what it was holding is not the box's. A claw that had
   -- just put a belt in it, or one being handed what it had come to fetch, had that thrown
   -- away with the box: catcher_away says what was left in it and nobody was listening.
   for _, stack in pairs(catcher_away(record) or {}) do
-    if inventory then
-      inventory.insert{ name = stack.name, quality = stack.quality, count = stack.count }
-    end
+    give_back(stack)
   end
 
   if arm and arm.valid then
@@ -1357,14 +1426,14 @@ local function put_away(player, record)
     -- the same reason the charge goes back to the grid it was mustered against: an arm put
     -- away as its owner climbs out of a vehicle is holding the vehicle's belt, not theirs.
     local job = record.job
-    if job and (job.escrow or 0) > 0 and job.item and inventory then
-      inventory.insert{ name = job.item, quality = job.quality, count = job.escrow }
+    if job and (job.escrow or 0) > 0 and job.item then
+      give_back{ name = job.item, quality = job.quality, count = job.escrow }
       job.escrow = 0
     end
+    local carrying
     if arm.held_stack.valid_for_read then
-      if inventory then
-        inventory.insert(arm.held_stack)
-      end
+      carrying = arm.held_stack.name
+      give_back(arm.held_stack)
       arm.held_stack.clear()
     end
     -- whatever it was holding in its buffer goes back where it came from, so that taking
@@ -1377,7 +1446,11 @@ local function put_away(player, record)
     if record.grid and record.grid.valid then
       refund(record.grid, record.piece, arm.energy)
     end
-    stow(tier_of(record), arm.surface, arm.position)
+    -- Where the hand is, not where the arm is bolted on. Stowing at the base made a claw
+    -- switched off halfway through a delivery snap from wherever it had got to back to the
+    -- character's feet before it faded, which reads as the arm collapsing rather than
+    -- being put away, and is the one thing about switching off that looked like a fault.
+    stow(tier_of(record), arm.surface, arm.held_stack_position, carrying)
     arm.destroy()
   end
   record.entity = nil
@@ -1749,7 +1822,7 @@ local function swap_pair(porter, work, partner, quality)
   return made, other
 end
 
----Put everything an inventory holds on the floor and mark it---Put everything an inventory holds on the floor and mark it, which is what a construction
+---Put everything an inventory holds on the floor and mark it, which is what a construction
 ---robot does with what it cannot carry away.
 ---
 ---Marked from the entities spill_item_stack hands straight back rather than by looking
@@ -2192,7 +2265,7 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     -- The tick's own search where there is one, which there is whenever this is reached
     -- from an arm being advanced. A claw turning to the next ghost is asking the same
     -- question the arms with no job are asking, of the same ground, on the same tick.
-    nearby and nearby() or work_near(wearer, range), claimed, range)
+    nearby and nearby() or work_near(wearer, range), claimed, range, record)
   if not ghost then return false end
   if item ~= job.item then return false end
   -- The claw is already carrying this item at the quality it set off with, and a ghost

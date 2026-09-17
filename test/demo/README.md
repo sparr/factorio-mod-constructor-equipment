@@ -41,7 +41,9 @@ wants three rails where the claw holds one; and a run of ghosts to walk away fro
 where the slowdown shows.
 
 **2. Tiers and numbers.** Four arms at once, one of each tier, with ghosts at two, three,
-four and five tiles so each tier takes its own. Then four copies of one tier working side by
+four and five tiles so each tier takes its own. There is a second mark below that one which
+puts you down in the middle of four more, since walking up to them offers them one at a time
+and arriving offers all four on the same tick. Then four copies of one tier working side by
 side, and the bulk claw carrying several and turning from ghost to ghost rather than coming
 home between each.
 
@@ -82,7 +84,7 @@ nothing takes over.
 ## What the smoke run should say
 
 ```
-ce-demo: built 10 rows, 26 bays, 175 ghosts, 4 vehicles
+ce-demo: built 10 rows, 26 bays, 191 ghosts, 4 vehicles
 everything placed
 ```
 

@@ -355,6 +355,36 @@ describe("a character wearing the equipment", function()
       end)
     end)
 
+    -- A claw fetches something off the floor by pointing an inserter at it, and an
+    -- inserter aimed at a tile a chest stands on takes from the chest. The shed lands on
+    -- the tile the replacement was just put down on, so without moving it the arm spent
+    -- its time emptying the chest it had built, which is what the walk round saw.
+    it("does not leave the shed underneath the chest that replaced it", function()
+      full_chest_marked_down()
+      after_ticks(A_BUILD, function()
+        local chest = player.surface.find_entities_filtered{
+          position = { world.ORIGIN.x + 2, world.ORIGIN.y }, name = "iron-chest" }[1]
+        assert.is_truthy(chest, "the chest was never swapped, so there is nothing to check")
+        local under = 0
+        for _, item in pairs(player.surface.find_entities_filtered{
+            area = chest.bounding_box, type = "item-entity" }) do
+          if item.stack.valid_for_read then under = under + item.stack.count end
+        end
+        assert.are.equal(0, under, "part of the shed is out of reach on the chest's tile")
+      end)
+    end)
+
+    it("leaves what the replacement is holding alone", function()
+      full_chest_marked_down()
+      after_ticks(A_BUILD * 6, function()
+        local chest = player.surface.find_entities_filtered{
+          position = { world.ORIGIN.x + 2, world.ORIGIN.y }, name = "iron-chest" }[1]
+        assert.is_truthy(chest, "the chest was never swapped, so there is nothing to check")
+        assert.are.equal(3200, chest.get_item_count("iron-plate"),
+          "the arm has been emptying the chest it just built")
+      end)
+    end)
+
     it("marks the spill for deconstruction", function()
       full_chest_marked_down()
       after_ticks(A_BUILD, function()

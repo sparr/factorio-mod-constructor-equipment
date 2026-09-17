@@ -98,6 +98,28 @@ local function pad(x, y, tile)
   ground().set_tiles{ { name = tile, position = { x, y } } }
 end
 
+---A mark that puts you somewhere else on the same row, and the mark it puts you on.
+---
+---Walking up to a line of ghosts offers them one at a time, nearest first, so the shortest
+---arm that can reach each one gets it and the long arms are always a step behind. Arriving
+---in the middle of them offers all of them at once, which is the other half of the story
+---and cannot be done on foot at any speed.
+---@param from_x number
+---@param from_y number
+---@param to_x number
+---@param to_y number
+---@param note string what standing on it is for
+local function hop(from_x, from_y, to_x, to_y, note)
+  pad(from_x, from_y, "refined-hazard-concrete-right")
+  pad(to_x, to_y, "refined-hazard-concrete-left")
+  label(from_x - 1, from_y + 1.6, "STAND HERE", note, { 0.55, 0.9, 0.6 })
+  storage.hops = storage.hops or {}
+  storage.hops[#storage.hops + 1] = {
+    from = { x = from_x + 0.5, y = from_y + 0.5 },
+    to = { x = to_x + 0.5, y = to_y + 0.5 },
+  }
+end
+
 -- --------------------------------------------------------------------------- the rows
 
 --- What each row is, what it gives the character who stands on its pad, and what it builds.
@@ -172,7 +194,7 @@ local ROWS = {
     },
     bays = {
       { "Four arms, four reaches",
-        "Walk east along the mark. Each is set so the arm that suits it meets it first: five tiles, then four, three, two.",
+        "Walk east along the mark. Each is set so the arm that suits it meets it first: five tiles, then four, three, two. Or take the mark below, to arrive among four at once.",
         function(x, y)
           pad(x + 1, y + 6, "refined-hazard-concrete-left")
           -- Staggered rather than in a line. Four ghosts at two, three, four and five
@@ -182,6 +204,17 @@ local ROWS = {
           for step = 5, 2, -1 do
             ghost("transport-belt", x + 2 + (5 - step) * 3, y + 6 - step)
           end
+          -- The same four reaches without the walking. Arriving in one step puts all of
+          -- them in front of all four arms on the same tick, and the arms are asked in the
+          -- order they sit in the grid, shortest first, each taking the nearest nobody has
+          -- claimed: two tiles to the yellow arm, then three, four and five. Walking cannot
+          -- show that, because on foot the near one is in reach long before the far one.
+          --
+          -- The mark to stand on is six tiles from the nearest ghost, which is past every
+          -- arm, so nothing is built while you are waiting to be moved.
+          hop(x + 1, y + 10, x + 5, y + 10,
+            "to be put down among four ghosts at once, at two, three, four and five tiles")
+          for step = 2, 5 do ghost("transport-belt", x + 5 + step, y + 10) end
         end },
       { "One arm for every copy",
         "Stand on the mark. Four arms work at once, and none of them reaches for the same thing.",
@@ -588,6 +621,7 @@ local function clear_and_build()
   made.destroy_decoratives{ area = { { left, top }, { right, bottom } } }
 
   storage.pads = {}
+  storage.hops = {}
   for index, row in ipairs(ROWS) do
     local rx, ry = row_at(index)
     label(rx, ry + 1, row.title, row.note,
@@ -701,7 +735,19 @@ script.on_event(defines.events.on_tick, function()
       end
       if not anywhere then storage.standing = nil end
 
+      local jumped = false
+      for _, jump in pairs(storage.hops or {}) do
+        if on_pad(player, jump.from) then
+          local riding = player.vehicle
+          if riding and riding.valid then riding.teleport({ jump.to.x + 3, jump.to.y }) end
+          player.teleport({ jump.to.x, jump.to.y }, made)
+          jumped = true
+          break
+        end
+      end
+
       for index, pads in pairs(storage.pads) do
+        if jumped then break end
         if pads.east and on_pad(player, pads.east) then
           local next_row = storage.pads[index + 1]
           if next_row and storage.standing ~= index + 1 then

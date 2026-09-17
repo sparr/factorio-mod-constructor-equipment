@@ -13,11 +13,13 @@ Version: 2.1.5
   Changes:
     - The equipment is narrower and taller: two by three, four, five and six as the tiers go up, so the fourth wants a power armour rather than a modular one
     - A claw clearing away several things in its reach brings back as many as its hand holds in one trip, rather than one a trip
-    - An arm goes for the nearest thing it can reach rather than whatever the map listed first, so a run of work is crossed by the shortest way round
+    - An arm goes for whatever it can reach soonest rather than whatever is nearest, counting the turn as well as the reach, which clears a scattered yard about half again as quickly
     - The toolbar button greys out when you are wearing no arm, the way the exoskeleton's does
   Bugfixes:
     - Fixed an arm coming out of your back and never setting off for something marked for deconstruction
     - Fixed losing what the claw had just been handed when the arms were switched off or taken away
+    - Fixed losing what an arm was carrying when it was put away and your pockets had no room for it, which now goes on the floor beside you
+    - An arm switched off part way through a reach now fades away where its claw had got to, still holding its load, rather than snapping back to your feet empty handed
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
 ---------------------------------------------------------------------------------------------------

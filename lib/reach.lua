@@ -5,6 +5,11 @@
 --- What is left is measuring, and that needs no game.
 local reach = {}
 
+--- Factorio runs Lua 5.2, which spells this math.atan2; 5.3 dropped that name and gave
+--- math.atan a second argument instead. The unit tests run on whatever Lua is installed,
+--- so the name is looked up rather than written down.
+local atan2 = math.atan2 or math.atan
+
 ---How far apart two points are.
 ---@param from {x: number, y: number}
 ---@param to {x: number, y: number}
@@ -70,6 +75,47 @@ end
 ---@return number
 function reach.within(tier, threshold, moved)
   return math.max(threshold, reach.step(tier), (moved or 0) * reach.OVERSHOOT)
+end
+
+---How far round the arm has to turn to get from one bearing to another, in whole turns.
+---
+---Never more than half a turn, because an arm turns whichever way is shorter.
+---
+---A hand sitting on its own base has no bearing at all, so the answer is nought rather
+---than an arbitrary angle: there is nothing to turn away from.
+---@param from {x: number, y: number} where the arm reaches from
+---@param hand {x: number, y: number} where its hand is now
+---@param to {x: number, y: number} where it would go
+---@return number turns 0 to 0.5
+function reach.turn(from, hand, to)
+  if reach.distance(from, hand) < 0.1 then return 0 end
+  local now = atan2(hand.y - from.y, hand.x - from.x)
+  local next_one = atan2(to.y - from.y, to.x - from.x)
+  local apart = math.abs(next_one - now) / (2 * math.pi)
+  apart = apart % 1
+  return math.min(apart, 1 - apart)
+end
+
+---Roughly how many ticks the hand would take to get from where it is to a given spot.
+---
+---An inserter turns and extends at the same time rather than one after the other, so a
+---swing takes whichever of the two is slower rather than the sum. That is the whole point
+---of measuring it this way: a near thing off to one side costs the turn and gets its
+---extension for free, while a far thing straight ahead costs only the extension. Sorting
+---by distance alone cannot tell those apart, and on the later tiers, whose turn was slowed
+---to stay in proportion with a long reach, the difference is most of the journey.
+---
+---Rough on purpose. It is used to put targets in order, not to predict anything, and the
+---engine's own easing at either end of a swing is not modelled.
+---@param tier table
+---@param from {x: number, y: number} where the arm reaches from
+---@param hand {x: number, y: number} where its hand is now
+---@param to {x: number, y: number} where it would go
+---@return number ticks
+function reach.swing_ticks(tier, from, hand, to)
+  local out = math.abs(reach.distance(from, to) - reach.distance(from, hand))
+  local turning = reach.turn(from, hand, to)
+  return math.max(out / tier.extension, turning / tier.rotation)
 end
 
 return reach

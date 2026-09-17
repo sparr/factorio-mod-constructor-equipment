@@ -236,3 +236,108 @@ describe("a claw with room left in its hand", function()
   end)
 
 end)
+
+-- The walk round reported the arm emptying the chest it had just built, and the obvious
+-- mechanism is that a claw fetches things off the floor by pointing an inserter at them:
+-- aim one where a chest stands and it ought to take from the chest. Measured, it does not.
+-- The heap comes up off the floor and the chest is not touched, at the middle of its tile
+-- and at the edge of it alike, so this is here to keep that true rather than to guard
+-- against the thing it was written to catch.
+describe("something marked for taking up with a chest standing over it", function()
+  local function chest_over_a_heap(offset)
+    local at = { world.ORIGIN.x + 2, world.ORIGIN.y }
+    local chest = player.surface.create_entity{
+      name = "iron-chest", position = at, force = player.force }
+    chest.insert{ name = "iron-plate", count = 100 }
+    local heap = player.surface.create_entity{
+      name = "item-on-ground",
+      position = { at[1] + offset, at[2] },
+      stack = { name = "copper-plate", count = 1 },
+    }
+    if heap then heap.order_deconstruction(player.force) end
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    return chest, heap
+  end
+
+  it("takes a heap off the chest's middle without touching the chest", function()
+    local chest = chest_over_a_heap(0)
+    after_ticks(A_BUILD * 4, function()
+      assert.are.equal(1, player.get_item_count("copper-plate"),
+        "the heap on the chest's tile was never picked up at all")
+      assert.are.equal(100, chest.get_item_count("iron-plate"),
+        "the arm emptied the chest instead of picking up what was on its tile")
+    end)
+  end)
+
+  -- A container's collision box is smaller than the tile it stands on, so a heap can sit
+  -- clear of the box and still be on the tile the inserter would aim at.
+  it("takes one at the edge of its tile without touching the chest", function()
+    local chest = chest_over_a_heap(0.45)
+    after_ticks(A_BUILD * 4, function()
+      assert.are.equal(1, player.get_item_count("copper-plate"),
+        "the heap on the chest's tile was never picked up at all")
+      assert.are.equal(100, chest.get_item_count("iron-plate"),
+        "the arm emptied the chest instead of picking up what was on its tile")
+    end)
+  end)
+end)
+
+-- Which of several things in reach a claw goes for next, and what that is worth.
+--
+-- An inserter turns and extends at once, so what a target costs is whichever of those is
+-- slower, and on the long arms the turn is nearly always the slower one: a fourth tier hand
+-- crosses its five tiles in fifty ticks and turns right round in sixty two. Sorting by
+-- distance sends it back and forth across its owner picking the nearest each time, while
+-- work it is already pointing at waits.
+--
+-- Measured on this very scatter: forty belts, all in reach, all marked. Sorted by swing
+-- time the claw took 3, 6, 12, 18 and 27 of them by 60, 120, 180, 240 and 360 ticks.
+-- Sorted by distance, 3, 6, 9, 12 and 18. Half again as much work in the same time, and
+-- the two orders are identical until the hand has a bearing to turn away from.
+describe("a claw with a yardful of things to pick up", function()
+  local LAID = 40
+  local RUN = 360
+  -- Between the last measurement and the first, so it fails if the ordering goes back to
+  -- distance and does not fail for a tick of drift either way.
+  local ENOUGH = 24
+
+  it("goes for what it can reach soonest rather than what is nearest", function()
+    world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
+                          "battery-mk2-equipment" }, true)
+    for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1" } do
+      player.force.technologies[name].researched = true
+    end
+    -- Every angle and every reach, which is the shape a shed leaves on the floor. Thirteen
+    -- is coprime with forty, so the angles do not fall into spokes.
+    local laid = 0
+    for step = 0, LAID - 1 do
+      local angle = step * 2 * math.pi / 13
+      local radius = 1.2 + (step % 5) * 0.7
+      local thing = player.surface.create_entity{
+        name = "item-on-ground",
+        position = { world.ORIGIN.x + math.cos(angle) * radius,
+                     world.ORIGIN.y + math.sin(angle) * radius },
+        stack = { name = BELT, count = 1 },
+      }
+      if thing then
+        thing.order_deconstruction(player.force)
+        laid = laid + 1
+      end
+    end
+    assert.are.equal(LAID, laid, "the scatter did not go down")
+    after_ticks(RUN, function()
+      local left = #player.surface.find_entities_filtered{
+        position = world.ORIGIN, radius = 20, type = "item-entity" }
+      assert.is_true(laid - left >= ENOUGH,
+        ("only %d of %d were taken up in %d ticks, where sorting by swing time takes 27"):
+          format(laid - left, laid, RUN))
+    end)
+  end)
+
+  after_each(function()
+    for _, name in pairs{ "inserter-capacity-bonus-1", "bulk-inserter" } do
+      local technology = player.force.technologies[name]
+      if technology then technology.researched = false end
+    end
+  end)
+end)
