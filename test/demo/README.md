@@ -69,10 +69,12 @@ the way a robot leaves it.
 
 **6. The deconstruction planner.** A run of belts taken up, the claw going out empty and
 coming home loaded. A chest with something in it, which is emptied a clawful at a time before
-the chest itself goes, which is what robots do with one. A patch of concrete, since a tile marked
-for removal is an entity standing on it, and the claw travels to each one. Two belts either
-side of the mark, a journey each, because a claw takes what it went to and nothing else. And a cliff, which is not a demolition at all
-but a delivery: the claw carries one explosive out and comes home with nothing.
+the chest itself goes, which is what robots do with one. A patch of concrete, since a tile
+marked for removal is an entity standing on it, and a claw with room left in its hand crosses
+from one to the next without coming home between them. Two belts either side of the mark,
+which go in one round for the same reason. It visits every one of them: nothing is taken up
+that the claw did not travel to. And a cliff, which is not a demolition at all but a delivery:
+the claw carries one explosive out and comes home with nothing.
 
 **7. A tank** and **8. a spidertron**, the two vehicles the base game gives an equipment
 grid. Get in and drive along the ghosts on either side. The arms are mounted along the hull

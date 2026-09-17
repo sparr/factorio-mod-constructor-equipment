@@ -464,7 +464,7 @@ local ROWS = {
           end
         end },
       { "A patch of tiles",
-        "Stand on the mark. A tile marked for removal is an entity standing on it, and the claw goes out to each one: a hand with room in it is not a reason to take what it has not travelled to.",
+        "Stand on the mark. A tile marked for removal is an entity standing on it, and a claw with room in its hand goes from one to the next without coming home between them. It visits every one of them: nothing is taken up that the claw did not travel to.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           local tiles = {}
@@ -479,8 +479,8 @@ local ROWS = {
             if one then one.order_deconstruction(game.forces.player) end
           end
         end },
-      { "A trip each side",
-        "Stand on the mark, between them. A claw takes what it went to and nothing else, so these are a journey each.",
+      { "One round, both sides",
+        "Stand on the mark, between them. The claw crosses from one to the other without coming home, and carries both back at the end.",
         function(x, y)
           pad(x + 5, y + 6, "refined-hazard-concrete-left")
           for _, away in pairs{ -4, -3, 3, 4 } do

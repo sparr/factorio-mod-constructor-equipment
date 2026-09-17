@@ -172,14 +172,18 @@ describe("several things marked at once", function()
   end)
 end)
 
--- A claw takes what it went to and nothing else, however much room is left in its hand. An
--- arm that picks up what it did not travel to is not doing anything a player can watch, and
--- a version of this that gathered everything marked inside the arm's whole range made a yard
--- of shed plates wink out at once while the claw sat over one of them.
+-- A claw with room left in its hand goes on to the next thing rather than carrying one home
+-- and coming straight back out -- and it goes to it. Nothing is taken up that the claw did
+-- not travel to: a load is only ever taken from the thing the hand is stretched out over,
+-- which is the engine's own report that it got there.
 --
--- Filling up still happens where filling up means more out of the one thing the claw is
--- standing at: a chest goes a clawful at a time, which is tested further up.
-describe("a claw with room left in its hand", function()
+-- How it crosses is decided by the engine. An inserter will not carry a load past its drop
+-- position, so a claw sent to the next thing with its drop still at home puts the load down
+-- at home -- which for a fetch is bare ground at its owner's feet. Aimed at the thing it is
+-- crossing to, with the drop and the pickup on the same point exactly, it carries the load
+-- the whole way in its hand: an inserter will not put something into the very thing it is
+-- picking up from.
+describe("a claw working a round of pickups", function()
   local BULK = "constructor-equipment-4"
 
   before_each(function()
@@ -201,7 +205,8 @@ describe("a claw with room left in its hand", function()
     end
   end)
 
-  it("leaves the rest of the patch for another trip", function()
+  ---A patch of four marked concrete tiles.
+  local function patch()
     local at = { world.ORIGIN.x + 3, world.ORIGIN.y }
     local tiles = {}
     for dx = 0, 1 do
@@ -216,37 +221,61 @@ describe("a claw with room left in its hand", function()
     end
     assert.are.equal(4, player.surface.count_entities_filtered{
       type = "deconstructible-tile-proxy" }, "the tiles were not all marked")
+  end
 
-    -- One trip, and the claw has room for four. Three of the patch are still standing,
-    -- within a tile and a half of the one it took, and it did not reach for any of them.
-    after_ticks(world.CYCLE, function()
-      assert.are.equal(1, player.get_item_count("concrete"),
-        "the claw took tiles it had not travelled to")
-      assert.are.equal(3, player.surface.count_entities_filtered{
-        type = "deconstructible-tile-proxy" }, "more of the patch went than the claw went to")
-    end)
-  end)
-
-  -- Every one of them is its own journey now, which is slower and is what an arm does.
-  it("comes back for the rest of the patch until it is gone", function()
-    local at = { world.ORIGIN.x + 3, world.ORIGIN.y }
-    local tiles = {}
-    for dx = 0, 1 do
-      for dy = -1, 0 do
-        tiles[#tiles + 1] = { name = "concrete", position = { at[1] + dx, at[2] + dy } }
-      end
-    end
-    player.surface.set_tiles(tiles)
-    for _, tile in pairs(tiles) do
-      player.surface.get_tile(tile.position[1], tile.position[2])
-        .order_deconstruction(player.force)
-    end
+  it("visits every tile of a patch and brings the round home", function()
+    patch()
     after_ticks(world.CYCLE * 8, function()
       assert.are.equal(0, player.surface.count_entities_filtered{
         type = "deconstructible-tile-proxy" }, "some of the patch is still marked")
       assert.are.equal(4, player.get_item_count("concrete"),
-        "the whole patch did not come home")
+        "the round did not all come home")
     end)
+  end)
+
+  -- The patch in one round rather than four journeys: part way through, more than one of it
+  -- has gone. Four visits is well inside a cycle and a half where four separate trips is not.
+  it("takes more than one of them between visits home", function()
+    patch()
+    after_ticks(math.floor(world.CYCLE * 1.5), function()
+      local left = player.surface.count_entities_filtered{
+        type = "deconstructible-tile-proxy" }
+      assert.is_true(left <= 2,
+        ("only %d of the four had gone, which is a journey each rather than a round"):format(
+          4 - left))
+    end)
+  end)
+
+  -- Nothing is made and nothing is lost along the way, wherever the round has got to.
+  -- Counted everywhere it could be: the pockets, the claw, the bag, the box and the ground.
+  it("accounts for every one of them at every point in the round", function()
+    patch()
+    for _, when in ipairs{ 30, 90, 200, 400 } do
+      after_ticks(when, function()
+        local total = player.get_item_count("concrete")
+        for _, arm in pairs(world.arms(player)) do
+          if arm.held_stack.valid_for_read and arm.held_stack.name == "concrete" then
+            total = total + arm.held_stack.count
+          end
+        end
+        for _, record in pairs(storage.constructor_arms[player.index] or {}) do
+          if record.catcher and record.catcher.valid then
+            total = total + record.catcher.get_item_count("concrete")
+          end
+        end
+        for _, item in pairs(player.surface.find_entities_filtered{
+            position = world.ORIGIN, radius = 20, type = "item-entity" }) do
+          if item.stack.valid_for_read and item.stack.name == "concrete" then
+            total = total + item.stack.count
+          end
+        end
+        local left = player.surface.count_entities_filtered{
+          type = "deconstructible-tile-proxy" }
+        assert.are.equal(4, total + left,
+          ("%d tiles still marked and %d concrete accounted for, at tick %d"):format(
+            left, total, when))
+      end)
+    end
   end)
 
   -- A trip each, since they are in two places. They both come home, which is the part worth
@@ -314,12 +343,14 @@ end)
 
 -- How fast a claw clears a yard, as a floor.
 --
--- The number is what it is because every one of these is its own journey. Measured on this
--- scatter as the rule changed: 27 of forty in 360 ticks when a claw arriving at one thing
--- swept up everything marked inside the arm's whole range, 19 when that was cut to a tile
--- and a half of where it stood, and 8 now that it takes only what it travelled to. The last
--- of those is the honest one, and the two before it were the mod moving things it had not
--- gone to.
+-- Measured on this same scatter as the rule changed. 27 of forty in 360 ticks when a claw
+-- arriving at one thing swept up everything marked inside the arm's whole range; 19 when
+-- that was cut to a tile and a half of where it stood; 8 when it was cut to nothing at all
+-- and every one of them became its own journey; 18 now that the claw works a round, going
+-- from one to the next without coming home between them.
+--
+-- The first two were the mod moving things it had not gone to, and the number they bought
+-- was not real. 18 is: the claw visits every one of them.
 --
 -- The order the claw goes in is decided by swing time rather than distance, because an
 -- inserter turns and extends at once and on the long arms the turn is the slower of the
@@ -328,8 +359,8 @@ end)
 describe("a claw with a yardful of things to pick up", function()
   local LAID = 40
   local RUN = 360
-  -- Comfortably under the 8 it measures at, so drift does not fail it and a collapse does.
-  local ENOUGH = 6
+  -- Comfortably under the 18 it measures at, so drift does not fail it and a collapse does.
+  local ENOUGH = 14
 
   it("clears most of it inside a few hundred ticks", function()
     world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
@@ -359,7 +390,7 @@ describe("a claw with a yardful of things to pick up", function()
       local left = #player.surface.find_entities_filtered{
         position = world.ORIGIN, radius = 20, type = "item-entity" }
       assert.is_true(laid - left >= ENOUGH,
-        ("only %d of %d were taken up in %d ticks, where 8 is what it measures at"):
+        ("only %d of %d were taken up in %d ticks, where 18 is what it measures at"):
           format(laid - left, laid, RUN))
     end)
   end)

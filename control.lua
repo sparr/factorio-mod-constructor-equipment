@@ -844,6 +844,44 @@ local function sole_product(work)
   return product.name, product.amount or product.amount_min or 1
 end
 
+---What the next clawful out of something would be.
+---
+---A round carries one kind of thing, because the claw brings it home in one hand and the
+---bag has one slot, so the next thing has to give more of the same. A thing holding
+---something gives up what is inside it before it gives up itself, which is what a robot does
+---with one, so that is what is asked of it first.
+---@param work LuaEntity
+---@return string? name
+---@return string quality
+local function yields(work)
+  if work.type == "item-entity" then
+    if not work.stack.valid_for_read then return nil, "normal" end
+    return work.stack.name, work.stack.quality and work.stack.quality.name or "normal"
+  end
+  if work.type == "deconstructible-tile-proxy" then
+    local tile = work.surface.get_tile(work.position.x, work.position.y)
+    local mineable = tile and tile.prototype.mineable_properties
+    local products = mineable and mineable.products
+    if products and products[1] and products[1].type == "item" then
+      return products[1].name, "normal"
+    end
+    return nil, "normal"
+  end
+  for index = 1, work.get_max_inventory_index() do
+    local held = work.get_inventory(index)
+    if held and not held.is_empty() then
+      for slot = 1, #held do
+        local stack = held[slot]
+        if stack.valid_for_read then
+          return stack.name, stack.quality and stack.quality.name or "normal"
+        end
+      end
+    end
+  end
+  local name = sole_product(work)
+  return name, work.quality and work.quality.name or "normal"
+end
+
 ---Which end of a pair a thing is.
 ---
 ---An underground belt and a loader are each two things wearing one name, and which end
@@ -1697,7 +1735,11 @@ local function aim(player, wearer, record, slot, count, job)
         -- The other way round: the claw reaches for the thing rather than at it, and what
         -- it picks up comes back to where home is measured from.
         arm.pickup_position = { target.x, target.y }
-        arm.drop_position = { rest.x, rest.y }
+        if job.crossing then
+          arm.drop_position = { target.x, target.y }
+        else
+          arm.drop_position = { rest.x, rest.y }
+        end
       else
         arm.drop_position = { target.x, target.y }
       end
@@ -1804,11 +1846,72 @@ local function give_back(player, wearer, record)
   return false
 end
 
+---Put everything an inventory holds on the floor and mark it, which is what a construction
+---robot does with what it cannot carry away.
+---
+---Marked from the entities spill_item_stack hands straight back rather than by looking
+---around afterwards: a pile spreads as the square root of its size, so there is no distance
+---to search that is right for every one of them.
+---
+---The stacks go down as they are rather than by name and number, so a damaged thing stays
+---damaged and a quality one stays that quality.
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---@param force LuaForce
+---@param inventory LuaInventory
+local function shed(surface, at, force, inventory)
+  for index = 1, #inventory do
+    local stack = inventory[index]
+    if stack.valid_for_read then
+      for _, item in pairs(surface.spill_item_stack{
+            position = at,
+            stack = stack,
+            enable_looted = false,
+            force = force,
+            allow_belts = false,
+          } or {}) do
+        if item.valid then item.order_deconstruction(force) end
+      end
+      stack.clear()
+    end
+  end
+end
+
 ---@param record table the arm giving up
 ---@param job table
 local function abandon(record, job)
   job.going = "back"
   job.ghost = nil
+
+  -- And anything still standing in the box, which is about to be destroyed with it. A
+  -- fetch fills the box itself and the engine takes it into the hand a tick later, so a
+  -- round that ends in that gap -- the last thing mined, nothing else in reach -- had the
+  -- box taken away with the load still in it. Two tiles of four went that way, and the
+  -- census is what found them.
+  local holding = record and record.entity
+  local box = record and record.catcher
+  if box and box.valid and holding and holding.valid then
+    local inside = box.get_inventory(defines.inventory.chest)
+    if inside and not inside.is_empty() then
+      for _, stack in pairs(inside.get_contents()) do
+        local quality = stack.quality and (stack.quality.name or stack.quality) or nil
+        local held = holding.held_stack.valid_for_read and holding.held_stack.count or 0
+        if held == 0 or holding.held_stack.name == stack.name then
+          holding.held_stack.set_stack{ name = stack.name, quality = quality,
+                                        count = held + stack.count }
+          local now = holding.held_stack.valid_for_read and holding.held_stack.count or 0
+          if now > held then
+            inside.remove{ name = stack.name, quality = quality, count = now - held }
+          end
+        end
+      end
+      -- Whatever the hand will not take goes on the floor marked, rather than away with
+      -- the box.
+      if not inside.is_empty() then
+        shed(holding.surface, box.position, holding.force, inside)
+      end
+    end
+  end
 
   -- Re-aimed now rather than left to the next tick's aim(). The claw is still full and
   -- still pointed at the ghost, and the engine finishes swings on its own schedule: given
@@ -1950,37 +2053,6 @@ local function swap_pair(porter, work, partner, quality)
   return made, other
 end
 
----Put everything an inventory holds on the floor and mark it, which is what a construction
----robot does with what it cannot carry away.
----
----Marked from the entities spill_item_stack hands straight back rather than by looking
----around afterwards: a pile spreads as the square root of its size, so there is no distance
----to search that is right for every one of them.
----
----The stacks go down as they are rather than by name and number, so a damaged thing stays
----damaged and a quality one stays that quality.
----@param surface LuaSurface
----@param at {x: number, y: number}
----@param force LuaForce
----@param inventory LuaInventory
-local function shed(surface, at, force, inventory)
-  for index = 1, #inventory do
-    local stack = inventory[index]
-    if stack.valid_for_read then
-      for _, item in pairs(surface.spill_item_stack{
-            position = at,
-            stack = stack,
-            enable_looted = false,
-            force = force,
-            allow_belts = false,
-          } or {}) do
-        if item.valid then item.order_deconstruction(force) end
-      end
-      stack.clear()
-    end
-  end
-end
-
 ---Put the thing that came off in the claw, to be carried home the way a robot carries it
 ---back to the network.
 ---
@@ -2108,7 +2180,11 @@ local function take_up(player, wearer, record, job, claimed, nearby, from, range
   local arm = record.entity
   if not (arm and arm.valid) then return end
 
-  if arm.held_stack.valid_for_read and arm.held_stack.count > 0 then
+  local waiting_box = record.catcher
+  local waiting_inside = waiting_box and waiting_box.valid
+    and waiting_box.get_inventory(defines.inventory.chest)
+  if arm.held_stack.valid_for_read and arm.held_stack.count > 0 and not job.crossing
+      and not (waiting_inside and not waiting_inside.is_empty()) then
     job.going = "back"
     job.ghost = nil
     -- Belt and braces: the box should be empty, since only a clawful ever goes in it, and
@@ -2136,6 +2212,40 @@ local function take_up(player, wearer, record, job, claimed, nearby, from, range
   -- whole re-aiming. A delivery does not mind -- the engine fills the box when it gets
   -- there -- but a fetch fills the box itself, and an early box means a thing mined while
   -- the claw is still two tiles off.
+  if job.crossing then
+    -- Against where the claw was actually sent, which is not job.target. Everything an arm
+    -- aims at is aimed in the frame it is drawn in: the arm is teleported a lift above its
+    -- owner so it rides on the body rather than at their feet, and aimed_at() takes the
+    -- same lift off whatever it is pointed at. So the hand, the pickup and the drop all
+    -- live a lift above the world, and comparing the hand against a world position is out
+    -- by exactly that -- 0.70 of a tile on a character, every time, in every direction.
+    --
+    -- That cost an afternoon. The hand was measured sitting 0.70 from its target and never
+    -- getting closer, which reads as the engine resting a hand short of what it reaches
+    -- for, and a window was widened to a whole tile to allow for it. The hand was never
+    -- short of anything; the tape measure had one end in the wrong frame.
+    if reach.distance(arm.held_stack_position, aimed_at(job, record))
+        > within(tier_of(record), HOME) then
+      return
+    end
+    -- Arrived. The box may already be holding part of the round -- what was mined at the
+    -- thing before this one, if the hand had not taken it before the claw set off, travels
+    -- along in the box since the box is teleported ahead of the claw each tick. A box with
+    -- something in it is ordinarily a reason to wait, and here it is not: that is the claw's
+    -- own round rather than something its hand is about to take. So the next thing goes into
+    -- the box on top of it and the claw picks the lot up in one grab.
+    local box = record.catcher
+    if not (box and box.valid) then return end
+    local inside = box.get_inventory(defines.inventory.chest)
+    if not inside then return end
+    local room = trips_for(player.force, tier_of(record))
+    local held = arm.held_stack.valid_for_read and arm.held_stack.count or 0
+    local carried = held + inside.get_item_count()
+    if carried < room then loot_into(box, job.ghost, room - carried) end
+    job.crossing = nil
+    if record.rest then arm.drop_position = { record.rest.x, record.rest.y } end
+    return
+  end
   if arm.status ~= defines.entity_status.waiting_for_source_items then return end
 
   local box = record.catcher
@@ -2388,6 +2498,65 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     -- question the arms with no job are asking, of the same ground, on the same tick.
     nearby and nearby() or work_near(wearer, range), claimed, range, record)
   if not ghost then return false end
+
+  -- A round of pickups: the claw goes on to the next thing rather than carrying one home
+  -- and coming straight back out. Asked before the questions below, which are about an item
+  -- carried out to a ghost, and a fetch carries nothing out.
+  if job.take then
+    if not taking(ghost) then return false end
+    local arm = record and record.entity
+    if not (arm and arm.valid) then return false end
+    -- What the claw is carrying: its hand, and whatever it has just put down in the box it
+    -- is standing over, which is the same round a tick from being picked up again.
+    local box = record.catcher
+    local inside = box and box.valid and box.get_inventory(defines.inventory.chest)
+    local held = (arm.held_stack.valid_for_read and arm.held_stack.count or 0)
+      + (inside and inside.get_item_count() or 0)
+    if held == 0 then return false end
+    if held >= trips_for(player.force, tier_of(record)) then return false end
+    -- One kind of thing to a round: it comes home in one hand.
+    local name, grade = yields(ghost)
+    local carried_name, carrying
+    if arm.held_stack.valid_for_read then
+      carried_name = arm.held_stack.name
+      carrying = arm.held_stack.quality and arm.held_stack.quality.name or "normal"
+    elseif inside then
+      for _, stack in pairs(inside.get_contents()) do
+        carried_name = stack.name
+        carrying = stack.quality and (stack.quality.name or stack.quality) or "normal"
+        break
+      end
+    end
+    if name ~= carried_name or grade ~= carrying then return false end
+
+    if claimed then claimed[claim_of(ghost)] = true end
+    job.ghost = ghost
+    job.target = ghost.position
+    -- Crossing to it, which takes aiming the drop at where it is going. An inserter will
+    -- not carry a load past its drop position: measured, a claw holding one belt and sent to
+    -- the next thing with its drop still at home put the belt down at home -- which for a
+    -- fetch is bare ground at its owner's feet -- and went on empty. Aimed at the thing it
+    -- is crossing to, it carries the load the whole way in its hand.
+    --
+    -- The drop and the pickup are the same point, which is what keeps the load in the hand:
+    -- an inserter will not put something into the very thing it is picking up from. They
+    -- have to be the same point exactly. Off by a fraction and the engine treats them as
+    -- two places, deposits the round into the box and takes it straight back out, a tick
+    -- each way, for ever.
+    --
+    -- Aimed now rather than left to the next tick's aim(), which has already run by the
+    -- time this is reached: a tick of the drop still pointing home is a tick of the claw
+    -- setting off the wrong way and having to turn round again.
+    job.crossing = true
+    -- In the arm's own frame, for the same reason: pointed at the world position it would
+    -- be aimed a lift below the box it is meant to be putting the round into.
+    local to = aimed_at(job, record)
+    arm.drop_position = { to.x, to.y }
+    -- A new leg of the journey, so the swing limit counts from here rather than from the
+    -- start of a round that may take half a dozen of them.
+    job.started = game.tick
+    return true
+  end
 
   if item ~= job.item then return false end
   -- The claw is already carrying this item at the quality it set off with, and a ghost
