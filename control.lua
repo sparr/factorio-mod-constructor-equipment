@@ -598,6 +598,32 @@ local TREADS = 0.45
 ---@param slot integer? which arm, from 1
 ---@param count integer? how many arms there are
 ---@return {x: number, y: number}
+---Where a spider vehicle's legs are bolted on.
+---
+---The one part of a spidertron that does not turn. Its torso swings round to face whatever
+---it is aiming at while its legs stay where they are, so an arm mounted on the torso swings
+---with it -- which looks right on a tank, whose whole hull turns, and wrong on a spider,
+---where a player watching the legs stand still sees the arms slide round them.
+---
+---Read off the prototype rather than guessed at: a spider engine says where each of its legs
+---meets the body, and that is a real place on the chassis rather than a point on a circle.
+---@param wearer LuaEntity
+---@return {x: number, y: number}[] in the order the prototype lists them
+local function leg_mounts(wearer)
+  if wearer.type ~= "spider-vehicle" then return {} end
+  local engine = wearer.prototype.spider_engine
+  local legs = engine and engine.legs
+  if not legs then return {} end
+  local spots = {}
+  for _, leg in ipairs(legs) do
+    local at = leg.mount_position
+    if at then
+      spots[#spots + 1] = { x = at.x or at[1] or 0, y = at.y or at[2] or 0 }
+    end
+  end
+  return spots
+end
+
 local function station_on(wearer, slot, count)
   local at = wearer.position
   local offset
@@ -606,8 +632,17 @@ local function station_on(wearer, slot, count)
     -- strapped is the lift below, and is no kind of distance
     offset = pack.ground(facing_of(wearer), slot, count)
   else
-    local across, along = hull_of(wearer)
-    offset = pack.mount(facing_of(wearer), slot, count, across, along)
+    -- The legs first, one arm apiece, and whatever is left over goes round the body the way
+    -- a hull's arms do. Eight arms on a spidertron is one on each leg; a ninth has nowhere
+    -- of its own to go and rides on the torso.
+    local legs = leg_mounts(wearer)
+    if slot and legs[slot] then
+      offset = legs[slot]
+    else
+      local across, along = hull_of(wearer)
+      offset = pack.mount(facing_of(wearer), (slot or 1) - #legs,
+        math.max(1, (count or 1) - #legs), across, along)
+    end
   end
   return { x = at.x + offset.x, y = at.y + offset.y }
 end

@@ -94,7 +94,7 @@ describe("the arm's power", function()
       assert.is_nil(world.arm(player), "the arm is still out")
       -- It spends while it works and drains while it waits out its idle second, so this
       -- is not exact. The allowance is wider than it was: the engine finishes the swing
-      -- onto the box rather than the mod cutting it short, so the journey home costs more.
+      -- onto the box rather than the mod cutting it short, so the journey home costs more,
       -- Traced tick by tick, the arm's remaining buffer does come back in full -- the grid
       -- rose by 6869J as the arm went, against 6889J in its buffer.
       assert.is_true(stored() > before - 10000,

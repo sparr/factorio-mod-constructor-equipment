@@ -38,6 +38,48 @@ local function beside(vehicle, out)
   return math.cos(turns) * away, math.sin(turns) * away
 end
 
+---Where a spider vehicle's legs meet its body, which is where the first arms are bolted.
+---Read off the prototype the same way the mod reads it.
+---@param spider LuaEntity
+---@return {x: number, y: number}[]
+local function leg_mounts(spider)
+  local engine = spider.prototype.spider_engine
+  local spots = {}
+  for _, leg in ipairs(engine and engine.legs or {}) do
+    local at = leg.mount_position
+    if at then spots[#spots + 1] = { x = at.x or at[1] or 0, y = at.y or at[2] or 0 } end
+  end
+  return spots
+end
+
+--- Two tiles east of a spidertron's middle, which is in reach of the arms bolted to its
+--- legs. A leg meets the body less than a tile out -- measured, the furthest is 0.78 -- so
+--- an arm there reaches a good deal less far from the middle than one bolted to the edge of
+--- a hull does, and beside() measures from the edge.
+local SPIDER_REACH = { 2, 0 }
+
+---A ring of ghosts two tiles out all the way round, so that every leg has something in
+---reach and every arm has a reason to come out. An arm with nothing to do is not made at
+---all, so one ghost makes one arm however many are in the grid.
+---@param who LuaPlayer
+local function ring_round(who)
+  for dx = -2, 2 do
+    for dy = -2, 2 do
+      if math.max(math.abs(dx), math.abs(dy)) == 2 then
+        world.ghost(who, BELT, dx, dy)
+      end
+    end
+  end
+end
+
+--- One arm for every leg, which is what the showroom puts on a spidertron and what makes
+--- the mounting worth looking at.
+local SPIDER_ARMS = { "constructor-equipment", "constructor-equipment",
+                      "constructor-equipment", "constructor-equipment",
+                      "constructor-equipment", "constructor-equipment",
+                      "constructor-equipment", "constructor-equipment",
+                      "battery-mk2-equipment" }
+
 local player
 
 before_each(function()
@@ -231,23 +273,73 @@ describe("equipment in a vehicle's own grid", function()
     end)
   end)
 
-  it("carries a spider vehicle's arms up to its body", function()
+  it("bolts a spider vehicle's arms to its legs, and carries them up to its body", function()
     local spider = player.surface.create_entity{
       name = "spidertron", position = world.ORIGIN, force = player.force }
-    world.fitted(spider)
+    world.fit(spider, SPIDER_ARMS, true)
     spider.set_driver(player)
-    spider.insert{ name = BELT, count = 5 }
-    world.ghost(player, BELT, beside(spider))
+    spider.insert{ name = BELT, count = 50 }
+    local mounts = leg_mounts(spider)
+    assert.is_true(#mounts >= 8, "a spidertron should have eight legs to bolt arms to")
+    ring_round(player)
     after_ticks(12, function()
-      local arm = world.arm(player)
-      assert.is_not_nil(arm, "the spidertron grew no arm")
       local height = spider.prototype.height
       assert.is_not_nil(height, "a spidertron should say how high it rides")
-      -- its body rides a tile and a half up its legs, and every arm goes up with it
-      local up = spider.position.y - arm.position.y
-      assert.is_true(math.abs(up - height) < 0.05,
-        ("the arm sits %.2f above the spidertron, which rides %.2f up"):format(up, height))
+      local arms = world.arms(player)
+      assert.is_true(#arms >= 8, ("only %d arms came out of eight"):format(#arms))
+      -- Every arm over a leg, and every leg with an arm over it. Matched by position
+      -- rather than by order, because find_entities_filtered hands them back in the map's
+      -- own order and not the grid's. Its body rides a tile and a half up those legs, so
+      -- each one is drawn that far north of the leg it belongs to.
+      local taken = {}
+      for _, arm in ipairs(arms) do
+        local onto
+        for slot, want in ipairs(mounts) do
+          local dx = arm.position.x - (spider.position.x + want.x)
+          local dy = arm.position.y - (spider.position.y + want.y - height)
+          if math.abs(dx) < 0.05 and math.abs(dy) < 0.05 then onto = slot end
+        end
+        assert.is_not_nil(onto,
+          ("an arm at %.2f,%.2f is over no leg at all"):format(
+            arm.position.x - spider.position.x, arm.position.y - spider.position.y))
+        assert.is_nil(taken[onto], ("two arms are on leg %s"):format(tostring(onto)))
+        taken[onto] = true
+      end
+      for slot = 1, 8 do
+        assert.is_true(taken[slot] or false, ("leg %d has no arm on it"):format(slot))
+      end
       spider.destroy()
+    end)
+  end)
+
+  -- A spidertron's torso swings round to face what it is aiming at while its legs stay put.
+  -- Arms on the legs stay put with them; arms on a tank go round with the hull, because the
+  -- whole of a tank turns.
+  it("leaves a spider vehicle's arms alone when its body turns", function()
+    local spider = player.surface.create_entity{
+      name = "spidertron", position = world.ORIGIN, force = player.force }
+    world.fit(spider, SPIDER_ARMS, true)
+    spider.set_driver(player)
+    spider.insert{ name = BELT, count = 50 }
+    ring_round(player)
+    after_ticks(12, function()
+      local before = {}
+      for slot, arm in ipairs(world.arms(player)) do
+        before[slot] = { x = arm.position.x, y = arm.position.y }
+      end
+      assert.is_true(#before >= 8, "no arms to watch")
+      spider.orientation = (spider.orientation + 0.25) % 1
+      after_ticks(4, function()
+        for slot, arm in ipairs(world.arms(player)) do
+          local was = before[slot]
+          if was then
+            assert.is_true(math.abs(arm.position.x - was.x) < 0.05
+              and math.abs(arm.position.y - was.y) < 0.05,
+              ("arm %d moved when the torso turned"):format(slot))
+          end
+        end
+        spider.destroy()
+      end)
     end)
   end)
 
@@ -344,17 +436,20 @@ describe("equipment in a vehicle's own grid", function()
   it("works the same in a spidertron's grid", function()
     local spider = player.surface.create_entity{
       name = "spidertron", position = world.ORIGIN, force = player.force }
-    world.fitted(spider)
+    -- One arm on a spidertron is bolted to its first leg rather than out on its right, so
+    -- a lone arm and a ghost beside the hull are no longer a pair. Eight of them, one to a
+    -- leg, which is what a spidertron is for.
+    world.fit(spider, SPIDER_ARMS, true)
     spider.set_driver(player)
     spider.insert{ name = BELT, count = 20 }
-    world.ghost(player, BELT, beside(spider))
+    world.ghost(player, BELT, SPIDER_REACH[1], SPIDER_REACH[2])
     after_ticks(MID_REACH, function()
       assert.is_not_nil(world.slowing_anything(spider), "the spidertron was never slowed")
       assert.is_not_nil(world.sticker_on(spider, tiers.list[1].stickers.legs.flat)
         or world.sticker_on(spider, tiers.list[1].stickers.legs.slowing),
         "the spidertron took the wheeled slowdown rather than the legged one")
       after_ticks(A_VEHICLE_BUILD, function()
-        assert.is_true(world.count(player, BELT) > 0, "the spidertron's own arm built nothing")
+        assert.is_true(world.count(player, BELT) > 0, "the spidertron's own arms built nothing")
         spider.destroy()
       end)
     end)
@@ -375,11 +470,11 @@ describe("equipment in a vehicle's own grid", function()
     local function timed(dy, into, whenever)
       local spider = player.surface.create_entity{
         name = "spidertron", position = world.ORIGIN, force = player.force }
-      world.fitted(spider)
+      world.fit(spider, SPIDER_ARMS, true)
       spider.set_driver(player)
-      spider.insert{ name = BELT, count = 5 }
-      -- the lone arm stands out on the spidertron's right, a tile east of it, so these two
-      -- spots are the same distance from it and on opposite sides
+      spider.insert{ name = BELT, count = 20 }
+      -- Eight arms, one to a leg, arranged evenly round the body, so these two spots are
+      -- the same distance from the nearest arm and on opposite sides of the spidertron.
       world.ghost(player, BELT, 2, dy)
       local started = game.tick
       script.on_nth_tick(1, function()

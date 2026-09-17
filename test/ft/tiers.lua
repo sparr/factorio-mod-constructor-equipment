@@ -883,9 +883,21 @@ describe("four arms, one of each tier, offered four ghosts at once", function()
     for away = 1, 4 do
       world.ghost(player, BELT, away, 0)
     end
-    -- One tick of dispatch, which is where the choosing happens, and then a look at what
+    -- Topped up every tick until the answer is read. What is being measured here is which
+    -- arm is offered which ghost, and an arm will not take one at all until its own buffer
+    -- is full: a fourth tier arm's is four times a second tier arm's, so left to fill from
+    -- the grid at its own rate the long arms answer several ticks after the short ones and
+    -- the question comes out as a race rather than a choice.
+    script.on_nth_tick(1, function()
+      local armour = player.get_inventory(defines.inventory.character_armor)[1]
+      if armour and armour.valid_for_read and armour.grid then
+        for _, piece in pairs(armour.grid.equipment) do piece.energy = piece.max_energy end
+      end
+    end)
+    -- A few ticks of dispatch, which is where the choosing happens, and then a look at what
     -- each arm was sent to before any of them has had time to finish and be given another.
     after_ticks(6, function()
+      script.on_nth_tick(1, nil)
       local sent = {}
       for _, record in pairs(storage.constructor_arms[player.index] or {}) do
         local job = record.job

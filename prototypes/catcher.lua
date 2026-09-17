@@ -36,6 +36,10 @@ catcher.flags = { "not-on-map", "not-blueprintable", "not-deconstructable",
   "placeable-off-grid", "not-flammable" }
 catcher.minable = nil
 catcher.picture = { filename = "__core__/graphics/empty.png", size = 1, priority = "low" }
+-- Alt mode draws what a container is holding above it, which for an invisible box standing
+-- on a ghost is a belt icon hanging in the air over a bare tile for as long as the claw
+-- takes to arrive. The box is the mod's plumbing and a player has no use for seeing into it.
+catcher.draw_inventory_content = false
 catcher.icon = "__base__/graphics/icons/wooden-chest.png"
 catcher.icon_size = 64
 catcher.next_upgrade = nil

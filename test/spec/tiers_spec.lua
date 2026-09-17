@@ -99,9 +99,12 @@ describe("the tiers", function()
     assert.are.equal(0.014, tiers.list[1].rotation)
   end)
 
-  -- What the base game charges that same inserter, unscaled. A discount used to be worked
-  -- out here from how much of a bulk inserter's load the last tier carried; it rested on a
-  -- bulk inserter carrying a fixed twelve, which it does not.
+  -- What the base game charges that same inserter, unscaled. Four times these was tried and
+  -- taken out again: an arm's buffer is sized from this, so a fourth tier arm spent thirty
+  -- nine ticks filling it before it would set off, against four for the tier below.
+  --
+  -- A discount used to be worked out here from how much of a bulk inserter's load the last
+  -- tier carried; it rested on a bulk inserter carrying a fixed twelve, which it does not.
   it("charges what the inserter it borrows charges", function()
     local wanted = { 5000, 5000, 7000, 20000 }
     local drains = { "0.4kW", "0.4kW", "0.5kW", "1kW" }
@@ -135,7 +138,7 @@ describe("the tiers", function()
   end)
 
   it("takes the room in an armour it is meant to", function()
-    local wanted = { { 2, 3 }, { 2, 4 }, { 2, 5 }, { 2, 6 } }
+    local wanted = { { 1, 2 }, { 1, 3 }, { 1, 4 }, { 1, 5 } }
     for level, size in ipairs(wanted) do
       assert.are.equal(size[1], tiers.list[level].width, "tier " .. level .. " width")
       assert.are.equal(size[2], tiers.list[level].height, "tier " .. level .. " height")

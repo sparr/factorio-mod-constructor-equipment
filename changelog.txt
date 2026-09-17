@@ -13,7 +13,8 @@ Version: 2.1.5
     - A thing with something in it is emptied a clawful at a time and taken up last, once it is empty, the way construction robots do it
   Changes:
     - Arms on a locomotive build out of the cargo wagons in its train, since a locomotive has no hold of its own
-    - The equipment is narrower and taller: two by three, four, five and six as the tiers go up, so the fourth wants a power armour rather than a modular one
+    - The equipment is one tile wide and a tile taller with every tier: one by two, three, four and five as they go up, so a modular armour holds one of any of them
+    - Arms on a spidertron are bolted where its legs meet its body, one to a leg, and stay where they are when its torso turns; a ninth and beyond ride round the body as before
     - An arm goes for whatever it can reach soonest rather than whatever is nearest, counting the turn as well as the reach, which clears a scattered yard about half again as quickly
     - The toolbar button greys out when you are wearing no arm, the way the exoskeleton's does
   Bugfixes:

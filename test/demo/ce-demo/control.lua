@@ -238,7 +238,7 @@ local ROWS = {
     },
     bays = {
       { "Four arms, four reaches",
-        "Stand on the mark. You are put down among four ghosts at one, two, three and four tiles, and each arm takes the one that suits its reach.",
+        "Each arm takes the one that suits its reach. Walking up to them would offer them one at a time, nearest first, and the mark puts you down among all four at once.",
         function(x, y)
           -- Arriving rather than walking up, which is the whole of the bay. Walking offers
           -- the ghosts one at a time, nearest first, so the shortest arm that can reach
@@ -542,16 +542,25 @@ local ROWS = {
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
       { "Arms on the legs",
-        "Get in and walk it over the ghosts. A spider loses the same share of its speed you lose of yours.",
+        "Get in and walk it over the ghosts. Eight arms of the second tier, and a spider loses the same share of its speed you lose of yours.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          for i = 0, 14 do
-            ghost("transport-belt", x + 5 + i, y + 3)
-            ghost("transport-belt", x + 5 + i, y + 9)
+          -- A long walk with something to build the whole way, and four lines of it rather
+          -- than two: eight arms on a hull want more work in reach than two did, or most of
+          -- them are along for the ride.
+          -- Within three tiles of the middle, which is what a second tier arm bolted to a
+          -- leg can reach: a spidertron's legs meet its body less than a tile out, so its
+          -- arms reach a good deal less far from the middle than a tank's do from its hull.
+          for i = 0, 39 do
+            for _, dy in pairs{ 3, 4, 8, 9 } do
+              ghost("transport-belt", x + 5 + i, y + dy)
+            end
           end
         end },
     },
-    vehicle = { name = "spidertron", at = { 3, 6 } },
+    vehicle = { name = "spidertron", at = { 3, 6 },
+                arms = { TIERS[2], TIERS[2], TIERS[2], TIERS[2],
+                         TIERS[2], TIERS[2], TIERS[2], TIERS[2] } },
   },
 
   {
@@ -580,21 +589,26 @@ local ROWS = {
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
       { "Arms on a train",
-        "Get in and drive along the rail. The ghosts are beside the track on both sides, and the belts they are built from are in the wagon.",
+        "Get in and drive along the rail. Eight arms of the second tier, the ghosts on both sides of the track, and the belts they are built from in the wagon.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          for i = -2, 12 do
+          for i = -2, 24 do
             place("straight-rail", x + 6 + i * 2, y + 6,
               { direction = defines.direction.east })
           end
-          for i = 0, 14 do
-            ghost("transport-belt", x + 6 + i, y + 3)
-            ghost("transport-belt", x + 6 + i, y + 9)
+          -- Within three tiles of the rail, which is what a second tier arm on a hull can
+          -- reach, and along the whole length of the track rather than the first half of it.
+          for i = 0, 43 do
+            for _, dy in pairs{ 4, 8 } do
+              ghost("transport-belt", x + 6 + i, y + dy)
+            end
           end
         end },
     },
     vehicle = { name = "locomotive", at = { 6, 6 }, fuel = "solid-fuel",
                 direction = defines.direction.east, on_rail = true,
+                arms = { TIERS[2], TIERS[2], TIERS[2], TIERS[2],
+                         TIERS[2], TIERS[2], TIERS[2], TIERS[2] },
                 -- A locomotive prototype has nowhere to put a hold, so its only inventory
                 -- is a three slot burner box: an insert of two hundred belts into one takes
                 -- none of them, quietly. The arms build out of the train's wagons instead,
@@ -778,8 +792,15 @@ local function clear_and_build()
         hold.insert{ name = "transport-belt", count = 200 }
         local grid = made_vehicle.grid
         if grid then
-          grid.put{ name = TIERS[3] }
-          grid.put{ name = TIERS[3] }
+          -- Two of the third tier unless the row asks for something else. A spidertron and
+          -- a locomotive ask for eight of the second, which is what makes their arms worth
+          -- looking at: eight along a hull is where the mounting has something to say.
+          local arms = row.vehicle.arms or { TIERS[3], TIERS[3] }
+          for _, name in pairs(arms) do
+            if not grid.put{ name = name } then
+              log(("ce-demo: no room in the %s grid for %s"):format(row.vehicle.name, name))
+            end
+          end
           grid.put{ name = "fission-reactor-equipment" }
           grid.put{ name = "battery-mk2-equipment" }
           for _, piece in pairs(grid.equipment) do piece.energy = piece.max_energy end
@@ -854,6 +875,17 @@ script.on_event(defines.events.on_tick, function()
             if riding and riding.valid then riding.teleport({ jump.to.x + 3, jump.to.y }) end
             player.teleport({ jump.to.x, jump.to.y }, made)
             storage.stood[player.index] = { x = jump.to.x, y = jump.to.y }
+            -- Charged on arrival. An arm will not set off until its own buffer is full and
+            -- a fourth tier arm's is ten times a first tier arm's, so a character put down
+            -- among four ghosts with a half empty grid watches the short arms go first and
+            -- the long ones follow several ticks later. That is the grid filling up, not
+            -- the arms choosing, and this bay is about the choosing.
+            local armour = player.get_inventory(defines.inventory.character_armor)[1]
+            if armour and armour.valid_for_read and armour.grid then
+              for _, piece in pairs(armour.grid.equipment) do
+                piece.energy = piece.max_energy
+              end
+            end
             jumped = true
             break
           end
