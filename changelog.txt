@@ -13,12 +13,11 @@ Version: 2.1.5
   Changes:
     - Arms on a locomotive build out of the cargo wagons in its train, since a locomotive has no hold of its own
     - The equipment is narrower and taller: two by three, four, five and six as the tiers go up, so the fourth wants a power armour rather than a modular one
-    - A claw clearing away several things in its reach brings back as many as its hand holds in one trip, rather than one a trip
     - An arm goes for whatever it can reach soonest rather than whatever is nearest, counting the turn as well as the reach, which clears a scattered yard about half again as quickly
     - The toolbar button greys out when you are wearing no arm, the way the exoskeleton's does
   Bugfixes:
     - Fixed the game ending when a player wearing arms climbed into a locomotive, which cannot take the slowdown sticker the arms put on their wearer
-    - A claw filling its hand from what else is marked now reaches a tile and a half from the thing it came for, rather than anywhere within the arm's range, so distant heaps are journeyed to rather than taken up from where the claw stands
+    - A claw takes up what it travelled to and nothing else, so a patch of tiles or a heap of plates is a journey each rather than several vanishing at once from wherever the claw is standing
     - A claw being put away now fades where the arm is worn and moves with its owner, rather than off to one side and where they used to be standing
     - Your arms are offered work shortest first, so a long arm no longer takes the ghost under a short one's nose while work only it can reach waits
     - Fixed an arm coming out of your back and never setting off for something marked for deconstruction

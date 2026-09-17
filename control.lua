@@ -1352,11 +1352,6 @@ local CATCHER = "constructor-equipment-catcher"
 --- could get a whole swing in.
 local OPEN = 2.5
 
---- How far from where the claw is standing it will pick something up without going to it.
---- A tile and a half: the next tile of a patch, or the next heap of a spill, and nothing a
---- player would call distant.
-local GRASP = 1.5
-
 ---The box belonging to this arm, present only while this claw is near enough to be the one
 ---filling it.
 ---
@@ -2151,38 +2146,21 @@ local function take_up(player, wearer, record, job, claimed, nearby, from, range
   local room = trips_for(player.force, tier_of(record))
   if not loot_into(box, job.ghost, room) then return end
 
-  -- The hand has room left and there is more marked within the claw's own grasp, so it is
-  -- filled where it stands rather than by another journey. Only what stacks with the first
-  -- thing it took, since the box is one slot: a patch of the same tile, or a heap of the
-  -- same plate, which is what this is for.
+  -- And that is the whole of what this trip takes: the thing the claw went to, and nothing
+  -- else. A thing standing over one target does not reach out to another, however much room
+  -- is left in its hand, because an arm that picks up what it did not go to is not an arm
+  -- doing anything a player can watch.
   --
-  -- Within reach of the claw, not of the arm. It used to take anything inside the whole of
-  -- the arm's range, which is the mod taking things up without going to them: a yard of
-  -- shed plates went into the hand on the tick the claw reached the first of them, and what
-  -- a player saw was a dozen distant heaps winking out at once while the claw sat over one.
+  -- There was a sweep here and it was a mistake of mine twice over. It went in to stop a
+  -- patch of tiles being a journey each, gathering whatever was marked within two tiles of
+  -- where the claw stood; then a change meant to avoid a second search handed it the tick's
+  -- own search instead, which covers the whole of the arm's range, and quietly turned two
+  -- tiles into five. What a player saw was a yard of shed plates winking out at once while
+  -- the claw sat over one of them.
   --
-  -- Going to each of them instead is what an arm ought to do and is not something the
-  -- engine will do. Measured on 2.1.19: an inserter holding something, aimed at a source
-  -- with nothing in it, swings home rather than crossing to look, so the claw cannot simply
-  -- be sent from one bare target to the next. Mining the next one into the box first, so
-  -- there is something standing there to cross to, does make it travel -- and that version
-  -- was measured losing two tiles of four somewhere between the box and the pocket, so it
-  -- is not here. What is left is an honest short reach.
-  -- Measured from the thing it came for, not from the hand: the engine rests the hand
-  -- about seven tenths of a tile short of its source, which on a tile and a half of grasp
-  -- is the difference between taking the next tile of a patch and leaving it.
-  local grasp = job.target or arm.held_stack_position
-  local carrying = inside and inside.get_item_count() or room
-  for _, other in pairs(nearby and nearby() or {}) do
-    if carrying >= room then break end
-    if other ~= job.ghost and still_wanted(other) and taking(other)
-        and not (claimed and claimed[claim_of(other)])
-        and reach.distance(grasp, other.position) <= GRASP
-        and not reach.out_of_range(from, other.position, range) then
-      loot_into(box, other, room - carrying)
-      carrying = inside.get_item_count()
-    end
-  end
+  -- A hand that holds several still fills up, but only where filling up means more out of
+  -- the one thing it is standing at: a chest goes a clawful at a time, which is what a
+  -- robot does with one. Anything else is another journey.
 end
 
 ---Put the thing down: raise the ghost or make the swap, pay for it, and let the arm start

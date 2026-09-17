@@ -172,11 +172,13 @@ describe("several things marked at once", function()
   end)
 end)
 
--- A claw that has taken one thing and has room left fills up from whatever else is marked
--- within its own grasp before coming home. Its grasp, not its arm's reach: reaching the
--- whole of the range meant a yard of shed plates landing in the hand on the tick the claw
--- arrived at the first of them, wherever it was standing, which reads as distant things
--- winking out rather than as an arm working.
+-- A claw takes what it went to and nothing else, however much room is left in its hand. An
+-- arm that picks up what it did not travel to is not doing anything a player can watch, and
+-- a version of this that gathered everything marked inside the arm's whole range made a yard
+-- of shed plates wink out at once while the claw sat over one of them.
+--
+-- Filling up still happens where filling up means more out of the one thing the claw is
+-- standing at: a chest goes a clawful at a time, which is tested further up.
 describe("a claw with room left in its hand", function()
   local BULK = "constructor-equipment-4"
 
@@ -199,9 +201,7 @@ describe("a claw with room left in its hand", function()
     end
   end)
 
-  -- The engine will not take a part full hand to a second source, so what it can carry is
-  -- gathered to it instead.
-  it("fills up from the rest of the patch it is standing on", function()
+  it("leaves the rest of the patch for another trip", function()
     local at = { world.ORIGIN.x + 3, world.ORIGIN.y }
     local tiles = {}
     for dx = 0, 1 do
@@ -217,15 +217,40 @@ describe("a claw with room left in its hand", function()
     assert.are.equal(4, player.surface.count_entities_filtered{
       type = "deconstructible-tile-proxy" }, "the tiles were not all marked")
 
+    -- One trip, and the claw has room for four. Three of the patch are still standing,
+    -- within a tile and a half of the one it took, and it did not reach for any of them.
     after_ticks(world.CYCLE, function()
-      assert.is_true(player.get_item_count("concrete") > 1,
-        "the claw brought one tile home when the rest of the patch was under its hand")
+      assert.are.equal(1, player.get_item_count("concrete"),
+        "the claw took tiles it had not travelled to")
+      assert.are.equal(3, player.surface.count_entities_filtered{
+        type = "deconstructible-tile-proxy" }, "more of the patch went than the claw went to")
     end)
   end)
 
-  -- Six tiles apart is well outside a claw's grasp, so these are two trips rather than one.
-  -- They both come home, which is the part worth keeping: what the grasp decides is how
-  -- many journeys it takes, not whether the work gets done.
+  -- Every one of them is its own journey now, which is slower and is what an arm does.
+  it("comes back for the rest of the patch until it is gone", function()
+    local at = { world.ORIGIN.x + 3, world.ORIGIN.y }
+    local tiles = {}
+    for dx = 0, 1 do
+      for dy = -1, 0 do
+        tiles[#tiles + 1] = { name = "concrete", position = { at[1] + dx, at[2] + dy } }
+      end
+    end
+    player.surface.set_tiles(tiles)
+    for _, tile in pairs(tiles) do
+      player.surface.get_tile(tile.position[1], tile.position[2])
+        .order_deconstruction(player.force)
+    end
+    after_ticks(world.CYCLE * 8, function()
+      assert.are.equal(0, player.surface.count_entities_filtered{
+        type = "deconstructible-tile-proxy" }, "some of the patch is still marked")
+      assert.are.equal(4, player.get_item_count("concrete"),
+        "the whole patch did not come home")
+    end)
+  end)
+
+  -- A trip each, since they are in two places. They both come home, which is the part worth
+  -- keeping: what is decided here is how many journeys it takes, not whether it gets done.
   it("takes one from either side of its owner, a trip each", function()
     for _, dx in pairs{ 3, -3 } do
       local belt = player.surface.create_entity{ name = "transport-belt",
@@ -287,23 +312,24 @@ describe("something marked for taking up with a chest standing over it", functio
   end)
 end)
 
--- How fast a claw clears a yard, as a floor rather than as a claim about the order.
+-- How fast a claw clears a yard, as a floor.
 --
--- The order it goes in is decided by swing time rather than by distance, because an
--- inserter turns and extends at once and on the long arms the turn is nearly always the
--- slower of the two. That was measured buying half again as much work in the same time --
--- 27 of these forty in 360 ticks against 18 -- when a claw arriving at one thing swept up
--- everything else marked inside the whole of the arm's reach. It no longer does: it fills
--- up from what is within its own grasp and journeys for the rest. Measured again with that
--- change, swing time takes 19 and distance 21, which is the same number twice as far as
--- this scatter can tell. The arithmetic is unit tested in reach_spec; what is left here is
--- a floor, so that a change which halves the rate is noticed.
+-- The number is what it is because every one of these is its own journey. Measured on this
+-- scatter as the rule changed: 27 of forty in 360 ticks when a claw arriving at one thing
+-- swept up everything marked inside the arm's whole range, 19 when that was cut to a tile
+-- and a half of where it stood, and 8 now that it takes only what it travelled to. The last
+-- of those is the honest one, and the two before it were the mod moving things it had not
+-- gone to.
+--
+-- The order the claw goes in is decided by swing time rather than distance, because an
+-- inserter turns and extends at once and on the long arms the turn is the slower of the
+-- two. That arithmetic is unit tested in reach_spec; this is only a floor, so that a change
+-- which halves the rate is noticed.
 describe("a claw with a yardful of things to pick up", function()
   local LAID = 40
   local RUN = 360
-  -- Comfortably under the 19 and 21 measured either way, so that drift does not fail it and
-  -- a real collapse in the rate does.
-  local ENOUGH = 15
+  -- Comfortably under the 8 it measures at, so drift does not fail it and a collapse does.
+  local ENOUGH = 6
 
   it("clears most of it inside a few hundred ticks", function()
     world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
@@ -333,7 +359,7 @@ describe("a claw with a yardful of things to pick up", function()
       local left = #player.surface.find_entities_filtered{
         position = world.ORIGIN, radius = 20, type = "item-entity" }
       assert.is_true(laid - left >= ENOUGH,
-        ("only %d of %d were taken up in %d ticks, where 19 is what it measures at"):
+        ("only %d of %d were taken up in %d ticks, where 8 is what it measures at"):
           format(laid - left, laid, RUN))
     end)
   end)

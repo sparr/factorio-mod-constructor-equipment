@@ -464,7 +464,7 @@ local ROWS = {
           end
         end },
       { "A patch of tiles",
-        "Stand on the mark. A tile marked for removal is an entity standing on it, and a hand that holds several takes several in one trip.",
+        "Stand on the mark. A tile marked for removal is an entity standing on it, and the claw goes out to each one: a hand with room in it is not a reason to take what it has not travelled to.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           local tiles = {}
@@ -480,7 +480,7 @@ local ROWS = {
           end
         end },
       { "A trip each side",
-        "Stand on the mark, between them. A claw fills up from what is within its own grasp and journeys for the rest, so a heap beside it is one trip and the far side is another.",
+        "Stand on the mark, between them. A claw takes what it went to and nothing else, so these are a journey each.",
         function(x, y)
           pad(x + 5, y + 6, "refined-hazard-concrete-left")
           for _, away in pairs{ -4, -3, 3, 4 } do
