@@ -1961,7 +1961,7 @@ end
 ---@param record table the arm making the delivery
 ---@param job table
 ---@param claimed table<integer, boolean>? what the other arms are reaching for
-local function deliver(player, wearer, from, record, job, claimed)
+local function deliver(player, wearer, from, record, job, claimed, nearby)
   local ghost = job.ghost
   local box = record.catcher
 
@@ -2126,7 +2126,8 @@ local function deliver(player, wearer, from, record, job, claimed)
   if job.left > 0 and arm and arm.valid
       and arm.held_stack.valid_for_read and arm.held_stack.count >= job.count
       and afford_another(record, arm)
-      and redirect(player, wearer, from, record, job, claimed, tier_of(record).range) then
+      and redirect(player, wearer, from, record, job, claimed, tier_of(record).range,
+        nearby) then
     local target = aimed_at(job, record)
     arm.drop_position = { target.x, target.y }
     -- shut to begin with: the claw is still at the ghost it has just built, and advance
@@ -2151,10 +2152,14 @@ end
 ---@param job table
 ---@param claimed table<integer, boolean>? ghosts the other arms are reaching for
 ---@param range number how far this arm reaches
+---@param nearby fun(): LuaEntity[]? the tick's own search, if this was reached from one
 ---@return boolean whether it found somewhere else to go
-function redirect(player, wearer, from, record, job, claimed, range)
-  local ghost, item, count, quality =
-    choose(player, wearer, from, work_near(wearer, range), claimed, range)
+function redirect(player, wearer, from, record, job, claimed, range, nearby)
+  local ghost, item, count, quality = choose(player, wearer, from,
+    -- The tick's own search where there is one, which there is whenever this is reached
+    -- from an arm being advanced. A claw turning to the next ghost is asking the same
+    -- question the arms with no job are asking, of the same ground, on the same tick.
+    nearby and nearby() or work_near(wearer, range), claimed, range)
   if not ghost then return false end
   if item ~= job.item then return false end
   -- The claw is already carrying this item at the quality it set off with, and a ghost
@@ -2287,7 +2292,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
         or reach.out_of_range(from, job.ghost.position, tier_of(record).range)
         or game.tick - (job.started or game.tick) > SWING_LIMIT then
       local tier = tier_of(record)
-      if not redirect(player, wearer, from, record, job, claimed, tier.range) then
+      if not redirect(player, wearer, from, record, job, claimed, tier.range, nearby) then
         abandon(record, job)
       end
     elseif job.take then
@@ -2296,7 +2301,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     else
       -- deliver() does nothing until the box has been given something, so there is no
       -- arrival to measure and nothing to step over: it can simply be asked every tick
-      deliver(player, wearer, from, record, job, claimed)
+      deliver(player, wearer, from, record, job, claimed, nearby)
     end
   elseif reach.distance(arm.held_stack_position, record.rest or mounting(wearer, slot, count))
         < within(tier_of(record), HOME, moved)
