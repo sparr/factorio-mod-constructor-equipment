@@ -581,3 +581,34 @@ describe("the slowdown a vehicle's arms ask for", function()
     end)
   end)
 end)
+
+-- Climbing into a locomotive wearing arms ended a session: slow() puts a sticker on
+-- whoever is wearing the arms, rolling stock does not accept stickers, and create_entity
+-- raises over it rather than returning nothing.
+describe("a wearer that will not take a sticker", function()
+  it("is slowed down by nothing rather than taking the game down", function()
+    -- Rolling stock goes where the track lets it rather than where it is asked for, so
+    -- the rail goes down first and the locomotive onto whichever rail took.
+    local locomotive
+    for step = -4, 4 do
+      player.surface.create_entity{ name = "straight-rail",
+        position = { world.ORIGIN.x + step * 2, world.ORIGIN.y + 8 },
+        direction = defines.direction.east, force = player.force }
+    end
+    for _, rail in pairs(player.surface.find_entities_filtered{
+        position = { world.ORIGIN.x, world.ORIGIN.y + 8 }, radius = 10,
+        type = "straight-rail" }) do
+      locomotive = locomotive or player.surface.create_entity{ name = "locomotive",
+        position = rail.position, direction = rail.direction, force = player.force }
+    end
+    assert.is_truthy(locomotive, "no locomotive to try it on")
+    -- Straight at the function the crash came out of, because a locomotive has no
+    -- equipment grid in the base game and so cannot be made to wear an arm here.
+    assert.has_no.errors(function()
+      slow(player, locomotive, tiers.list[1].stickers)
+    end)
+    assert.is_nil(world.sticker_on(locomotive),
+      "a locomotive took a slowdown sticker after all")
+    locomotive.destroy()
+  end)
+end)

@@ -66,12 +66,20 @@ end
 ---@param y number
 ---@param extra table?
 ---@return LuaEntity?
+--- How far east the row being built has got. The east pad goes past whatever this ends up
+--- being rather than a fixed number of bays along: a bay whose exhibit is wider than a bay
+--- -- the vehicle rows are fifteen belts long -- put the pad to the next row in the middle
+--- of its own ghosts, where walking the exhibit teleported you away from it.
+local eastmost = 0
+
 local function place(name, x, y, extra)
   local args = { name = name, position = { x + 0.5, y + 0.5 }, force = "player" }
   for key, value in pairs(extra or {}) do args[key] = value end
   local made = ground().create_entity(args)
   if not made then
     log(("ce-demo: could not place %s at %d,%d"):format(name, x, y))
+  elseif made.valid then
+    eastmost = math.max(eastmost, made.bounding_box.right_bottom.x)
   end
   return made
 end
@@ -94,8 +102,35 @@ end
 ---@param x number
 ---@param y number
 ---@param tile string
+--- Which bay is being built, so that pad() can record whose mark it is laying. Set around
+--- the bay closures and nil everywhere else, since the row pads are not any bay's.
+local building
+
 local function pad(x, y, tile)
   ground().set_tiles{ { name = tile, position = { x, y } } }
+  eastmost = math.max(eastmost, x + 1)
+  if not building then return end
+  storage.marks = storage.marks or {}
+  storage.marks[#storage.marks + 1] = {
+    row = building.row, bay = building.bay, title = building.title,
+    x = x + 0.5, y = y + 0.5,
+  }
+end
+
+---A mark that gives you something different from the rest of its row.
+---
+---A row is kitted as a whole because that is what lets any row be walked into cold. Now and
+---then one bay inside it wants something else, and saying so in words and hoping is not the
+---same as handing it over.
+---@param x number
+---@param y number
+---@param kit table what the row's kit would be, with this bay's changes in it
+---@param note string what standing on it is for
+local function bay_kit(x, y, kit, note)
+  pad(x, y, "refined-concrete")
+  label(x - 1, y + 1.6, "STAND HERE", note, { 0.55, 0.9, 0.6 })
+  storage.bay_kits = storage.bay_kits or {}
+  storage.bay_kits[#storage.bay_kits + 1] = { x = x + 0.5, y = y + 0.5, kit = kit }
 end
 
 ---A mark that puts you somewhere else on the same row, and the mark it puts you on.
@@ -164,10 +199,19 @@ local ROWS = {
       { "A ghost that takes three",
         "Stand on the mark. A curved rail wants three rails and the claw holds one:",
         function(x, y)
-          pad(x + 4, y + 6, "refined-hazard-concrete-left")
-          -- Two tiles from the mark, since that is all a first tier arm has. It sat at six
-          -- and nothing ever went out to it.
-          ghost("curved-rail-a", x + 6, y + 6, { direction = defines.direction.north })
+          -- A rail lies on a grid of its own: asked for x + 6 it comes to rest at x + 7,
+          -- which put it 2.55 tiles from a mark a two tile arm stands on and nothing ever
+          -- went out to it. So the mark is laid from where the rail ended up, two tiles
+          -- west of its middle, which is inside the arm's reach and outside the rail's own
+          -- bounding box -- an arm will not reach for something its owner is standing in.
+          local rail = ghost("curved-rail-a", x + 6, y + 6,
+            { direction = defines.direction.north })
+          if rail then
+            pad(math.floor(rail.position.x) - 2, math.floor(rail.position.y),
+              "refined-hazard-concrete-left")
+          else
+            pad(x + 4, y + 6, "refined-hazard-concrete-left")
+          end
         end },
       { "The slowdown",
         "Stand on the mark and walk east along them. A first tier arm costs you speed while it works.",
@@ -194,27 +238,24 @@ local ROWS = {
     },
     bays = {
       { "Four arms, four reaches",
-        "Walk east along the mark. Each is set so the arm that suits it meets it first: five tiles, then four, three, two. Or take the mark below, to arrive among four at once.",
+        "Stand on the mark. You are put down among four ghosts at one, two, three and four tiles, and each arm takes the one that suits its reach.",
         function(x, y)
-          pad(x + 1, y + 6, "refined-hazard-concrete-left")
-          -- Staggered rather than in a line. Four ghosts at two, three, four and five
-          -- tiles from one spot are all inside the green arm's five, and it takes the lot.
-          -- Set out along the walk with the furthest first, each arm meets its own a moment
-          -- before a longer one is free to take it.
-          for step = 5, 2, -1 do
-            ghost("transport-belt", x + 2 + (5 - step) * 3, y + 6 - step)
-          end
-          -- The same four reaches without the walking. Arriving in one step puts all of
-          -- them in front of all four arms on the same tick, and the arms are asked in the
-          -- order they sit in the grid, shortest first, each taking the nearest nobody has
-          -- claimed: two tiles to the yellow arm, then three, four and five. Walking cannot
-          -- show that, because on foot the near one is in reach long before the far one.
+          -- Arriving rather than walking up, which is the whole of the bay. Walking offers
+          -- the ghosts one at a time, nearest first, so the shortest arm that can reach
+          -- each one takes it and the long arms are always a step behind whatever the
+          -- player's speed. Arriving offers all four on the same tick, and the arms are
+          -- asked shortest first, so each takes the one that suits it. There is no way to
+          -- arrive all at once on foot.
           --
-          -- The mark to stand on is six tiles from the nearest ghost, which is past every
-          -- arm, so nothing is built while you are waiting to be moved.
-          hop(x + 1, y + 10, x + 5, y + 10,
-            "to be put down among four ghosts at once, at two, three, four and five tiles")
-          for step = 2, 5 do ghost("transport-belt", x + 5 + step, y + 10) end
+          -- The mark you stand on is six tiles from the nearest ghost, past every arm, so
+          -- nothing is built while you wait to be moved.
+          -- One to four rather than two to five. An arm reaches from where it is bolted on
+          -- rather than from the middle of its owner, so a ghost at exactly five tiles is
+          -- past the five tile arm as often as not, and the bay is about each arm getting
+          -- one rather than about the longest arm being caught short.
+          hop(x + 1, y + 6, x + 5, y + 6,
+            "to be put down among four ghosts at one, two, three and four tiles")
+          for step = 1, 4 do ghost("transport-belt", x + 5 + step, y + 6) end
         end },
       { "One arm for every copy",
         "Stand on the mark. Four arms work at once, and none of them reaches for the same thing.",
@@ -271,9 +312,13 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
         end },
       { "What a swing costs",
-        "Open your armour and watch the batteries. Everything here is in reach from the mark, so you can stand still and watch it drain.",
+        "Stand on the mark and open your armour. It takes the reactor back off, leaving one small battery: with a reactor in there the charge comes back faster than a swing can spend it and there is nothing to watch.",
         function(x, y)
-          pad(x + 5, y + 6, "refined-hazard-concrete-left")
+          bay_kit(x + 5, y + 6, {
+            armour = "power-armor",
+            equipment = { "constructor-equipment", "battery-equipment" },
+            items = { ["transport-belt"] = 100 },
+          }, "for one arm, one small battery and no reactor")
           -- A ring round the mark rather than a line beside it: a first tier arm reaches
           -- two tiles, and a column of eight meant walking the length of it to get the
           -- far ones, which is a poor way to watch a battery.
@@ -434,8 +479,8 @@ local ROWS = {
             if one then one.order_deconstruction(game.forces.player) end
           end
         end },
-      { "Both sides in one trip",
-        "Stand on the mark, between them. The claw fills its hand from anything in reach, not just from what it is standing over, so these go together.",
+      { "A trip each side",
+        "Stand on the mark, between them. A claw fills up from what is within its own grasp and journeys for the rest, so a heap beside it is one trip and the far side is another.",
         function(x, y)
           pad(x + 5, y + 6, "refined-hazard-concrete-left")
           for _, away in pairs{ -4, -3, 3, 4 } do
@@ -449,10 +494,19 @@ local ROWS = {
           -- The mark goes where the cliff ended up rather than where it was asked for. A
           -- cliff lies on a grid of its own and comes to rest a tile or two off, which on a
           -- five tile arm is the difference between reaching it and standing there.
+          -- Researched here rather than left to the kit. A force that has not got cliff
+          -- explosives cannot mark a cliff at all: order_deconstruction takes it, says
+          -- nothing, and leaves the cliff unmarked, so the bay stood there with nothing to
+          -- do and looked exactly like an arm that would not go.
+          local knows = game.forces.player.technologies["cliff-explosives"]
+          if knows then knows.researched = true end
           local cliff = place("cliff", x + 7, y + 6,
             { cliff_orientation = "west-to-east", force = "neutral" })
           if cliff then
             cliff.order_deconstruction(game.forces.player)
+            if not cliff.to_be_deconstructed() then
+              log("ce-demo: could not mark the cliff for deconstruction")
+            end
             pad(math.floor(cliff.position.x) - 3, math.floor(cliff.position.y),
               "refined-hazard-concrete-left")
           else
@@ -627,6 +681,8 @@ local function clear_and_build()
 
   storage.pads = {}
   storage.hops = {}
+  storage.marks = {}
+  storage.bay_kits = {}
   for index, row in ipairs(ROWS) do
     local rx, ry = row_at(index)
     label(rx, ry + 1, row.title, row.note,
@@ -638,13 +694,19 @@ local function clear_and_build()
       "for what this row wants", { 0.55, 0.9, 0.6 })
     storage.pads[index] = { west = { x = rx + 1.5, y = ry + 6.5 } }
 
+    eastmost = rx
     for bay, what in ipairs(row.bays) do
       local x = rx + bay * BAY
       label(x, ry + 3, what[1], what[2])
+      building = { row = index, bay = bay, title = what[1] }
       what[3](x, ry)
+      building = nil
     end
 
-    local east = rx + (#row.bays + 1) * BAY
+    -- Past the end of the row rather than one bay along from the last one. Two tiles of
+    -- clear ground either side, so that walking the last exhibit does not end with being
+    -- carried off it, and so the pad is never touching the thing it stands beyond.
+    local east = math.max(rx + (#row.bays + 1) * BAY, math.ceil(eastmost) + 2)
     if index < #ROWS then
       pad(east, ry + 6, "refined-hazard-concrete-right")
       label(east - 2, ry + 7.6, "STAND HERE",
@@ -759,8 +821,18 @@ script.on_event(defines.events.on_tick, function()
   if game.tick % 15 ~= 0 then return end
   local made = ground()
   if not (made and storage.pads) then return end
+  storage.stood = storage.stood or {}
   for _, player in pairs(game.connected_players) do
     if player.surface == made and (player.character or player.vehicle) then
+      -- Whether they have stopped. A mark that carries you off does it when you have come
+      -- to rest on it, not the moment you cross it: walking east along a row of exhibits
+      -- meant being snatched away from the one you were watching, and there is no way to
+      -- pass a mark on foot without standing on it for a poll or two.
+      local was = storage.stood[player.index]
+      local at = player.position
+      local still = was and math.abs(was.x - at.x) < 0.1 and math.abs(was.y - at.y) < 0.1
+      storage.stood[player.index] = { x = at.x, y = at.y }
+
       -- Standing on a mark kits you once. Stepping off it and back on kits you again, which
       -- is what somebody who has spent their belts wants: the marks were one use only.
       local anywhere = false
@@ -769,24 +841,44 @@ script.on_event(defines.events.on_tick, function()
           anywhere = true
         end
       end
+      for _, bay in pairs(storage.bay_kits or {}) do
+        if on_pad(player, bay) then anywhere = true end
+      end
       if not anywhere then storage.standing = nil end
 
       local jumped = false
-      for _, jump in pairs(storage.hops or {}) do
-        if on_pad(player, jump.from) then
-          local riding = player.vehicle
-          if riding and riding.valid then riding.teleport({ jump.to.x + 3, jump.to.y }) end
-          player.teleport({ jump.to.x, jump.to.y }, made)
-          jumped = true
-          break
+      if still then
+        for _, jump in pairs(storage.hops or {}) do
+          if on_pad(player, jump.from) then
+            local riding = player.vehicle
+            if riding and riding.valid then riding.teleport({ jump.to.x + 3, jump.to.y }) end
+            player.teleport({ jump.to.x, jump.to.y }, made)
+            storage.stood[player.index] = { x = jump.to.x, y = jump.to.y }
+            jumped = true
+            break
+          end
+        end
+      end
+
+      -- A bay that wants something other than its row's kit. No teleport, so no waiting:
+      -- standing on it is the whole of the instruction.
+      if not jumped then
+        for number, bay in pairs(storage.bay_kits or {}) do
+          if on_pad(player, bay) and storage.standing ~= "bay" .. number then
+            kit(player, { kit = bay.kit })
+            storage.standing = "bay" .. number
+            jumped = true
+            break
+          end
         end
       end
 
       for index, pads in pairs(storage.pads) do
         if jumped then break end
         if pads.east and on_pad(player, pads.east) then
+          -- Only once they have stopped on it, for the same reason the hops wait.
           local next_row = storage.pads[index + 1]
-          if next_row and storage.standing ~= index + 1 then
+          if still and next_row and storage.standing ~= index + 1 then
             -- A player in a vehicle cannot be teleported out from under it: the vehicle
             -- goes too, or nothing moves and the message repeats at somebody sitting still
             -- on the pad.
@@ -795,6 +887,7 @@ script.on_event(defines.events.on_tick, function()
               riding.teleport({ next_row.west.x + 3, next_row.west.y })
             end
             player.teleport({ next_row.west.x, next_row.west.y }, made)
+            storage.stood[player.index] = { x = next_row.west.x, y = next_row.west.y }
             kit(player, ROWS[index + 1])
             storage.standing = index + 1
             player.print(ROWS[index + 1].title .. " -- " .. ROWS[index + 1].note)
@@ -832,3 +925,18 @@ commands.add_command("ce-demo", "Build the showroom again", function()
   clear_and_build()
   storage.standing = nil
 end)
+
+--- What the probe drives the showroom through. See test/demo/probe.sh: a bay that misbehaves
+--- in the showroom and behaves in the tests is a difference between the two, and the only
+--- way to find it is to work the showroom itself rather than a replica of it.
+remote.add_interface("ce-demo", {
+  ---Every mark, in the order the rows were built.
+  marks = function() return storage.marks or {} end,
+  ---Give a player exactly what a row wants, the same as standing on its west pad does.
+  kit = function(player_index, row)
+    local player = game.get_player(player_index)
+    if player and ROWS[row] then kit(player, ROWS[row]) end
+  end,
+  ---Which surface it all stands on.
+  surface = function() return SURFACE end,
+})

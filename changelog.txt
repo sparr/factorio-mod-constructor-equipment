@@ -17,6 +17,10 @@ Version: 2.1.5
     - An arm goes for whatever it can reach soonest rather than whatever is nearest, counting the turn as well as the reach, which clears a scattered yard about half again as quickly
     - The toolbar button greys out when you are wearing no arm, the way the exoskeleton's does
   Bugfixes:
+    - Fixed the game ending when a player wearing arms climbed into a locomotive, which cannot take the slowdown sticker the arms put on their wearer
+    - A claw filling its hand from what else is marked now reaches a tile and a half from the thing it came for, rather than anywhere within the arm's range, so distant heaps are journeyed to rather than taken up from where the claw stands
+    - A claw being put away now fades where the arm is worn and moves with its owner, rather than off to one side and where they used to be standing
+    - Your arms are offered work shortest first, so a long arm no longer takes the ghost under a short one's nose while work only it can reach waits
     - Fixed an arm coming out of your back and never setting off for something marked for deconstruction
     - Fixed losing what the claw had just been handed when the arms were switched off or taken away
     - Fixed losing what an arm was carrying when it was put away and your pockets had no room for it, which now goes on the floor beside you

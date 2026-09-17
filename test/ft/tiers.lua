@@ -844,3 +844,63 @@ describe("a round with less in the claw than the count says", function()
     end)
   end)
 end)
+
+-- What the showroom's four-arm bay is about. Every arm takes the soonest thing it can reach
+-- that nobody else has claimed, so whichever is asked first has the pick of the ground: ask
+-- the five tile arm first and it takes the ghost two tiles away, leaving the two tile arm
+-- nothing and the far work waiting for the long arm to come back. Asked shortest first,
+-- each tier gets the nearest thing the tiers below it cannot reach.
+describe("four arms, one of each tier, offered four ghosts at once", function()
+  -- The armour goes back off afterwards. Four arms left on a character is four arms for
+  -- every test that runs after this one, which is not what any of them is measuring.
+  after_each(function()
+    player.get_inventory(defines.inventory.character_armor).clear()
+  end)
+
+  it("gives each tier the one that suits its reach", function()
+    -- Said here rather than inherited. Capacity research left on by something earlier gives
+    -- a bulk claw a queue rather than a single errand, and an arm that claims two ghosts
+    -- leaves one of the shorter arms with nothing, which is a different measurement.
+    for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1",
+                          "inserter-capacity-bonus-2", "inserter-capacity-bonus-3" } do
+      local technology = player.force.technologies[name]
+      if technology then technology.researched = false end
+    end
+    storage.constructor_off = {}
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment", "constructor-equipment-2",
+                          "constructor-equipment-3", "constructor-equipment-4",
+                          "fission-reactor-equipment", "battery-mk2-equipment" }, true,
+      -- Named rather than left to be worked out. The smallest armour every piece fits into
+      -- is a power armour, and six pieces do not fit into one: four arms, a reactor and a
+      -- battery want sixty cells and it has forty nine, so the last arm quietly did not
+      -- appear and the bay was three arms rather than four.
+      "power-armor-mk2")
+    player.insert{ name = BELT, count = 20 }
+    -- One, two, three and four rather than two to five: an arm reaches from where it is
+    -- bolted rather than from the middle of its owner, so a ghost at exactly five tiles is
+    -- past the five tile arm as often as not.
+    for away = 1, 4 do
+      world.ghost(player, BELT, away, 0)
+    end
+    -- One tick of dispatch, which is where the choosing happens, and then a look at what
+    -- each arm was sent to before any of them has had time to finish and be given another.
+    after_ticks(6, function()
+      local sent = {}
+      for _, record in pairs(storage.constructor_arms[player.index] or {}) do
+        local job = record.job
+        if job and job.target then
+          sent[tiers.by_level[record.level].range] =
+            math.floor(job.target.x - world.ORIGIN.x + 0.5)
+        end
+      end
+      assert.are.equal(4, #(storage.constructor_arms[player.index] or {}),
+        "the character is not wearing four arms")
+      for away = 1, 4 do
+        assert.are.equal(away, sent[away + 1],
+          ("the %d tile arm was sent to %s rather than to the ghost %d tiles out"):format(
+            away + 1, tostring(sent[away + 1]), away))
+      end
+    end)
+  end)
+end)

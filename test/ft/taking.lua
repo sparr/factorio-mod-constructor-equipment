@@ -172,6 +172,11 @@ describe("several things marked at once", function()
   end)
 end)
 
+-- A claw that has taken one thing and has room left fills up from whatever else is marked
+-- within its own grasp before coming home. Its grasp, not its arm's reach: reaching the
+-- whole of the range meant a yard of shed plates landing in the hand on the tick the claw
+-- arrived at the first of them, wherever it was standing, which reads as distant things
+-- winking out rather than as an arm working.
 describe("a claw with room left in its hand", function()
   local BULK = "constructor-equipment-4"
 
@@ -196,7 +201,7 @@ describe("a claw with room left in its hand", function()
 
   -- The engine will not take a part full hand to a second source, so what it can carry is
   -- gathered to it instead.
-  it("sweeps up what else is marked beside the thing it came for", function()
+  it("fills up from the rest of the patch it is standing on", function()
     local at = { world.ORIGIN.x + 3, world.ORIGIN.y }
     local tiles = {}
     for dx = 0, 1 do
@@ -214,24 +219,24 @@ describe("a claw with room left in its hand", function()
 
     after_ticks(world.CYCLE, function()
       assert.is_true(player.get_item_count("concrete") > 1,
-        "the claw brought one tile home when it had room for more")
+        "the claw brought one tile home when the rest of the patch was under its hand")
     end)
   end)
 
-  -- What it fills up with comes out of the tick's own search, which is everything within
-  -- the arm's reach, rather than a second look round the claw. A thing on the far side of
-  -- its owner is as much in reach as one beside the tile it is standing on.
-  it("takes one from either side of its owner in the same trip", function()
+  -- Six tiles apart is well outside a claw's grasp, so these are two trips rather than one.
+  -- They both come home, which is the part worth keeping: what the grasp decides is how
+  -- many journeys it takes, not whether the work gets done.
+  it("takes one from either side of its owner, a trip each", function()
     for _, dx in pairs{ 3, -3 } do
       local belt = player.surface.create_entity{ name = "transport-belt",
         position = { world.ORIGIN.x + dx, world.ORIGIN.y }, force = player.force }
       belt.order_deconstruction(player.force)
     end
-    after_ticks(world.CYCLE, function()
+    after_ticks(world.CYCLE * 4, function()
       assert.are.equal(0, world.count(player, "transport-belt"),
-        "one of them is still standing, so it took two trips")
+        "one of them is still standing after both trips")
       assert.are.equal(2, player.get_item_count("transport-belt"),
-        "both should have come home together")
+        "both should have come home")
     end)
   end)
 
@@ -282,26 +287,25 @@ describe("something marked for taking up with a chest standing over it", functio
   end)
 end)
 
--- Which of several things in reach a claw goes for next, and what that is worth.
+-- How fast a claw clears a yard, as a floor rather than as a claim about the order.
 --
--- An inserter turns and extends at once, so what a target costs is whichever of those is
--- slower, and on the long arms the turn is nearly always the slower one: a fourth tier hand
--- crosses its five tiles in fifty ticks and turns right round in sixty two. Sorting by
--- distance sends it back and forth across its owner picking the nearest each time, while
--- work it is already pointing at waits.
---
--- Measured on this very scatter: forty belts, all in reach, all marked. Sorted by swing
--- time the claw took 3, 6, 12, 18 and 27 of them by 60, 120, 180, 240 and 360 ticks.
--- Sorted by distance, 3, 6, 9, 12 and 18. Half again as much work in the same time, and
--- the two orders are identical until the hand has a bearing to turn away from.
+-- The order it goes in is decided by swing time rather than by distance, because an
+-- inserter turns and extends at once and on the long arms the turn is nearly always the
+-- slower of the two. That was measured buying half again as much work in the same time --
+-- 27 of these forty in 360 ticks against 18 -- when a claw arriving at one thing swept up
+-- everything else marked inside the whole of the arm's reach. It no longer does: it fills
+-- up from what is within its own grasp and journeys for the rest. Measured again with that
+-- change, swing time takes 19 and distance 21, which is the same number twice as far as
+-- this scatter can tell. The arithmetic is unit tested in reach_spec; what is left here is
+-- a floor, so that a change which halves the rate is noticed.
 describe("a claw with a yardful of things to pick up", function()
   local LAID = 40
   local RUN = 360
-  -- Between the last measurement and the first, so it fails if the ordering goes back to
-  -- distance and does not fail for a tick of drift either way.
-  local ENOUGH = 24
+  -- Comfortably under the 19 and 21 measured either way, so that drift does not fail it and
+  -- a real collapse in the rate does.
+  local ENOUGH = 15
 
-  it("goes for what it can reach soonest rather than what is nearest", function()
+  it("clears most of it inside a few hundred ticks", function()
     world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
                           "battery-mk2-equipment" }, true)
     for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1" } do
@@ -329,7 +333,7 @@ describe("a claw with a yardful of things to pick up", function()
       local left = #player.surface.find_entities_filtered{
         position = world.ORIGIN, radius = 20, type = "item-entity" }
       assert.is_true(laid - left >= ENOUGH,
-        ("only %d of %d were taken up in %d ticks, where sorting by swing time takes 27"):
+        ("only %d of %d were taken up in %d ticks, where 19 is what it measures at"):
           format(laid - left, laid, RUN))
     end)
   end)

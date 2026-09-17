@@ -1,0 +1,9 @@
+{
+  "name": "ce-probe",
+  "version": "1.0.0",
+  "title": "Constructor Equipment showroom probe",
+  "author": "showroom",
+  "factorio_version": "2.1",
+  "description": "Walks a player through every showroom bay and writes down what happened, for finding the difference between a bay that misbehaves in the showroom and a test that passes.",
+  "dependencies": ["base", "constructor-equipment", "ce-demo"]
+}

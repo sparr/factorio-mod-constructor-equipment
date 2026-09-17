@@ -18,6 +18,12 @@ a crashed ship on Nauvis rather than in the showroom.
 
 `/ce-demo` builds it all again.
 
+`test/demo/probe.sh` stands a player on every mark in turn and writes down what the arms did
+to the ground round it. A bay that misbehaves here while the test covering it passes is a
+difference between the showroom and the replica, and the only way to find it is to work the
+showroom itself. It found three: a curved rail that had snapped two and a half tiles from a
+two tile mark, a cliff that was never marked at all, and a bay whose kit had no charge in it.
+
 ## Getting about
 
 Rows are kitted rather than cumulative. Two pads on each row:
@@ -40,10 +46,9 @@ reach beneath its own base; one you are carrying nothing to pay for; a curved ra
 wants three rails where the claw holds one; and a run of ghosts to walk away from, which is
 where the slowdown shows.
 
-**2. Tiers and numbers.** Four arms at once, one of each tier, with ghosts at two, three,
-four and five tiles so each tier takes its own. There is a second mark below that one which
-puts you down in the middle of four more, since walking up to them offers them one at a time
-and arriving offers all four on the same tick. Then four copies of one tier working side by
+**2. Tiers and numbers.** Four arms at once, one of each tier. The mark puts you down among
+four ghosts at one, two, three and four tiles, because walking up to them offers them one at
+a time, nearest first, and there is no way to arrive all at once on foot. Then four copies of one tier working side by
 side, and the bulk claw carrying several and turning from ghost to ghost rather than coming
 home between each.
 
@@ -66,10 +71,10 @@ the way a robot leaves it.
 coming home loaded. A chest with something in it, which is emptied a clawful at a time before
 the chest itself goes, which is what robots do with one. A patch of concrete, since a tile
 marked for removal is an entity standing on it and a hand that holds several takes several.
-Two belts either side of the mark, which go in the same trip: a claw fills its hand from
-anything within its reach rather than from what it happens to be standing over. And a cliff,
-which is not a demolition at all but a delivery: the claw carries one explosive out and comes
-home with nothing.
+Two belts either side of the mark, which take a
+trip each: a claw fills up from what is within its own grasp, a tile and a half from the
+thing it came for, and journeys for the rest. And a cliff, which is not a demolition at all
+but a delivery: the claw carries one explosive out and comes home with nothing.
 
 **7. A tank** and **8. a spidertron**, the two vehicles the base game gives an equipment
 grid. Get in and drive along the ghosts on either side. The arms are mounted along the hull
@@ -87,7 +92,7 @@ nothing takes over.
 ## What the smoke run should say
 
 ```
-ce-demo: built 10 rows, 26 bays, 191 ghosts, 4 vehicles
+ce-demo: built 10 rows, 26 bays, 187 ghosts, 4 vehicles
 everything placed
 ```
 

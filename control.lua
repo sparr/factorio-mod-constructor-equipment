@@ -82,10 +82,6 @@ end
 --- should have to wait through.
 local STOW_TICKS = 18
 
---- How big the thing in the claw is drawn while the claw is being put away. An item icon
---- is a tile across at its own scale, which is five times the size of the claw holding it.
-local HELD_SCALE = 0.25
-
 --- How long the arm stays out after the last thing it did. An arm that vanished the moment
 --- a swing ended would flicker between one ghost and the next; one that never vanished
 --- would be worn to bed.
@@ -275,8 +271,33 @@ end
 ---something else to build would otherwise keep the tail of the ramp as well.
 ---@param player LuaPlayer
 ---@param wearer LuaEntity? the character or vehicle the arms are on
+
+--- Put one of this mod's stickers on a wearer, if it will take one.
+---
+--- Not everything does. Rolling stock does not, and create_entity raises over it rather
+--- than returning nothing, so the first tick after a player climbed into a locomotive
+--- wearing arms took the whole session down. There is no prototype field to ask, so it is
+--- tried once and the answer remembered against the name.
+---
+--- Nothing is lost by the refusal. The sticker is how the arms charge their owner part of
+--- their speed, and a train's speed is not a thing a sticker can touch, so arms on one are
+--- free to carry -- which is a fair price for a vehicle that cannot turn aside to build.
+---@param wearer LuaEntity
+---@param name string
+local refuses = {}
+local function stick(wearer, name)
+  if refuses[wearer.name] then return end
+  local ok = pcall(function()
+    wearer.surface.create_entity{ name = name, position = wearer.position, target = wearer }
+  end)
+  if not ok then refuses[wearer.name] = true end
+end
+
 ---@param set table which tier's stickers, from lib/tiers.lua
-local function slow(player, wearer, set)
+---Global for the same reason press() is: a test cannot climb into a locomotive wearing
+---arms, because a locomotive has no equipment grid to wear them in, so the only way to
+---exercise the sticker on one is to call this.
+function slow(player, wearer, set)
   if not (wearer and wearer.valid) then return end
   set = stickers_for(wearer, set)
   for _, other in ipairs(SETS) do
@@ -293,8 +314,7 @@ local function slow(player, wearer, set)
   local flat = sticker_on(wearer, set.flat)
   if flat then
     -- already at the bottom of the ramp; keep it there
-    wearer.surface.create_entity{
-      name = set.flat, position = wearer.position, target = wearer }
+    stick(wearer, set.flat)
     return
   end
 
@@ -314,8 +334,7 @@ local function slow(player, wearer, set)
   -- one of those gaps was replaced by a second ramp rather than by the flat sticker. The
   -- character kept easing towards a speed they never reached.
   if storage.constructor_ramped[player.index] then
-    wearer.surface.create_entity{
-      name = set.flat, position = wearer.position, target = wearer }
+    stick(wearer, set.flat)
     return
   end
 
@@ -324,13 +343,11 @@ local function slow(player, wearer, set)
   -- scripts but not its prototypes, so a script that has just learnt about a new sticker
   -- runs against data that has never heard of it. That crashed a session.
   if not prototypes.entity[set.slowing] then
-    wearer.surface.create_entity{
-      name = set.flat, position = wearer.position, target = wearer }
+    stick(wearer, set.flat)
     return
   end
   storage.constructor_ramped[player.index] = true
-  wearer.surface.create_entity{
-    name = set.slowing, position = wearer.position, target = wearer }
+  stick(wearer, set.slowing)
 end
 
 ---Let a wearer who has run out of things to build come back up to speed.
@@ -352,13 +369,7 @@ local function recover(player, wearer)
     local slowdown = sticker_on(wearer, set.flat) or sticker_on(wearer, set.slowing)
     if slowdown then
       slowdown.destroy()
-      if prototypes.entity[set.recovery] then
-        wearer.surface.create_entity{
-          name = set.recovery,
-          position = wearer.position,
-          target = wearer,
-        }
-      end
+      if prototypes.entity[set.recovery] then stick(wearer, set.recovery) end
       return
     end
   end
@@ -1254,29 +1265,31 @@ end
 ---@param tier table
 ---@param surface LuaSurface
 ---@param at {x: number, y: number}
-local function stow(tier, surface, at, carrying)
+local function stow(tier, surface, at, wearer)
   -- Sprites are not among the prototypes script can look up, so the path is checked rather
   -- than the prototype. Worth checking at all for the same reason the stickers are: a
   -- script reloaded without its data stage runs against prototypes that never heard of it.
   if not helpers.is_valid_sprite_path(tier.claw) then return end
-  storage.constructor_stowing = storage.constructor_stowing or {}
-  local function fading(sprite, scale)
-    local drawn = rendering.draw_sprite{
-      sprite = sprite,
-      surface = surface,
-      target = { at.x, at.y },
-      x_scale = scale,
-      y_scale = scale,
-      render_layer = "object",
-    }
-    if drawn then storage.constructor_stowing[drawn.id] = game.tick end
+  -- Pinned to whoever was wearing it rather than to a spot on the ground. A claw fading
+  -- where the character used to be, while the character walks off, is the one thing about
+  -- putting an arm away that looked like a fault, and it happened every time an idle arm
+  -- went away from somebody on the move.
+  local target = { at.x, at.y }
+  if wearer and wearer.valid then
+    target = { entity = wearer,
+               offset = { at.x - wearer.position.x, at.y - wearer.position.y } }
   end
-  fading(tier.claw, tiers.SCALE)
-  -- What it was holding fades with it. The item itself has gone back into the pockets it
-  -- was paid for out of, so this is only the picture catching up: a claw that winked out
-  -- empty read as the load having been dropped somewhere.
-  if carrying and helpers.is_valid_sprite_path("item/" .. carrying) then
-    fading("item/" .. carrying, HELD_SCALE)
+  local drawn = rendering.draw_sprite{
+    sprite = tier.claw,
+    surface = surface,
+    target = target,
+    x_scale = tiers.SCALE,
+    y_scale = tiers.SCALE,
+    render_layer = "object",
+  }
+  if drawn then
+    storage.constructor_stowing = storage.constructor_stowing or {}
+    storage.constructor_stowing[drawn.id] = game.tick
   end
 end
 
@@ -1338,6 +1351,11 @@ local CATCHER = "constructor-equipment-catcher"
 --- finely. It only has to be absent while the claw is far enough away that somebody else
 --- could get a whole swing in.
 local OPEN = 2.5
+
+--- How far from where the claw is standing it will pick something up without going to it.
+--- A tile and a half: the next tile of a patch, or the next heap of a spill, and nothing a
+--- player would call distant.
+local GRASP = 1.5
 
 ---The box belonging to this arm, present only while this claw is near enough to be the one
 ---filling it.
@@ -1453,9 +1471,7 @@ local function put_away(player, record)
       hand_back{ name = job.item, quality = job.quality, count = job.escrow }
       job.escrow = 0
     end
-    local carrying
     if arm.held_stack.valid_for_read then
-      carrying = arm.held_stack.name
       hand_back(arm.held_stack)
       arm.held_stack.clear()
     end
@@ -1469,11 +1485,12 @@ local function put_away(player, record)
     if record.grid and record.grid.valid then
       refund(record.grid, record.piece, arm.energy)
     end
-    -- Where the hand is, not where the arm is bolted on. Stowing at the base made a claw
-    -- switched off halfway through a delivery snap from wherever it had got to back to the
-    -- character's feet before it faded, which reads as the arm collapsing rather than
-    -- being put away, and is the one thing about switching off that looked like a fault.
-    stow(tier_of(record), arm.surface, arm.held_stack_position, carrying)
+    -- Where the arm is bolted on, which by now is where it belongs: an arm switched off
+    -- part way through a reach has already swung home before this runs, so there is nothing
+    -- left out in the air for the picture to have to account for. Stowing at the hand
+    -- instead put the claw out at the rest point, a tile off to one side of its owner,
+    -- which is not where an arm goes when it is put away.
+    stow(tier_of(record), arm.surface, arm.position, wearer)
     arm.destroy()
   end
   record.entity = nil
@@ -2134,23 +2151,33 @@ local function take_up(player, wearer, record, job, claimed, nearby, from, range
   local room = trips_for(player.force, tier_of(record))
   if not loot_into(box, job.ghost, room) then return end
 
-  -- The hand has room left and there is more marked in reach, so it is filled here rather
-  -- than by another journey. Only what stacks with the first thing it took, since the box is
-  -- one slot: a patch of the same tile, or a heap of the same plate, which is what this is
-  -- for.
+  -- The hand has room left and there is more marked within the claw's own grasp, so it is
+  -- filled where it stands rather than by another journey. Only what stacks with the first
+  -- thing it took, since the box is one slot: a patch of the same tile, or a heap of the
+  -- same plate, which is what this is for.
   --
-  -- Taken out of what the tick's own search already found rather than by looking again. That
-  -- list is everything within the longest reach on this wearer, sorted nearest first, and it
-  -- has already been filtered of what the other arms are reaching for. Searching a second
-  -- time round the claw would be both a second search and a smaller answer: a thing five
-  -- tiles the other side of its owner is as much in this arm's reach as one beside the tile
-  -- it happens to be standing on.
-  local inside = box.get_inventory(defines.inventory.chest)
+  -- Within reach of the claw, not of the arm. It used to take anything inside the whole of
+  -- the arm's range, which is the mod taking things up without going to them: a yard of
+  -- shed plates went into the hand on the tick the claw reached the first of them, and what
+  -- a player saw was a dozen distant heaps winking out at once while the claw sat over one.
+  --
+  -- Going to each of them instead is what an arm ought to do and is not something the
+  -- engine will do. Measured on 2.1.19: an inserter holding something, aimed at a source
+  -- with nothing in it, swings home rather than crossing to look, so the claw cannot simply
+  -- be sent from one bare target to the next. Mining the next one into the box first, so
+  -- there is something standing there to cross to, does make it travel -- and that version
+  -- was measured losing two tiles of four somewhere between the box and the pocket, so it
+  -- is not here. What is left is an honest short reach.
+  -- Measured from the thing it came for, not from the hand: the engine rests the hand
+  -- about seven tenths of a tile short of its source, which on a tile and a half of grasp
+  -- is the difference between taking the next tile of a patch and leaving it.
+  local grasp = job.target or arm.held_stack_position
   local carrying = inside and inside.get_item_count() or room
   for _, other in pairs(nearby and nearby() or {}) do
     if carrying >= room then break end
     if other ~= job.ghost and still_wanted(other) and taking(other)
         and not (claimed and claimed[claim_of(other)])
+        and reach.distance(grasp, other.position) <= GRASP
         and not reach.out_of_range(from, other.position, range) then
       loot_into(box, other, room - carrying)
       carrying = inside.get_item_count()
@@ -2383,6 +2410,7 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     -- question the arms with no job are asking, of the same ground, on the same tick.
     nearby and nearby() or work_near(wearer, range), claimed, range, record)
   if not ghost then return false end
+
   if item ~= job.item then return false end
   -- The claw is already carrying this item at the quality it set off with, and a ghost
   -- wanting another quality of the same thing is a different errand.
@@ -2562,7 +2590,25 @@ local function assign(player, wearer, list, tick, nearby)
     return work_near(wearer, furthest(list))
   end
   local working = false
-  for slot, record in ipairs(list) do
+  -- Shortest arm first. Every arm takes the soonest thing it can reach that nobody else has
+  -- claimed, so whichever is asked first gets the pick of the ground -- and a five tile arm
+  -- asked first takes the ghost two tiles away and leaves the two tile arm nothing, while
+  -- the work at four and five tiles waits for it to come back. Asking in order of reach
+  -- hands each tier the nearest thing the tiers below it cannot get to, which on a
+  -- character wearing one of each is one ghost apiece.
+  --
+  -- The order of asking only; the list itself keeps the order the grid is in, because that
+  -- is what decides which side of a hull an arm is bolted to.
+  local asking = {}
+  for slot in ipairs(list) do asking[#asking + 1] = slot end
+  table.sort(asking, function(one, other)
+    local mine, theirs = tier_of(list[one]).range, tier_of(list[other]).range
+    if mine == theirs then return one < other end
+    return mine < theirs
+  end)
+
+  for _, slot in ipairs(asking) do
+    local record = list[slot]
     if record.job then
       working = true
     else
