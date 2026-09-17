@@ -521,12 +521,12 @@ local ROWS = {
 
   {
     title = "10. A locomotive, with a grid the showroom added",
-    note = "NOT VANILLA. A locomotive has no equipment grid in the base game either.",
+    note = "NOT VANILLA. A locomotive has no equipment grid in the base game either. It builds out of the wagon behind it, because a locomotive has no hold of its own.",
     vanilla = false,
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
       { "Arms on a train",
-        "Get in and drive along the rail. The ghosts are beside the track on both sides.",
+        "Get in and drive along the rail. The ghosts are beside the track on both sides, and the belts they are built from are in the wagon.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
           for i = -2, 12 do
@@ -540,7 +540,12 @@ local ROWS = {
         end },
     },
     vehicle = { name = "locomotive", at = { 6, 6 }, fuel = "solid-fuel",
-                direction = defines.direction.east, on_rail = true },
+                direction = defines.direction.east, on_rail = true,
+                -- A locomotive prototype has nowhere to put a hold, so its only inventory
+                -- is a three slot burner box: an insert of two hundred belts into one takes
+                -- none of them, quietly. The arms build out of the train's wagons instead,
+                -- so the train needs one.
+                wagon = "cargo-wagon" },
   },
 }
 
@@ -677,7 +682,38 @@ local function clear_and_build()
         if row.vehicle.fuel then
           made_vehicle.insert{ name = row.vehicle.fuel, count = 50 }
         end
-        made_vehicle.insert{ name = "transport-belt", count = 200 }
+        local hold = made_vehicle
+        if row.vehicle.wagon then
+          -- On a rail rather than at a measured spot, for the same reason the locomotive
+          -- is: rolling stock goes where the track lets it. Far enough back not to be the
+          -- rail the locomotive is standing on, near enough to be the same train.
+          local wagon
+          local rails = made.find_entities_filtered{
+            position = made_vehicle.position, radius = 12, type = "straight-rail" }
+          table.sort(rails, function(one, other)
+            local function away(rail)
+              local dx = rail.position.x - made_vehicle.position.x
+              local dy = rail.position.y - made_vehicle.position.y
+              return dx * dx + dy * dy
+            end
+            return away(one) < away(other)
+          end)
+          for _, rail in pairs(rails) do
+            local dx = rail.position.x - made_vehicle.position.x
+            local dy = rail.position.y - made_vehicle.position.y
+            if not wagon and (dx * dx + dy * dy) >= 36 then
+              for _, facing in pairs{ made_vehicle.direction,
+                                      (made_vehicle.direction + 8) % 16 } do
+                wagon = wagon or made.create_entity{ name = row.vehicle.wagon,
+                  position = rail.position, direction = facing, force = "player" }
+              end
+            end
+          end
+          if wagon then hold = wagon
+          else log(("ce-demo: could not put a %s behind the %s"):format(
+            row.vehicle.wagon, row.vehicle.name)) end
+        end
+        hold.insert{ name = "transport-belt", count = 200 }
         local grid = made_vehicle.grid
         if grid then
           grid.put{ name = TIERS[3] }

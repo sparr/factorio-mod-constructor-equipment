@@ -115,6 +115,8 @@ local function setup()
   storage.constructor_arms = storage.constructor_arms or {}
   -- claws part way through being stowed, by the id of the sprite drawn for each
   storage.constructor_stowing = storage.constructor_stowing or {}
+  -- arms switched off part way through a reach, on their way home before being put away
+  storage.constructor_folding = storage.constructor_folding or {}
   -- whether the ramp into the slowdown has already been run for the run in progress
   storage.constructor_ramped = storage.constructor_ramped or {}
   -- who has switched their arms off from the toolbar, by player index
@@ -200,17 +202,38 @@ end
 ---build with. It also means a vehicle left to build does not quietly empty the pockets of
 ---whoever happens to be sat in it.
 ---
----A vehicle with nowhere to put anything -- a locomotive, say, which has only a fuel box --
----has no pockets at all, and an arm on one finds nothing to build with rather than reaching
----into its driver's.
+---A locomotive has no hold of its own: the prototype has nowhere to put one, so its only
+---inventory is a three slot burner box and an insert of anything else into one takes
+---nothing. What a train carries is in its wagons, so that is what a locomotive's arms build
+---out of and hand back into.
+---
+---The first wagon holding anything, or failing that the first wagon at all. A train hauling
+---one thing is what this is for, and it is not meant to be more than that: nothing here
+---looks for the wagon nearest the work, splits a load across several, or asks which end of
+---the train an arm is on.
+---
+---A vehicle with nowhere to put anything and no wagons behind it has no pockets, and an arm
+---on one finds nothing to build with rather than reaching into its driver's.
 ---@param player LuaPlayer
 ---@param wearer LuaEntity? the character or vehicle the arms are on
 ---@return LuaInventory?
 local function pockets(player, wearer)
   if wearer and wearer.valid and wearer.type ~= "character" then
-    return wearer.get_inventory(defines.inventory.car_trunk)
+    local hold = wearer.get_inventory(defines.inventory.car_trunk)
         or wearer.get_inventory(defines.inventory.spider_trunk)
-        or wearer.get_output_inventory()
+    if hold then return hold end
+    if wearer.type == "locomotive" and wearer.train then
+      local first
+      for _, wagon in pairs(wearer.train.cargo_wagons) do
+        local inside = wagon.valid and wagon.get_inventory(defines.inventory.cargo_wagon)
+        if inside then
+          if not inside.is_empty() then return inside end
+          first = first or inside
+        end
+      end
+      if first then return first end
+    end
+    return wearer.get_output_inventory()
   end
   -- the separate quickbar went away in 0.17; what is left is the character's own
   -- inventory, and the quickbar is a set of references into it
@@ -1398,7 +1421,7 @@ local function put_away(player, record)
   ---down as it stands so that a damaged or a quality thing stays what it was. Unmarked: it
   ---is the player's own, not a shed.
   ---@param stack LuaItemStack|table
-  local function give_back(stack)
+  local function hand_back(stack)
     local count = stack.count or 0
     if count <= 0 then return end
     local took = inventory and inventory.insert(stack) or 0
@@ -1417,7 +1440,7 @@ local function put_away(player, record)
   -- just put a belt in it, or one being handed what it had come to fetch, had that thrown
   -- away with the box: catcher_away says what was left in it and nobody was listening.
   for _, stack in pairs(catcher_away(record) or {}) do
-    give_back(stack)
+    hand_back(stack)
   end
 
   if arm and arm.valid then
@@ -1427,13 +1450,13 @@ local function put_away(player, record)
     -- away as its owner climbs out of a vehicle is holding the vehicle's belt, not theirs.
     local job = record.job
     if job and (job.escrow or 0) > 0 and job.item then
-      give_back{ name = job.item, quality = job.quality, count = job.escrow }
+      hand_back{ name = job.item, quality = job.quality, count = job.escrow }
       job.escrow = 0
     end
     local carrying
     if arm.held_stack.valid_for_read then
       carrying = arm.held_stack.name
-      give_back(arm.held_stack)
+      hand_back(arm.held_stack)
       arm.held_stack.clear()
     end
     -- whatever it was holding in its buffer goes back where it came from, so that taking
@@ -1467,6 +1490,93 @@ local function dismiss(player)
   if not list then return end
   for _, record in pairs(list) do put_away(player, record) end
   storage.constructor_arms[player.index] = nil
+end
+
+---Switch a player's arms off without taking them away where they stand.
+---
+---An arm halfway through a delivery is a hand out in the air holding something. Taking it
+---away there is the arm ceasing to exist mid reach, which reads as a fault whatever the
+---fade is doing. What putting a tool away looks like is the hand coming back first: the
+---claw retracts along the line it was working on, hands over what it was carrying, and only
+---then folds up.
+---
+---The arm is lifted out of its owner's list the moment the button is pressed, so it takes
+---no more work from that tick on, and swings home on its own. Kept apart from the list
+---rather than flagged inside it, so that nothing walking that list has to learn about an
+---arm that is present and not to be used.
+---
+---One that is already home is simply put away: there is nothing to watch.
+---@param player LuaPlayer
+local function fold(player)
+  local list = storage.constructor_arms[player.index]
+  if not list then return end
+  storage.constructor_folding = storage.constructor_folding or {}
+  for _, record in pairs(list) do
+    local arm, rest = record.entity, record.rest
+    if arm and arm.valid and rest and record.bearing
+        and reach.distance(arm.held_stack_position, rest) >= within(tier_of(record), HOME) then
+      arm.pickup_position = { rest.x, rest.y }
+      -- An empty hand comes home to the pickup position by itself. A full one goes
+      -- wherever it was told to drop, so it has to be told, and told the rest point rather
+      -- than the mount: that is where home is measured from, and aiming anywhere else has
+      -- the engine put the load on the ground before this notices it arrived.
+      if arm.held_stack.valid_for_read then arm.drop_position = { rest.x, rest.y } end
+      record.job = nil
+      record.folded = game.tick
+      storage.constructor_folding[#storage.constructor_folding + 1] = {
+        player = player.index, record = record,
+      }
+    else
+      put_away(player, record)
+    end
+  end
+  storage.constructor_arms[player.index] = nil
+end
+
+---Bring every folding arm a tick nearer home, and put away the ones that have arrived.
+---
+---It goes on riding on whoever was wearing it: they can walk off while it comes in, and an
+---arm left hanging where it was switched off would be worse than the snap this replaces.
+---The bearing is the one it was working on, so this is a retraction rather than a swing.
+local function folding()
+  local list = storage.constructor_folding
+  if not (list and #list > 0) then return end
+  local left = {}
+  for _, entry in pairs(list) do
+    local record = entry.record
+    local player = game.get_player(entry.player)
+    local arm, wearer = record.entity, record.wearer
+    local home = true
+    if player and arm and arm.valid and wearer and wearer.valid and record.bearing then
+      local mount, lift = mounting(wearer, record.slot, record.count)
+      arm.teleport(mount)
+      record.lift = lift
+      local rest = { x = mount.x + record.bearing.x * REST,
+                     y = mount.y + record.bearing.y * REST }
+      record.rest = rest
+      arm.pickup_position = { rest.x, rest.y }
+      if arm.held_stack.valid_for_read then arm.drop_position = { rest.x, rest.y } end
+
+      local hand = arm.held_stack_position
+      local moved = record.came and reach.distance(hand, record.came) or nil
+      record.came = { x = hand.x, y = hand.y }
+      -- The same window the ordinary homecoming uses, widened by what the hand was just
+      -- seen doing, because the engine's last step is larger than any tier's own figures
+      -- predict. The limit is the backstop: a wearer that stops moving mid retraction, or
+      -- a hand that cannot reach its rest point for some reason nobody has thought of,
+      -- must not leave an arm hanging about for the rest of the game.
+      home = reach.distance(hand, rest) < within(tier_of(record), HOME, moved)
+          or game.tick - (record.folded or game.tick) > SWING_LIMIT
+    end
+    if not home then
+      left[#left + 1] = entry
+    elseif player then
+      put_away(player, record)
+    elseif arm and arm.valid then
+      arm.destroy()
+    end
+  end
+  storage.constructor_folding = left
 end
 
 ---Match the list of arms to the equipment being worn, tier for tier.
@@ -1560,6 +1670,12 @@ local function aim(player, wearer, record, slot, count, job)
   end
   local rest = { x = mount.x + bearing.x * REST, y = mount.y + bearing.y * REST }
   record.rest = rest
+  -- Kept so that an arm lifted out of its owner's list can go on doing this for itself.
+  -- See fold(): a switched off arm swings home on its own, which means staying on the back
+  -- that is walking away and retracting along the line it was working on.
+  record.bearing = bearing
+  record.slot = slot
+  record.count = count
   arm.pickup_position = { rest.x, rest.y }
 
   if job then
@@ -2541,6 +2657,7 @@ end
 ---@param event EventData.on_tick
 local function on_tick(event)
   stowing()
+  folding()
 
   for _, player in pairs(game.players) do
     local wearer = wearer_of(player)
@@ -2657,7 +2774,7 @@ local function switch(player, on)
   storage.constructor_off[player.index] = (not on) or nil
   if prototypes.shortcut[TOGGLE] then player.set_shortcut_toggled(TOGGLE, on) end
   if on then return end
-  dismiss(player)
+  fold(player)
   -- both, because the arms may be on either and a character who climbs out of a vehicle
   -- should not find their own legs still slowed
   recover(player, wearer_of(player))

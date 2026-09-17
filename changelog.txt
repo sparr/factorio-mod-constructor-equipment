@@ -11,6 +11,7 @@ Version: 2.1.5
     - The arms now clear away what you mark with a deconstruction planner, entities and tiles alike, carrying it home in the claw
     - A thing with something in it is emptied a clawful at a time and taken up last, once it is empty, the way construction robots do it
   Changes:
+    - Arms on a locomotive build out of the cargo wagons in its train, since a locomotive has no hold of its own
     - The equipment is narrower and taller: two by three, four, five and six as the tiers go up, so the fourth wants a power armour rather than a modular one
     - A claw clearing away several things in its reach brings back as many as its hand holds in one trip, rather than one a trip
     - An arm goes for whatever it can reach soonest rather than whatever is nearest, counting the turn as well as the reach, which clears a scattered yard about half again as quickly
@@ -19,7 +20,7 @@ Version: 2.1.5
     - Fixed an arm coming out of your back and never setting off for something marked for deconstruction
     - Fixed losing what the claw had just been handed when the arms were switched off or taken away
     - Fixed losing what an arm was carrying when it was put away and your pockets had no room for it, which now goes on the floor beside you
-    - An arm switched off part way through a reach now fades away where its claw had got to, still holding its load, rather than snapping back to your feet empty handed
+    - An arm switched off part way through a reach now swings home first, hands back what it was carrying and then folds away, rather than being taken away where it stood
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
 ---------------------------------------------------------------------------------------------------

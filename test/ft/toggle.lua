@@ -4,10 +4,17 @@
 --- rather than to build, or items wanted for something else. Taking the equipment out of
 --- the armour does the same thing and costs a trip through the inventory each way.
 local world = require("test.ft.world")
+local reach = require("lib.reach")
 
 local BELT = "transport-belt"
 local A_BUILD = world.BUILD_INTERVAL * 2
 local TOGGLE = "constructor-equipment-toggle"
+
+--- Long enough for a claw switched off part way through a reach to swing home. It is not
+--- taken away where it stands: the hand retracts along the line it was working on, hands
+--- over whatever it is holding and only then folds up, so everything a press does to the
+--- pockets happens when the claw arrives rather than on the tick of the press.
+local A_FOLD = 120
 
 local player
 
@@ -59,8 +66,30 @@ describe("the constructor equipment toggle", function()
     after_ticks(12, function()
       assert.are.equal(1, #world.arms(player), "there was no arm out to take away")
       press(player)
-      after_ticks(2, function()
+      after_ticks(A_FOLD, function()
         assert.are.equal(0, #world.arms(player), "the arm is still on the character's back")
+      end)
+    end)
+  end)
+
+  -- The other half of the same thing: it is gone by the end, it is not gone at once, and
+  -- what it does in between is come back.
+  it("brings a claw home rather than taking it away where it stands", function()
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(12, function()
+      press(player)
+      after_ticks(1, function()
+        local arm = world.arms(player)[1]
+        assert.is_truthy(arm, "the arm vanished mid reach instead of swinging home first")
+        local out = reach.distance(player.position, arm.held_stack_position)
+        -- A short look. A first tier hand a dozen ticks into a two tile reach is most of
+        -- the way home again within thirty, and an arm that has arrived has been put away.
+        after_ticks(6, function()
+          local still = world.arms(player)[1]
+          assert.is_truthy(still, "the arm was taken away before it could get home")
+          assert.is_true(reach.distance(player.position, still.held_stack_position) < out,
+            "the claw is no nearer home than it was when the button was pressed")
+        end)
       end)
     end)
   end)
@@ -71,7 +100,7 @@ describe("the constructor equipment toggle", function()
       assert.are.equal(4, player.get_item_count(BELT),
         "the arm should have taken a belt out of the pockets to carry")
       press(player)
-      after_ticks(2, function()
+      after_ticks(A_FOLD, function()
         assert.are.equal(5, player.get_item_count(BELT),
           "the belt the claw was carrying was not handed back")
       end)
@@ -94,7 +123,7 @@ describe("the constructor equipment toggle", function()
       world.fill_pockets(player)
       local before = player.get_item_count(BELT)
       press(player)
-      after_ticks(2, function()
+      after_ticks(A_FOLD, function()
         local loose = 0
         for _, item in pairs(player.surface.find_entities_filtered{
             position = player.position, radius = 10, type = "item-entity" }) do
@@ -189,7 +218,7 @@ describe("switching off while the box has something in it", function()
     player.get_inventory(defines.inventory.character_main).clear()
     after_ticks(world.DELIVERED, function()
       press(player)
-      after_ticks(4, function()
+      after_ticks(A_FOLD, function()
         assert.are.equal(1, player.get_item_count("transport-belt"),
           "what the claw had been given went with the box")
       end)

@@ -77,7 +77,10 @@ and reach from where they are bolted rather than from the middle, and the vehicl
 its own hold rather than your pockets.
 
 **9. A car** and **10. a locomotive** are **not vanilla**. Neither has an equipment grid in
-the base game, and the showroom adds one so there is something to look at. Their titles say
+the base game, and the showroom adds one so there is something to look at. The locomotive
+pulls a cargo wagon, which is where its belts are: a locomotive prototype has nowhere to put
+a hold, so its only inventory is a three slot burner box and its arms build out of the
+train's wagons instead. Their titles say
 so in orange. Without it, a car is the case where a driver's own armour goes quiet and
 nothing takes over.
 
