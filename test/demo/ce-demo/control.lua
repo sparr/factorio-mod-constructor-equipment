@@ -142,7 +142,9 @@ local ROWS = {
       { "A ghost that takes three",
         "Stand on the mark. A curved rail wants three rails and the claw holds one:",
         function(x, y)
-          pad(x + 3, y + 6, "refined-hazard-concrete-left")
+          pad(x + 4, y + 6, "refined-hazard-concrete-left")
+          -- Two tiles from the mark, since that is all a first tier arm has. It sat at six
+          -- and nothing ever went out to it.
           ghost("curved-rail-a", x + 6, y + 6, { direction = defines.direction.north })
         end },
       { "The slowdown",
@@ -194,10 +196,13 @@ local ROWS = {
         "Stand on the mark. Five tiles out, so only the green arm reaches: it carries several and turns from one to the next.",
         function(x, y)
           pad(x + 1, y + 6, "refined-hazard-concrete-left")
-          -- Five tiles, which is the green arm's reach and past every other arm's, so the
-          -- blue one cannot take the work and make it look like the green one is carrying
-          -- them singly.
-          for i = -2, 2 do ghost("transport-belt", x + 6, y + 6 + i) end
+          -- An arc rather than a column: every one of these is between four and five tiles
+          -- from the mark, which is past every other arm's reach and inside the green one's.
+          -- A straight column at five tiles has its ends at five and a half, so standing on
+          -- the mark only reached the middle of it.
+          for _, at in pairs{ { 5, -2 }, { 5, 2 }, { 4, -3 }, { 4, 3 }, { 5, 0 } } do
+            ghost("transport-belt", x + 1 + at[1], y + 6 + at[2])
+          end
         end },
     },
   },
@@ -233,10 +238,19 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
         end },
       { "What a swing costs",
-        "Open your armour and watch the batteries while these go up. A reach is paid by the tile.",
+        "Open your armour and watch the batteries. Everything here is in reach from the mark, so you can stand still and watch it drain.",
         function(x, y)
-          pad(x + 3, y + 6, "refined-hazard-concrete-left")
-          for i = 0, 7 do ghost("transport-belt", x + 5, y + 2 + i) end
+          pad(x + 5, y + 6, "refined-hazard-concrete-left")
+          -- A ring round the mark rather than a line beside it: a first tier arm reaches
+          -- two tiles, and a column of eight meant walking the length of it to get the
+          -- far ones, which is a poor way to watch a battery.
+          for dx = -2, 2 do
+            for dy = -2, 2 do
+              if not (dx == 0 and dy == 0) and (dx * dx + dy * dy) <= 5 then
+                ghost("transport-belt", x + 5 + dx, y + 6 + dy)
+              end
+            end
+          end
         end },
     },
   },
@@ -286,6 +300,10 @@ local ROWS = {
         ["fast-transport-belt"] = 50, ["fast-underground-belt"] = 20,
         ["iron-chest"] = 10, ["upgrade-planner"] = 1,
       },
+      -- Without this a bulk claw holds one thing, and every bay about carrying several
+      -- shows it carrying one.
+      research = { "bulk-inserter", "inserter-capacity-bonus-1",
+                   "inserter-capacity-bonus-2", "inserter-capacity-bonus-3" },
     },
     bays = {
       { "A belt upgraded",
@@ -344,7 +362,8 @@ local ROWS = {
       armour = "power-armor",
       equipment = { TIERS[4], "fission-reactor-equipment", "battery-mk2-equipment" },
       items = { ["deconstruction-planner"] = 1, ["cliff-explosives"] = 5 },
-      research = { "cliff-explosives" },
+      research = { "cliff-explosives", "bulk-inserter", "inserter-capacity-bonus-1",
+                   "inserter-capacity-bonus-2", "inserter-capacity-bonus-3" },
     },
     bays = {
       { "A thing taken up",
@@ -590,7 +609,8 @@ local function clear_and_build()
     if index < #ROWS then
       pad(east, ry + 6, "refined-hazard-concrete-right")
       label(east - 2, ry + 7.6, "STAND HERE",
-        ("to go to row %d, vehicle and all"):format(index + 1), { 0.95, 0.8, 0.4 })
+        row.vehicle and ("to go to row %d, vehicle and all"):format(index + 1)
+          or ("to go to row %d"):format(index + 1), { 0.95, 0.8, 0.4 })
       storage.pads[index].east = { x = east + 0.5, y = ry + 6.5 }
     end
 
@@ -670,11 +690,21 @@ script.on_event(defines.events.on_tick, function()
   local made = ground()
   if not (made and storage.pads) then return end
   for _, player in pairs(game.connected_players) do
-    if player.surface == made and player.character then
+    if player.surface == made and (player.character or player.vehicle) then
+      -- Standing on a mark kits you once. Stepping off it and back on kits you again, which
+      -- is what somebody who has spent their belts wants: the marks were one use only.
+      local anywhere = false
+      for _, pads in pairs(storage.pads) do
+        if on_pad(player, pads.west) or (pads.east and on_pad(player, pads.east)) then
+          anywhere = true
+        end
+      end
+      if not anywhere then storage.standing = nil end
+
       for index, pads in pairs(storage.pads) do
         if pads.east and on_pad(player, pads.east) then
           local next_row = storage.pads[index + 1]
-          if next_row and storage.kitted ~= index + 1 then
+          if next_row and storage.standing ~= index + 1 then
             -- A player in a vehicle cannot be teleported out from under it: the vehicle
             -- goes too, or nothing moves and the message repeats at somebody sitting still
             -- on the pad.
@@ -684,13 +714,13 @@ script.on_event(defines.events.on_tick, function()
             end
             player.teleport({ next_row.west.x, next_row.west.y }, made)
             kit(player, ROWS[index + 1])
-            storage.kitted = index + 1
+            storage.standing = index + 1
             player.print(ROWS[index + 1].title .. " -- " .. ROWS[index + 1].note)
           end
           break
-        elseif on_pad(player, pads.west) and storage.kitted ~= index then
+        elseif on_pad(player, pads.west) and storage.standing ~= index then
           kit(player, ROWS[index])
-          storage.kitted = index
+          storage.standing = index
           player.print(ROWS[index].title .. " -- " .. ROWS[index].note)
           break
         end
@@ -713,10 +743,10 @@ script.on_event(defines.events.on_player_created, function(event)
   if not ground() then clear_and_build() end
   player.teleport({ 1.5, 6.5 }, ground())
   kit(player, ROWS[1])
-  storage.kitted = 1
+  storage.standing = 1
 end)
 
 commands.add_command("ce-demo", "Build the showroom again", function()
   clear_and_build()
-  storage.kitted = 1
+  storage.standing = nil
 end)

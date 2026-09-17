@@ -887,6 +887,11 @@ local function standing_in(ghost, at)
   -- count as inside it, because a cliff is four tiles across and the question is asked of
   -- the footprint rather than the collision box.
   if exploding(ghost) then return false end
+  -- Nor is standing on a thing a reason not to pick it up. This question is about an arm
+  -- refusing to reach under its own base to put something down, which is a real refusal
+  -- and looks like a twitch; taking something up from under your own feet is what a person
+  -- does by bending down, and a heap of plates is most often exactly where you stand.
+  if taking(ghost) then return false end
   local prototype = outcome_of(ghost) or ghost.prototype
   local across = (prototype and prototype.tile_width or 1) / 2
   local down = (prototype and prototype.tile_height or 1) / 2
@@ -1786,12 +1791,23 @@ end
 ---thing out and nothing turns to a swap partway through.
 ---@param record table the arm
 ---@param stack LuaItemStack
-local function fill_claw(record, stack)
+---@param count integer? how many of it, defaulting to the whole stack
+local function fill_claw(record, stack, count)
   local arm = record.entity
   if not (arm and arm.valid) then return false end
   if arm.held_stack.valid_for_read and arm.held_stack.count > 0 then return false end
   arm.held_stack.set_stack(stack)
+  if count and count < arm.held_stack.count then arm.held_stack.count = count end
   return true
+end
+
+---How many the claw is holding, which decides whether it can be given anything.
+---@param record table
+---@return integer
+local function arm_holding(record)
+  local arm = record.entity
+  if not (arm and arm.valid and arm.held_stack.valid_for_read) then return 0 end
+  return arm.held_stack.count
 end
 
 ---Put one trip's worth of a thing into the box, for the claw to carry home.
@@ -2083,10 +2099,27 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
 
     -- The thing itself rides home in the claw. Everything the replacement could not hold
     -- goes on the floor, marked, where a robot would have shed it.
+    --
+    -- Both ends of a pair come off together and are the same item, so the claw takes as
+    -- many as its hand holds rather than one: shedding the second put an underground belt
+    -- on the lane of the belt that had just replaced it, riding away.
     if carried then
       if product then
-        local stack = carried.find_item_stack{ name = product, quality = quality }
-        if stack and fill_claw(record, stack) then stack.clear() end
+        local room = trips_for(player.force, tier_of(record))
+        local want = math.min(room,
+          carried.get_item_count{ name = product, quality = quality })
+        if want > 0 then
+          local stack = carried.find_item_stack{ name = product, quality = quality }
+          if stack then
+            local taking_now = math.min(want, stack.count)
+            local held = arm_holding(record)
+            if held == 0 then
+              fill_claw(record, stack, taking_now)
+              if taking_now >= stack.count then stack.clear()
+              else stack.count = stack.count - taking_now end
+            end
+          end
+        end
       end
       shed(surface, at, force, carried)
     end

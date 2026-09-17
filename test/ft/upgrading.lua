@@ -173,6 +173,35 @@ describe("a character wearing the equipment", function()
     end)
 
     -- what the base game throws away
+    -- Both ends are the same item and come off together, so a hand with room takes both.
+    -- Shedding the second put an underground belt on the lane of the belt that had just
+    -- replaced it, riding away down the line.
+    it("brings both old ends home rather than shedding one", function()
+      pair("iron-plate")
+      for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1" } do
+        local technology = player.force.technologies[name]
+        if technology then technology.researched = true end
+      end
+      -- the armour the fixture put on in before_each has to come off, or the new one goes
+      -- into the pockets and the arm on the character's back is still the first tier's
+      player.get_inventory(defines.inventory.character_armor).clear()
+      world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      after_ticks(world.CYCLE * 2, function()
+        assert.are.equal(2, world.count(player, FASTER_UNDER), "the pair was not upgraded")
+        assert.are.equal(2, player.get_item_count(UNDER),
+          "both old ends should have come home")
+        local loose = 0
+        for _, item in pairs(player.surface.find_entities_filtered{
+            position = world.ORIGIN, radius = 20, type = "item-entity" }) do
+          if item.stack.valid_for_read and item.stack.name == UNDER then
+            loose = loose + item.stack.count
+          end
+        end
+        assert.are.equal(0, loose, "an old end was left lying about")
+      end)
+    end)
+
     it("keeps what was in the tunnel", function()
       local near = pair("iron-plate")
       local before = near.get_item_count()

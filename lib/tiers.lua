@@ -33,7 +33,7 @@ tiers.SCALE = 0.2
 --- How fast the character walks while the first tier is working, as a fraction of their
 --- usual. Each tier takes a smaller share of that penalty, and the last two take none of
 --- it at all: a better arm is a lighter one to carry.
-tiers.SLOWED = 0.625
+tiers.SLOWED = 3/8
 
 --- How many reaches' worth of charge an armour must have before an arm will set off, so
 --- that an arm never stops halfway with an item in its hand.
@@ -100,7 +100,7 @@ local DEFINED = {
     hand = "long-handed-inserter", colour = "red",
     extension = 0.05, rotation = 0.02,
     width = 2, height = 4, movement = 5000, drain = "0.4kW",
-    slows = 0.5,
+    slows = 2/3,
     craft = 15,
     ingredients = {
       { type = "item", name = "constructor-equipment", amount = 1 },
@@ -119,7 +119,7 @@ local DEFINED = {
     -- crawling extension. Dividing by the reach puts the two back in vanilla's proportion.
     extension = 0.1, rotation = 0.01,
     width = 2, height = 5, movement = 7000, drain = "0.5kW",
-    slows = 0,
+    slows = 1/3,
     craft = 20,
     ingredients = {
       { type = "item", name = "constructor-equipment-2", amount = 1 },
