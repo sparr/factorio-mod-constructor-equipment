@@ -1087,7 +1087,17 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
   local standing = wearer.position
   local tier = record and tier_of(record)
   local arm = record and record.entity
-  local hand = tier and arm and arm.valid and arm.held_stack_position or nil
+  -- Put back into the world before it is measured against anything in the world. An arm is
+  -- teleported a lift above its owner so it rides on the body rather than at their feet, and
+  -- everything it is aimed at has the same lift taken off it, so the hand reads a lift north
+  -- of where it looks. Left as it comes, the bearing of the hand is taken from the wrong
+  -- origin -- 0.70 of a tile on a character, which on a hand two tiles out is a fifth of a
+  -- right angle of error in the one number this sort is for.
+  local hand = nil
+  if tier and arm and arm.valid then
+    local held = arm.held_stack_position
+    hand = { x = held.x, y = held.y + (record.lift or 0) }
+  end
   local cost = {}
   for _, work in pairs(nearby) do
     if work.valid then
@@ -1359,16 +1369,24 @@ end
 ---@param quality string?
 ---@param count integer
 local function take_back(record, name, quality, count)
-  if count <= 0 then return end
-  local box, arm = record.catcher, record.entity
-  if box and box.valid then
+  if count <= 0 then return 0 end
+  local arm = record.entity
+  if not (arm and arm.valid) then return 0 end
+  local held = arm.held_stack.valid_for_read and arm.held_stack.count or 0
+  arm.held_stack.set_stack{ name = name, quality = quality, count = held + count }
+  -- What actually stuck, rather than what was asked for, and the box is only debited by
+  -- that much. A hand holds what its inserter holds and the engine caps a stack set past
+  -- that without a word: measured, a first tier claw asked to hold two undergrounds took
+  -- one, and the other was not on the floor, or in the box, or anywhere. Emptying the box
+  -- first and setting the stack afterwards is how that item used to disappear.
+  local now = arm.held_stack.valid_for_read and arm.held_stack.count or 0
+  local took = now - held
+  local box = record.catcher
+  if took > 0 and box and box.valid then
     local inside = box.get_inventory(defines.inventory.chest)
-    if inside then inside.remove{ name = name, quality = quality, count = count } end
+    if inside then inside.remove{ name = name, quality = quality, count = took } end
   end
-  if arm and arm.valid then
-    local held = arm.held_stack.valid_for_read and arm.held_stack.count or 0
-    arm.held_stack.set_stack{ name = name, quality = quality, count = held + count }
-  end
+  return took
 end
 
 --- The box that stands on a ghost while an arm is delivering to it.
@@ -1430,6 +1448,33 @@ local function catcher_at(record, surface, at, near)
   box = surface.create_entity{ name = CATCHER, position = at, force = owner }
   record.catcher = box
   return box
+end
+
+---Give something back to whoever an arm was mustered against, and put on the floor what
+---they cannot take.
+---
+---Pockets fill. Inserting and walking away destroys the difference, which is how a stack
+---goes missing every time somebody's inventory is full at the wrong moment. Spilling is what
+---the game does with what a character cannot hold, and the stack goes down as it stands so a
+---damaged or a quality thing stays what it was. Unmarked: it is the player's own.
+---@param player LuaPlayer
+---@param wearer LuaEntity?
+---@param inventory LuaInventory?
+---@param stack table
+local function give_to(player, wearer, inventory, stack)
+  local count = stack.count or 0
+  if count <= 0 then return end
+  local quality = stack.quality and (stack.quality.name or stack.quality) or nil
+  local took = inventory and inventory.insert{ name = stack.name, quality = quality,
+                                               count = count } or 0
+  if took >= count then return end
+  if not (wearer and wearer.valid) then return end
+  wearer.surface.spill_item_stack{
+    position = wearer.position,
+    stack = { name = stack.name, quality = quality, count = count - took },
+    enable_looted = true,
+    force = player.force,
+  }
 end
 
 ---Take the box away, handing back anything left in it.
@@ -1820,6 +1865,27 @@ local function give_back(player, wearer, record)
     if job.escrow > 0 then return false end
   end
 
+  -- What the job owes: taken off the world on the way and too much for the hand to hold,
+  -- so it travelled with the job. The claw is home, so it is the player's now.
+  if job and job.owed and (job.owed.count or 0) > 0 then
+    local put = inventory and inventory.insert{ name = job.owed.name,
+      quality = job.owed.quality, count = job.owed.count } or 0
+    job.owed.count = job.owed.count - put
+    if job.owed.count > 0 then
+      if not spills(player) then return false end
+      if wearer and wearer.valid then
+        wearer.surface.spill_item_stack{
+          position = wearer.position,
+          stack = { name = job.owed.name, quality = job.owed.quality,
+                    count = job.owed.count },
+          enable_looted = true,
+          force = player.force,
+        }
+      end
+      job.owed.count = 0
+    end
+  end
+
   if not (arm and arm.valid and arm.held_stack.valid_for_read) then return true end
   -- The stack as it stands rather than its name and number: what the claw is carrying may
   -- be the very thing an upgrade pulled up, which can be damaged and can be any quality.
@@ -2062,15 +2128,16 @@ end
 ---
 ---The claw has to be empty, which it is: a trip that is going to make a swap carries one
 ---thing out and nothing turns to a swap partway through.
+---The whole stack, and the engine takes what the hand will hold. There was a count here to
+---take less, and nothing wanted one: the only caller wants as much of it as will go in, and
+---asking for a number means having a model of how big a hand is, which the hand already is.
 ---@param record table the arm
 ---@param stack LuaItemStack
----@param count integer? how many of it, defaulting to the whole stack
-local function fill_claw(record, stack, count)
+local function fill_claw(record, stack)
   local arm = record.entity
   if not (arm and arm.valid) then return false end
   if arm.held_stack.valid_for_read and arm.held_stack.count > 0 then return false end
   arm.held_stack.set_stack(stack)
-  if count and count < arm.held_stack.count then arm.held_stack.count = count end
   return true
 end
 
@@ -2409,22 +2476,43 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
     -- on the lane of the belt that had just replaced it, riding away.
     if carried then
       if product then
-        local room = trips_for(player.force, tier_of(record))
-        local want = math.min(room,
-          carried.get_item_count{ name = product, quality = quality })
-        if want > 0 then
-          local stack = carried.find_item_stack{ name = product, quality = quality }
-          if stack then
-            local taking_now = math.min(want, stack.count)
-            local held = arm_holding(record)
-            if held == 0 then
-              fill_claw(record, stack, taking_now)
-              if taking_now >= stack.count then stack.clear()
-              else stack.count = stack.count - taking_now end
-            end
-          end
+        -- Into the claw first, and as much of it as the hand will take. How much that is
+        -- is asked of the hand rather than of trips_for(): set the whole stack and read
+        -- back what stuck. The engine caps a stack set past a hand's capacity, so this is
+        -- the hand's own answer, and it cannot disagree with the mod's model of a hand
+        -- because it does not consult one.
+        local stack = carried.find_item_stack{ name = product, quality = quality }
+        if stack and arm_holding(record) == 0 then
+          fill_claw(record, stack)
+          local carrying = arm_holding(record)
+          if carrying >= stack.count then stack.clear()
+          else stack.count = stack.count - carrying end
+        end
+        -- Only what would not go in the claw travels with the job, which on any hand that
+        -- holds two is nothing at all. Two ends come off together and a claw that holds one
+        -- can carry one of them; shedding the other put an underground belt on the floor
+        -- beside the tunnel for the arm to come back out for, which is a second journey for
+        -- something it had been standing over.
+        --
+        -- With the job rather than in the box, because the box has already gone: it is
+        -- taken away before the claw is loaded, on purpose, since an inserter standing over
+        -- a container with something in its hand puts it in the container. And with the job
+        -- rather than in the hand because the hand will not take it -- measured, a first
+        -- tier claw asked to hold two undergrounds takes one and the other is not on the
+        -- floor, or in the box, or anywhere.
+        --
+        -- This is the same arrangement a curved rail already travels under, the other way
+        -- round: what the claw cannot carry is set aside against the job and settled when
+        -- it gets home.
+        local over = carried.get_item_count{ name = product, quality = quality }
+        if over > 0 then
+          job.owed = { name = product, quality = quality,
+                       count = (job.owed and job.owed.count or 0) + over }
+          carried.remove{ name = product, quality = quality, count = over }
         end
       end
+      -- Whatever is left is what the replacement could not hold, which goes on the floor
+      -- marked, where a robot would have shed it.
       shed(surface, at, force, carried)
     end
     porter.destroy()
@@ -2709,7 +2797,14 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     -- the arm holds station with it until there is room.
     if give_back(player, wearer, record) then
       record.job = nil
-      catcher_away(record)
+      -- What the box carried home goes to the pockets too. It is only ever there because
+      -- the claw could not hold it -- the far end of an underground pair, say -- and
+      -- catcher_away says what was in it to nobody in particular, so for a long time that
+      -- was a quiet way to lose exactly one underground belt.
+      local inventory = pockets(player, wearer)
+      for _, stack in pairs(catcher_away(record) or {}) do
+        give_to(player, wearer, inventory, stack)
+      end
     end
   end
 end

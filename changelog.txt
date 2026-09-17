@@ -6,7 +6,8 @@ Version: 2.1.5
     - Anything the replacement cannot hold is left on the ground and marked for deconstruction, the same as a construction robot leaves it, rather than appearing in your inventory or being lost when it is full
     - The arms now pay for quality work with items of that quality, whether they are raising a ghost or carrying out an upgrade
     - Mirroring carries across an upgrade
-    - Both ends of an underground belt go up together, from whichever end an arm can reach, for the price of two, and whatever was travelling in the tunnel stays in the tunnel rather than being turned out onto the ground
+    - Both ends of an underground belt go up together, from whichever end an arm can reach, for the price of two, and both old ends come home in the one trip however small the claw is, rather than one being left on the floor to fetch again
+    - Whatever was travelling in an upgraded tunnel stays in the tunnel rather than being turned out onto the ground
     - An arm now carries a cliff explosive out to a cliff you have marked for deconstruction, at the cost of one, the same as a construction robot spends
     - The arms now clear away what you mark with a deconstruction planner, entities and tiles alike, carrying it home in the claw
     - A thing with something in it is emptied a clawful at a time and taken up last, once it is empty, the way construction robots do it
@@ -23,6 +24,7 @@ Version: 2.1.5
     - Fixed an arm coming out of your back and never setting off for something marked for deconstruction
     - Fixed losing what the claw had just been handed when the arms were switched off or taken away
     - Fixed losing what an arm was carrying when it was put away and your pockets had no room for it, which now goes on the floor beside you
+    - Fixed losing an item when a claw was handed more than its hand could hold
     - An arm switched off part way through a reach now swings home first, hands back what it was carrying and then folds away, rather than being taken away where it stood
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself

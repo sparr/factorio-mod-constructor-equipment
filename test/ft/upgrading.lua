@@ -154,6 +154,69 @@ describe("a character wearing the equipment", function()
       return near, far
     end
 
+    ---Where the two old ends are while the claw is on its way home: in its hand, or set
+    ---aside against the job, or neither.
+    local function in_flight()
+      local claw, owed = 0, 0
+      for _, record in pairs(storage.constructor_arms[player.index] or {}) do
+        local arm = record.entity
+        if arm and arm.valid and arm.held_stack.valid_for_read
+            and arm.held_stack.name == UNDER then
+          claw = claw + arm.held_stack.count
+        end
+        local job = record.job
+        if job and job.owed and job.owed.name == UNDER then owed = owed + job.owed.count end
+      end
+      return claw, owed
+    end
+
+    -- The claw first, always. Travelling with the job is what a hand too small to hold the
+    -- pair falls back on, not the way a pair is carried.
+    it("carries both ends in the claw when the hand can hold them", function()
+      for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1" } do
+        player.force.technologies[name].researched = true
+      end
+      player.get_inventory(defines.inventory.character_armor).clear()
+      world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+      pair("iron-plate")
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      -- Part way home, before anything has been handed over.
+      after_ticks(world.DELIVERED + 4, function()
+        local claw, owed = in_flight()
+        assert.are.equal(2, claw,
+          ("the claw is carrying %d of the pair and %d is travelling with the job"):format(
+            claw, owed))
+        assert.are.equal(0, owed, "the job is carrying what the hand had room for")
+      end)
+    end)
+
+    -- A claw that holds one thing can carry one of the two ends home, and the other used to
+    -- go on the floor marked, so the arm came back out for something it had been standing
+    -- over. A pair is one of the two things the box is for: it rides home in that, and is
+    -- handed over when the claw gets there.
+    it("brings both ends home in one trip on a hand that holds one", function()
+      -- No capacity research: the claw holds a single thing, which is the case this is about.
+      for _, name in pairs{ "inserter-capacity-bonus-1", "bulk-inserter" } do
+        local technology = player.force.technologies[name]
+        if technology then technology.researched = false end
+      end
+      pair("iron-plate")
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      -- Long enough for the claw to get home, which is where what the job owes is settled.
+      after_ticks(A_BUILD * 2, function()
+        assert.are.equal(2, player.get_item_count(UNDER),
+          "both old ends should be in the pockets after the one trip")
+        local loose = 0
+        for _, item in pairs(player.surface.find_entities_filtered{
+            position = world.ORIGIN, radius = 20, type = "item-entity" }) do
+          if item.stack.valid_for_read and item.stack.name == UNDER then
+            loose = loose + item.stack.count
+          end
+        end
+        assert.are.equal(0, loose, "an end was shed on the floor for a second journey")
+      end)
+    end)
+
     it("goes up as one job, both ends, from the end within reach", function()
       pair("iron-plate")
       player.insert{ name = FASTER_UNDER, count = 5 }
