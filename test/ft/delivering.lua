@@ -779,3 +779,56 @@ describe("putting the arm away", function()
     end)
   end)
 end)
+
+-- A bulk claw carrying several and handing them out one ghost at a time, at the distances
+-- the showroom uses. The walk round reported it building one, turning to the next and
+-- coming home without building that one, over and over -- which was two of the five ghosts
+-- sitting at 5.39 tiles from a five tile arm, so the claw was right and the yard was wrong.
+-- The round itself is worth a test either way.
+describe("a bulk claw with a yard of ghosts in reach", function()
+  local ARC = { { 4, -2 }, { 4, 2 }, { 3, -3 }, { 3, 3 }, { 4, 1 } }
+
+  after_each(function()
+    for _, name in pairs{ "inserter-capacity-bonus-1", "inserter-capacity-bonus-2",
+                          "bulk-inserter" } do
+      local technology = player.force.technologies[name]
+      if technology then technology.researched = false end
+    end
+    player.get_inventory(defines.inventory.character_armor).clear()
+  end)
+
+  it("builds every one of them", function()
+    for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1",
+                          "inserter-capacity-bonus-2" } do
+      player.force.technologies[name].researched = true
+    end
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
+                          "battery-mk2-equipment" }, true)
+    player.insert{ name = BELT, count = 50 }
+    for _, at in pairs(ARC) do world.ghost(player, BELT, at[1], at[2]) end
+    after_ticks(world.CYCLE * 12, function()
+      assert.are.equal(0, world.ghosts(player),
+        "some of the arc is still standing")
+      assert.are.equal(#ARC, world.count(player, BELT), "not all of them went up")
+    end)
+  end)
+
+  -- One trip, several ghosts: part way through, more than one has gone.
+  it("hands out more than one between visits home", function()
+    for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1",
+                          "inserter-capacity-bonus-2" } do
+      player.force.technologies[name].researched = true
+    end
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
+                          "battery-mk2-equipment" }, true)
+    player.insert{ name = BELT, count = 50 }
+    for _, at in pairs(ARC) do world.ghost(player, BELT, at[1], at[2]) end
+    after_ticks(world.CYCLE * 3, function()
+      assert.is_true(world.count(player, BELT) >= 2,
+        ("only %d went up in three cycles, which is a journey each rather than a round")
+          :format(world.count(player, BELT)))
+    end)
+  end)
+end)

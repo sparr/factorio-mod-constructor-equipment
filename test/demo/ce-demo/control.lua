@@ -270,11 +270,19 @@ local ROWS = {
         "Stand on the mark. Five tiles out, so only the green arm reaches: it carries several and turns from one to the next.",
         function(x, y)
           pad(x + 1, y + 6, "refined-hazard-concrete-left")
-          -- An arc rather than a column: every one of these is between four and five tiles
-          -- from the mark, which is past every other arm's reach and inside the green one's.
-          -- A straight column at five tiles has its ends at five and a half, so standing on
-          -- the mark only reached the middle of it.
-          for _, at in pairs{ { 5, -2 }, { 5, 2 }, { 4, -3 }, { 4, 3 }, { 5, 0 } } do
+          -- An arc rather than a column: every one of these is between four and four and a
+          -- half tiles from the mark, which is past every other arm's reach and inside the
+          -- green one's. A straight column at five tiles has its ends at five and a half,
+          -- so standing on the mark only reached the middle of it.
+          --
+          -- The arithmetic matters and was wrong: two of these sat at five and two, which
+          -- is 5.39 away and outside the five tile arm that is meant to build them. What a
+          -- player saw was the claw going out with a full hand, building what it could and
+          -- coming home with the rest, over and over, which reads exactly like a claw that
+          -- has forgotten how to deliver. Nothing here is further than 4.5, and an arm
+          -- reaches from where it is bolted rather than from its owner's middle, so the
+          -- half tile of slack is the mounting's.
+          for _, at in pairs{ { 4, -2 }, { 4, 2 }, { 3, -3 }, { 3, 3 }, { 4, 1 } } do
             ghost("transport-belt", x + 1 + at[1], y + 6 + at[2])
           end
         end },
