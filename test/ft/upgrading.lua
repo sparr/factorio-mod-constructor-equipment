@@ -124,6 +124,16 @@ describe("a character wearing the equipment", function()
     local UNDER = "underground-belt"
     local FASTER_UNDER = "fast-underground-belt"
 
+    -- One of these turns capacity research on to give the claw a hand that holds two. It
+    -- goes off again afterwards: a force is shared by every test that runs after this one,
+    -- and a bigger hand quietly changes what they are measuring.
+    after_each(function()
+      for _, name in pairs{ "inserter-capacity-bonus-1", "bulk-inserter" } do
+        local technology = player.force.technologies[name]
+        if technology then technology.researched = false end
+      end
+    end)
+
     ---A pair with both ends marked, the near one within reach and the far one not.
     local function pair(cargo)
       local surface, force = player.surface, player.force
