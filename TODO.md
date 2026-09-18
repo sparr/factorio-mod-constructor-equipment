@@ -1,10 +1,5 @@
 # Outstanding, from the walk round of 2026-09-19
 
-## 1. "Four arms, four reaches": the teleporter fires while you are still moving
-
-It should wait until you have come to rest on the mark. Its words also overlap the pad
-itself.
-
 ## 2. "The bulk claw": it comes home mid round
 
 Delivers one belt, turns to the next ghost, and goes home without building it. Then does

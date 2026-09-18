@@ -258,7 +258,7 @@ local ROWS = {
     },
     bays = {
       { "Four arms, four reaches",
-        "Each arm takes the one that suits its reach. Walking up to them would offer them one at a time, nearest first, and the mark puts you down among all four at once.",
+        "The mark puts you down among all four at once, and each takes the one that suits its reach.",
         function(x, y)
           -- Arriving rather than walking up, which is the whole of the bay. Walking offers
           -- the ghosts one at a time, nearest first, so the shortest arm that can reach
@@ -326,7 +326,7 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 5, y + 5 + i) end
         end },
       { "Take the reactor",
-        "Put the reactor and the battery from this chest into your armour. Now it builds, and the battery is what the next bay is watched on.",
+        "Put the reactor and the battery from this chest into your armour. Now it builds.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           local chest = place("iron-chest", x + 3, y + 6)
@@ -340,7 +340,7 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
         end },
       { "What a swing costs",
-        "Stand on the mark and open your armour. One small battery and no reactor, so a swing takes a visible bite. The jump back up as the arm folds away is the claw handing back what was left in its own buffer.",
+        "Open your armour. No reactor, so a swing takes a bite; the jump back up is the claw handing its buffer back.",
         function(x, y)
           bay_kit(x + 5, y + 6, {
             armour = "power-armor",
@@ -374,7 +374,7 @@ local ROWS = {
     },
     bays = {
       { "The toolbar button",
-        "Stand on the mark, then press the arm button on the toolbar. It stops mid reach, and what the claw was carrying comes back. Take the arm out of your armour and the button greys out.",
+        "Stand on the mark and press the arm button on the toolbar. It stops mid reach and hands back what it carried.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           for i = 0, 7 do ghost("transport-belt", x + 5, y + 2 + i) end
@@ -492,7 +492,7 @@ local ROWS = {
           end
         end },
       { "A patch of tiles",
-        "Stand on the mark. A claw with room in its hand goes from one tile to the next without coming home, and visits every one: nothing is taken up that the claw did not travel to.",
+        "Stand on the mark. The claw goes from one tile to the next without coming home, and visits every one.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           local tiles = {}
@@ -508,7 +508,7 @@ local ROWS = {
           end
         end },
       { "One round, both sides",
-        "Stand on the mark, between them. The claw crosses from one to the other without coming home, and carries both back at the end.",
+        "Stand between them. The claw crosses from one to the other and carries both back.",
         function(x, y)
           pad(x + 5, y + 6, "refined-hazard-concrete-left")
           for _, away in pairs{ -4, -3, 3, 4 } do
@@ -573,7 +573,7 @@ local ROWS = {
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
       { "Arms on the legs",
-        "Get in and walk it over the ghosts. Eight arms of the second tier, and a spider loses the same share of its speed you lose of yours.",
+        "Get in and walk it over the ghosts. Eight second tier arms, and it loses the share of its speed you lose of yours.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
           -- A long walk with something to build the whole way, and four lines of it rather
@@ -621,7 +621,7 @@ local ROWS = {
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
       { "Arms on a train",
-        "Get in and drive along the rail. Eight arms of the second tier, the ghosts on both sides of the track, and the belts they are built from in the wagon.",
+        "Get in and drive along the rail. Eight second tier arms, and the belts are in the wagon.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
           for i = -2, 24 do
@@ -743,7 +743,11 @@ local function clear_and_build()
     eastmost = rx
     for bay, what in ipairs(row.bays) do
       local x = rx + bay * BAY
-      local bottom = label(x, ry + 3, what[1], what[2])
+      -- A tile and a half down rather than three, so that three lines of note end above
+      -- the marks at six rather than across them. Three lines is what every bay's note is
+      -- held to for the same reason: there is no more room than that between a title and
+      -- the ground the bay is laid out on.
+      local bottom = label(x, ry + 1.5, what[1], what[2])
       building = { row = index, bay = bay, title = what[1], bottom = bottom }
       what[3](x, ry)
       building = nil
@@ -867,7 +871,11 @@ end
 --- every tick for as long as they are on it.
 local function on_pad(player, at)
   local dx, dy = player.position.x - at.x, player.position.y - at.y
-  return (dx * dx + dy * dy) < 2.25
+  -- The mark's own tile and a little more, rather than a tile and a half either side of it.
+  -- A mark is one tile precisely so that standing on it means standing where the bay was
+  -- measured from, and a radius of one and a half carried people off who were walking past
+  -- it rather than standing on it.
+  return (dx * dx + dy * dy) < 0.64
 end
 
 script.on_event(defines.events.on_tick, function()
@@ -875,6 +883,7 @@ script.on_event(defines.events.on_tick, function()
   local made = ground()
   if not (made and storage.pads) then return end
   storage.stood = storage.stood or {}
+  storage.settled = storage.settled or {}
   for _, player in pairs(game.connected_players) do
     if player.surface == made and (player.character or player.vehicle) then
       -- Whether they have stopped. A mark that carries you off does it when you have come
@@ -883,7 +892,12 @@ script.on_event(defines.events.on_tick, function()
       -- pass a mark on foot without standing on it for a poll or two.
       local was = storage.stood[player.index]
       local at = player.position
-      local still = was and math.abs(was.x - at.x) < 0.1 and math.abs(was.y - at.y) < 0.1
+      local put = was and math.abs(was.x - at.x) < 0.1 and math.abs(was.y - at.y) < 0.1
+      -- Two polls of standing still rather than one. A poll is a quarter of a second, and
+      -- one of them is satisfied by the pause between two steps or by a turn on the spot,
+      -- which carried people off mid stride.
+      local still = put and storage.settled[player.index]
+      storage.settled[player.index] = put
       storage.stood[player.index] = { x = at.x, y = at.y }
 
       -- Standing on a mark kits you once. Stepping off it and back on kits you again, which
