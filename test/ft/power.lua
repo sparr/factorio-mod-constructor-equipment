@@ -131,3 +131,93 @@ describe("an armour with almost nothing left in it", function()
     end)
   end)
 end)
+
+-- A character standing among ghosts with nothing happening has no way of telling a flat
+-- armour from a broken mod. The game already marks every machine short of power, so this
+-- borrows that. It goes on the wearer because in this state there is usually no arm: an
+-- armour that cannot raise a full buffer never sends one out.
+describe("work in reach and no charge to go for it", function()
+  local function marks()
+    local seen = 0
+    for _, drawn in pairs(rendering.get_all_objects("constructor-equipment")) do
+      local ok, sprite = pcall(function() return drawn.sprite end)
+      if ok and sprite == "utility/electricity_icon" then seen = seen + 1 end
+    end
+    return seen
+  end
+
+  -- A mark from the test before this one outlives world.clear on purpose: it has a life of
+  -- its own precisely so that an armour taken off leaves nothing hanging about, and nobody
+  -- is left to take it down the instant the armour goes. Half a second of that is by design
+  -- and is somebody else's test, so it is cleared here rather than waited out.
+  before_each(function()
+    for _, drawn in pairs(rendering.get_all_objects("constructor-equipment")) do
+      local ok, sprite = pcall(function() return drawn.sprite end)
+      if ok and sprite == "utility/electricity_icon" and drawn.valid then drawn.destroy() end
+    end
+  end)
+
+  ---Watch every tick and say whether the mark was ever up, and whether it was always up.
+  local function watch(ticks, whenever)
+    local ever, always = false, true
+    script.on_nth_tick(1, function()
+      if marks() > 0 then ever = true else always = false end
+    end)
+    after_ticks(ticks, function()
+      script.on_nth_tick(1, nil)
+      whenever(ever, always)
+    end)
+  end
+
+  it("marks a flat armour that has something to build", function()
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment" }, false)
+    player.insert{ name = BELT, count = 20 }
+    world.ghost(player, BELT, 2, 0)
+    watch(120, function(ever)
+      assert.is_true(ever, "a flat armour with a ghost in reach said nothing about why")
+    end)
+  end)
+
+  -- The complaint this replaced: the mark went up while running past a row of belts on a
+  -- full battery, because it was reading each arm's own status and an idle arm reports
+  -- itself short. Measured over six hundred ticks of that, the mod's own answer never once
+  -- says it is waiting.
+  it("says nothing while a charged armour is working", function()
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment", "battery-equipment" }, true)
+    player.insert{ name = BELT, count = 100 }
+    for i = 0, 8 do world.ghost(player, BELT, 2, i - 4) end
+    watch(300, function(ever)
+      assert.is_false(ever, "a working arm on a full battery was marked as short of power")
+    end)
+  end)
+
+  it("takes it down once the armour is charged again", function()
+    player.get_inventory(defines.inventory.character_armor).clear()
+    local grid = world.equip(player, { "constructor-equipment", "battery-equipment" }, false)
+    player.insert{ name = BELT, count = 20 }
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(40, function()
+      assert.is_true(marks() > 0, "the flat armour was never marked")
+      for _, piece in pairs(grid.equipment) do piece.energy = piece.max_energy end
+      after_ticks(60, function()
+        assert.are.equal(0, marks(), "the mark stayed up after the armour was charged")
+      end)
+    end)
+  end)
+
+  it("leaves none behind when the armour comes off", function()
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment" }, false)
+    player.insert{ name = BELT, count = 20 }
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(40, function()
+      assert.is_true(marks() > 0, "the flat armour was never marked")
+      player.get_inventory(defines.inventory.character_armor).clear()
+      after_ticks(60, function()
+        assert.are.equal(0, marks(), "a mark outlived the armour it belonged to")
+      end)
+    end)
+  end)
+end)

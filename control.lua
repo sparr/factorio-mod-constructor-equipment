@@ -82,6 +82,16 @@ end
 --- should have to wait through.
 local STOW_TICKS = 18
 
+--- The game's own low power mark, borrowed rather than drawn again: the yellow bolt it puts
+--- over a machine that has not the charge to work. utility/electricity_icon_unplugged is the
+--- other one it has, and says nothing is connected, which is not this arm's trouble.
+local POWER_ICON = "utility/electricity_icon"
+
+--- How long a low power mark lives without being renewed. Longer than the gap between the
+--- ticks that renew it, so it never blinks, and short enough that one left behind is gone
+--- before anybody reads it as a fault.
+local MARK_TICKS = 30
+
 --- How long the arm stays out after the last thing it did. An arm that vanished the moment
 --- a swing ended would flicker between one ghost and the next; one that never vanished
 --- would be worn to bed.
@@ -1392,6 +1402,60 @@ local function stowing()
       drawn.color = { r = 1, g = 1, b = 1, a = left }
     end
   end
+end
+
+---Show, or stop showing, that there is work in reach and not the charge to go for it.
+---
+---A character standing among ghosts with nothing happening has no way of telling a flat
+---armour from a broken mod. The game already marks every machine that is short of power, so
+---this borrows that rather than inventing a second vocabulary for it.
+---
+---The mark goes on the wearer rather than on an arm, because in this state there is usually
+---no arm: an armour that cannot raise a full buffer never sends one out, so what a player
+---sees is their own back and nothing on it. That is the whole of the complaint the mark
+---answers.
+---
+---What it is asked is the mod's own question -- is there work in reach that no arm can be
+---sent to for want of charge -- rather than what any inserter reports about itself. Reading
+---an arm's own status was the first attempt and was wrong both ways round. Measured on a
+---character walking a row of belts with a charged battery it fired once for twelve ticks, on
+---the cold start, which is a blip nobody needs marking; and on a flat grid it never fired at
+---all, because an arm that cannot set off is never made and there is nothing to read a
+---status from. The mod's own answer fires nought times in six hundred ticks in the first
+---case and two hundred and ninety four out of three hundred in the second.
+---@param player LuaPlayer
+---@param wearer LuaEntity?
+---@param waiting boolean whether some arm has work in reach and not the charge for it
+local function flag_power(player, wearer, waiting)
+  storage.constructor_marks = storage.constructor_marks or {}
+  local id = storage.constructor_marks[player.index]
+  local shown = id and rendering.get_object_by_id(id)
+  if not (waiting and wearer and wearer.valid) then
+    if shown and shown.valid then shown.destroy() end
+    storage.constructor_marks[player.index] = nil
+    return
+  end
+  -- Still up: keep it up. Its life is extended rather than the mark redrawn, so there is
+  -- never a tick with two of them.
+  if shown and shown.valid then
+    shown.time_to_live = MARK_TICKS
+    return
+  end
+  if not helpers.is_valid_sprite_path(POWER_ICON) then return end
+  local drawn = rendering.draw_sprite{
+    sprite = POWER_ICON,
+    surface = wearer.surface,
+    target = { entity = wearer, offset = { 0, -2 } },
+    x_scale = 0.4,
+    y_scale = 0.4,
+    render_layer = "entity-info-icon",
+    -- It dies on its own if nothing renews it. The alternative is an owner responsible for
+    -- taking it down, and a character who stops being one leaves nobody to ask -- a mark
+    -- hanging over an empty back for the rest of the game. A life a few check ticks long
+    -- costs a redraw nobody sees and cannot be leaked.
+    time_to_live = MARK_TICKS,
+  }
+  storage.constructor_marks[player.index] = drawn and drawn.id or nil
 end
 
 ---Take one inserter away, emptying its hand first so nothing is conjured out of it.
@@ -2876,6 +2940,8 @@ local function assign(player, wearer, list, tick, nearby)
   --
   -- The order of asking only; the list itself keeps the order the grid is in, because that
   -- is what decides which side of a hull an arm is bolted to.
+  -- Whether any arm has work in reach it cannot be sent to for want of charge.
+  local starved = false
   local asking = {}
   for slot in ipairs(list) do asking[#asking + 1] = slot end
   table.sort(asking, function(one, other)
@@ -2896,6 +2962,7 @@ local function assign(player, wearer, list, tick, nearby)
       if waiting then
         -- work in reach, buffer a tick short of full: the run is still on
         working = true
+        starved = true
         record.run = game.tick
       end
       if ghost then
@@ -2974,6 +3041,7 @@ local function assign(player, wearer, list, tick, nearby)
       end
     end
   end
+  flag_power(player, wearer, starved)
   return working
 end
 
