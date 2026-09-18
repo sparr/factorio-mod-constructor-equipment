@@ -39,15 +39,6 @@ as its owner moves, and never takes it. It may be missing by a fraction of a til
 
 It should give up on that one and go to something else rather than waiting.
 
-## 10. Tank: the south arms are drawn at the foot of the treads
-
-Driving east or west, they should be lifted to the top of the treads, the way a character's
-arms sit at the height of their pack rather than at their feet.
-
 ## 11. Tank: a claw stutters for ever over an item under the tank
 
 An item on the ground beneath the hull is reached for again and again and never taken.
-
-## 12. Tank: the arms of a north or south facing tank sit outside the tracks
-
-They should be inside the tracks, and lifted to draw above them.

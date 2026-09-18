@@ -259,13 +259,17 @@ describe("equipment in a vehicle's own grid", function()
         ("the southern arm sits %.2f out, as low as the box's own %.2f"):format(south, across))
 
       -- facing west, the same arm is the northern one, where a lift would poke it out over
-      -- the roof
+      -- the roof. It is not on the box's own edge either: arms are bolted inboard of the
+      -- running gear, which on a tank is its tracks, so what is asked is that it is out on
+      -- that side and not lifted off it.
       tank.orientation = 0.75
       after_ticks(2, function()
         local north = world.arm(player).position.y - tank.position.y
-        assert.is_true(math.abs(north + across) < 0.05,
-          ("the northern arm sits %.2f out rather than the box's own %.2f")
-            :format(north, -across))
+        assert.is_true(north < 0 and north > -across,
+          ("the northern arm sits %.2f out, where the side is %.2f"):format(north, -across))
+        assert.is_true(north < -0.5 * across,
+          ("the northern arm sits %.2f out, which is lifted rather than square on the side")
+            :format(north))
       end)
     end)
   end)
@@ -353,17 +357,19 @@ describe("equipment in a vehicle's own grid", function()
       assert.are.equal(2, #arms, "two of the equipment did not grow two arms")
       local box = tank.prototype.selection_box
       local across = (box.right_bottom.x - box.left_top.x) / 2
-      -- Facing east, its sides are north and south of it. The northern one sits square on
-      -- the side; the southern one is lifted onto the near face of the hull, which is drawn
-      -- above the ground it stands on.
+      -- Facing east, its sides are north and south of it, and both are bolted inboard of
+      -- the tracks. The northern one sits square on its side; the southern one is lifted
+      -- onto the near face of the hull, which is drawn above the ground it stands on, so it
+      -- ends up nearer the middle than the northern one is.
       local out = {}
       for _, arm in pairs(arms) do table.insert(out, arm.position.y - tank.position.y) end
       table.sort(out)
-      assert.is_true(math.abs(out[1] + across) < 0.05,
-        ("the northern arm sits %.2f out rather than the side's own %.2f")
-          :format(out[1], -across))
+      assert.is_true(out[1] < -0.5 * across and out[1] > -across,
+        ("the northern arm sits %.2f out, where the side is %.2f"):format(out[1], -across))
       assert.is_true(out[2] > 0 and out[2] < across,
         ("the southern arm sits %.2f out, where the side is %.2f"):format(out[2], across))
+      assert.is_true(math.abs(out[2]) < math.abs(out[1]),
+        "the southern arm was not lifted onto the hull")
     end)
   end)
 

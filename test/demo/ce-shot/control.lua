@@ -10,10 +10,9 @@ local SETTLE = 70    -- long enough for an arm to be out and mid reach, short en
 
 --- Which marks to photograph, by the title the showroom gives the bay, and how close.
 local WANTED = {
-  { title = "Arms on the legs", zoom = 2.5, drive = true },
-  { title = "Arms on a train", zoom = 2, drive = true },
-  { title = "Arms on the hull", zoom = 2.5, drive = true },
-  { title = "Arms on a car", zoom = 2.5, drive = true },
+  { title = "Arms on the hull", zoom = 4, drive = true, facing = defines.direction.east },
+  { title = "Arms on the hull", zoom = 4, drive = true, facing = defines.direction.north },
+  { title = "Arms on a train", zoom = 2.5, drive = true },
 }
 
 local function marks()
@@ -70,6 +69,12 @@ script.on_event(defines.events.on_tick, function()
       if best then
         best.set_driver(player)
         state.riding = best
+        -- Turned to face the way this shot wants it, since what a hull's arms look like
+        -- depends on which way round the hull is.
+        if wanted.facing then
+          local ok = pcall(function() best.orientation = wanted.facing / 16 end)
+          if not ok then best.direction = wanted.facing end
+        end
         -- Something for the arms to be doing. A vehicle parked at the end of its row has
         -- either finished its own row or never reached it, and an arm with nothing to do is
         -- an arm nobody can photograph, so fresh ghosts go down along both flanks -- which
@@ -119,6 +124,7 @@ script.on_event(defines.events.on_tick, function()
     or (mark and { x = mark.x + 4, y = mark.y })
   if mark then
     local name = wanted.title:lower():gsub("[^%w]+", "-")
+      .. (wanted.facing and ("-facing-" .. wanted.facing) or "")
     game.take_screenshot{
       player = player,
       surface = game.surfaces[remote.call("ce-demo", "surface")],

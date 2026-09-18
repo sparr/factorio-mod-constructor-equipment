@@ -642,13 +642,27 @@ end
 --- How far the near side of a hull is drawn above the ground it stands on, as a share of
 --- the hull's own half width.
 ---
---- Measured on a tank at twice zoom, which is the only way to get at it: nothing in the
---- prototype says how tall a body is drawn. Its sprite stops 0.78 tiles south of its middle
---- where the selection box says 0.9, and the treads run from there up to about 0.5, so the
---- side of the hull an arm should be bolted to is four tenths of a tile above where the box
---- puts it. Four tenths of a tank's 0.9 is the fraction below, and a smaller vehicle gets a
---- smaller lift out of it, which is the right way for a guess to be wrong.
-local TREADS = 0.45
+--- Nothing in the prototype says how tall a body is drawn, so this is measured off the
+--- screen. It was four tenths, taken from where a tank's treads stop, and it put the arms
+--- at the foot of the treads rather than on the body above them: a claw hanging off the
+--- bottom of a tank driving past, where a player expects one out of its flank.
+---
+--- A half, with the bases brought inboard by INSIDE below, draws a tank's near arm a fifth
+--- of a tile south of its middle -- up on the body, above the running gear, which is where
+--- a character wears theirs. Eight tenths was tried first and lifted it past the middle of
+--- the hull and out of the top of it.
+---
+--- A share of the hull rather than a fixed height, so a small vehicle gets a small lift.
+local TREADS = 0.5
+
+--- How far in from the edge of a hull an arm is bolted, as a share of the hull's half
+--- width.
+---
+--- On the outer edge is where they were, and on a tracked or wheeled thing the outer edge
+--- is the running gear: a tank's arms stood on its tracks and a car's hung off its wheel
+--- arches. Brought in a quarter of the way they sit on the body the tracks carry, which is
+--- also where a player would expect a thing bolted to a vehicle to be.
+local INSIDE = 0.75
 
 ---Where an arm stands on the ground, which is where its reach is measured from.
 ---
@@ -703,7 +717,7 @@ local function station_on(wearer, slot, count)
     else
       local across, along = hull_of(wearer)
       offset = pack.mount(facing_of(wearer), (slot or 1) - #legs,
-        math.max(1, (count or 1) - #legs), across, along)
+        math.max(1, (count or 1) - #legs), across * INSIDE, along * INSIDE)
     end
   end
   return { x = at.x + offset.x, y = at.y + offset.y }
