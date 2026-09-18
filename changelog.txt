@@ -12,6 +12,7 @@ Version: 2.1.5
     - The arms now clear away what you mark with a deconstruction planner, entities and tiles alike, carrying it home in the claw
     - A thing with something in it is emptied a clawful at a time and taken up last, once it is empty, the way construction robots do it
   Changes:
+    - An arm is fed whether or not it has anything to do, so one that has been standing about is ready the moment work arrives rather than spending its first ticks filling up
     - A character with something to build in reach and not the charge to build it wears the game's own low power mark, so an armour that has run flat says so rather than looking like nothing happening
     - Arms on a locomotive build out of the cargo wagons in its train, since a locomotive has no hold of its own
     - The equipment is one tile wide and a tile taller with every tier: one by two, three, four and five as they go up, so a modular armour holds one of any of them

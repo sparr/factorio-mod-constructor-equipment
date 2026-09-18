@@ -456,7 +456,11 @@ end
 ---@return boolean
 local function ready(record)
   local piece = record.piece
-  return piece ~= nil and piece.valid and piece.energy >= piece.max_energy
+  if not (piece ~= nil and piece.valid) then return false end
+  -- What it must be holding, not all it can hold. A buffer that something is drawing from
+  -- is never exactly full, and an arm out on its owner's back draws its inserter's standing
+  -- drain whether it is working or not. See tiers.DEPARTURE.
+  return piece.energy >= tier_of(record).departure
 end
 
 ---The pieces of a given tier's equipment in a grid, in a settled order.
@@ -1840,12 +1844,13 @@ local function aim(player, wearer, record, slot, count, job)
   local arm = arm_of(player, wearer, record)
   if not (arm and arm.valid) then return nil end
 
-  -- Fed only while it has something to do. An arm idling on its owner's back still draws
-  -- its inserter's standing drain, and feeding that out of the equipment left the buffer a
-  -- few joules short of full for as long as the arm was out -- which, since setting off
-  -- wants a full buffer, meant waiting the better part of a second between every reach.
-  -- Idle, it runs its own buffer down instead, and is filled again when work arrives.
-  if job then charge(record, arm) end
+  -- Fed whether or not it has anything to do. The standing drain an idle arm pulls used to
+  -- keep its equipment a hair under full, and setting off waited on exactly full, so an
+  -- idle arm had to be starved to keep it able to leave at all. Now that setting off asks
+  -- for two and a half reaches out of a buffer that holds three, the drain lives in the
+  -- half reach of headroom and touches nothing. An arm that has been standing about is
+  -- therefore full when work arrives, rather than spending its first ticks filling up.
+  charge(record, arm)
   local mount, lift = mounting(wearer, slot, count)
   arm.teleport(mount)
   -- Remembered for as long as the arm is out, because everything aimed at from here is

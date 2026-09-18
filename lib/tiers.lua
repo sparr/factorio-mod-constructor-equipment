@@ -35,8 +35,7 @@ tiers.SCALE = 0.2
 --- it at all: a better arm is a lighter one to carry.
 tiers.SLOWED = 3/8
 
---- How many reaches' worth of charge an armour must have before an arm will set off, so
---- that an arm never stops halfway with an item in its hand.
+--- How many reaches' worth of charge a piece of the equipment holds.
 ---
 --- Three rather than two since the claw started delivering into a box on the ghost. The
 --- engine takes the hand all the way onto its target and finishes the swing itself now,
@@ -47,9 +46,30 @@ tiers.SLOWED = 3/8
 ---
 --- Asking for more costs a well powered character nothing, because an equipment buffer
 --- refills from charged batteries in a single tick at every tier. What it buys is the
---- badly powered case: an armour that cannot raise three reaches keeps its arm at home
---- rather than sending it out on a journey it cannot finish.
+--- badly powered case: an armour that cannot raise the departure threshold keeps its arm at
+--- home rather than sending it out on a journey it cannot finish.
 tiers.RESERVE = 3
+
+--- How many reaches' worth an arm must have in hand before it will set off.
+---
+--- Below the capacity above on purpose, and this is the whole of the difference between the
+--- two numbers. They were one number for a while, on the grounds that a capacity and a
+--- threshold to check against said the same thing twice, and being one number meant setting
+--- off waited on a buffer that was exactly, completely full.
+---
+--- Nothing that draws can leave a buffer exactly full. An arm out on its owner's back still
+--- pulls its inserter's standing drain -- a few joules a tick -- so an armour topping that
+--- up sat perpetually a hair under the mark and its arm waited the better part of a second
+--- between every reach. The mod's answer was to stop feeding an idle arm at all, which
+--- worked and cost three things: an arm that had been idle spent its first ticks back
+--- filling up instead of moving, an idle arm reported itself out of power because it was,
+--- and the low power mark built on that reading fired on every idle arm and never on a flat
+--- armour.
+---
+--- Half a reach of headroom is enough for a trickle to live in. An arm is fed whether or not
+--- it has anything to do, the drain comes out of the top half reach, and the number that
+--- decides whether it may set off is never touched by it.
+tiers.DEPARTURE = 2.5
 
 --- What a base game bulk inserter holds with no capacity research done. The engine gives
 --- anything with bulk = true this much and then adds the force's bulk inserter capacity
@@ -261,6 +281,9 @@ for level, spec in ipairs(DEFINED) do
   --- a safety margin to be wrong.
   tier.reach_energy = 2 * reach * spec.movement
   tier.reserve = tier.reach_energy * tiers.RESERVE
+  --- What it must have in hand before it sets off, which is less than it can hold: see
+  --- tiers.DEPARTURE.
+  tier.departure = tier.reach_energy * tiers.DEPARTURE
   tiers.list[level] = tier
   tiers.by_name[name] = tier
   tiers.by_level[level] = tier

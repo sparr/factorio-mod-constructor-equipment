@@ -125,8 +125,31 @@ describe("the tiers", function()
   it("wants a couple of its own reaches in hand before setting off", function()
     for _, tier in ipairs(tiers.list) do
       assert.are.equal(tier.reach_energy * tiers.RESERVE, tier.reserve)
-      assert.is_true(tier.reserve > 2 * 2 * tier.range * tier.movement * 0.9,
-        "tier " .. tier.level .. " reserves less than two reaches")
+      assert.are.equal(tier.reach_energy * tiers.DEPARTURE, tier.departure)
+      assert.is_true(tier.departure > 2 * 2 * tier.range * tier.movement * 0.9,
+        "tier " .. tier.level .. " sets off on less than two reaches")
+    end
+  end)
+
+  -- The headroom the standing drain lives in. Setting off on exactly what a piece can hold
+  -- means setting off on a buffer that is exactly full, and a buffer something is drawing
+  -- from never is: an arm out on its owner's back pulls its inserter's drain whether it is
+  -- working or not, and an armour topping that up sat perpetually a hair under the mark.
+  it("holds more than it needs in hand to set off", function()
+    for _, tier in ipairs(tiers.list) do
+      assert.is_true(tier.departure < tier.reserve,
+        "tier " .. tier.level .. " can only set off on a completely full buffer")
+      assert.is_true(tier.reserve - tier.departure >= tier.reach_energy * 0.4,
+        "tier " .. tier.level .. " leaves too little headroom for the drain to live in")
+    end
+  end)
+
+  -- Two ghosts half a turn apart were measured at 1.85 reaches, so what an arm sets off on
+  -- has to be more than that or it can still stop halfway holding something.
+  it("sets off on more than the longest journey measured", function()
+    for _, tier in ipairs(tiers.list) do
+      assert.is_true(tier.departure > tier.reach_energy * 1.85,
+        "tier " .. tier.level .. " could set off on a journey it cannot finish")
     end
   end)
 
