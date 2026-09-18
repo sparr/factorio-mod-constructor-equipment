@@ -366,6 +366,54 @@ end)
 --- fetching -- seven tenths of a tile on a character -- so anything with a neighbour one
 --- tile north of it put the box on the neighbour's tile, and the arm stood there doing
 --- nothing until the swing limit gave up on it. Which is a line of belts, every time.
+--- Nowhere to put what comes back.
+---
+--- A claw that is already holding a player's belt and finds their pockets full keeps hold
+--- of it and waits, because putting it on the floor is worse. That is right once the thing
+--- is in the claw and it is no reason to set off: an arm that goes out for something it
+--- cannot put down anywhere comes home holding it and stands there, worn and slowing its
+--- owner, doing nothing at all.
+describe("a thing marked with nowhere to put it", function()
+  before_each(function()
+    world.equipped(player)
+    player.get_inventory(defines.inventory.character_main).clear()
+  end)
+
+  ---Four of them, all inside a first tier arm's two tiles.
+  local function marked_about()
+    for _, at in ipairs{ { 2, 0 }, { 1, 1 }, { 1, -1 }, { 0, -2 } } do
+      doomed(BELT, at[1], at[2])
+    end
+  end
+
+  it("is left standing, with the arm in", function()
+    marked_about()
+    world.fill_pockets(player)
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(4, world.count(player, BELT),
+        "something was taken up with nowhere to put it")
+      assert.are.equal(0, #world.arms(player),
+        "an arm came out for work it could not finish")
+      assert.is_nil(world.slowed_by(player),
+        "the character is being slowed by an arm that is doing nothing")
+    end)
+  end)
+
+  it("goes up as soon as there is room for it", function()
+    marked_about()
+    world.fill_pockets(player)
+    after_ticks(world.CYCLE, function()
+      local main = player.get_inventory(defines.inventory.character_main)
+      for slot = 1, 6 do main[slot].clear() end
+      after_ticks(world.CYCLE * 5, function()
+        assert.are.equal(0, world.count(player, BELT),
+          world.count(player, BELT) .. " were left standing once there was room")
+        assert.are.equal(4, player.get_item_count(BELT), "they did not all come home")
+      end)
+    end)
+  end)
+end)
+
 describe("several things marked side by side", function()
   ---@param laid table[] offsets from the character
   local function doomed_at(laid)

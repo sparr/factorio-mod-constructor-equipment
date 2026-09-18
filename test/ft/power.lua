@@ -103,6 +103,28 @@ describe("the arm's power", function()
     end)
   end)
 
+  -- The other side of the same ledger, and the reason a walk round of the showroom read
+  -- the armour as refilling itself. What the player watches is the armour's own charge, and
+  -- that does jump the moment an arm folds away: a first tier buffer is a couple of
+  -- movements' worth and it all goes back at once. Measured over a run with an idle gap in
+  -- it, the armour rose by 10660J and the armour and the claw together rose by nothing at
+  -- all, which is the whole of what this asks.
+  it("is not made out of nothing when the arm is put away", function()
+    world.ghost(player, BELT, 2, 0)
+    local ceiling
+    after_ticks(world.CYCLE, function()
+      local arm = world.arm(player)
+      assert.is_not_nil(arm, "the arm was already put away")
+      ceiling = stored() + arm.energy
+    end)
+    after_ticks(world.CYCLE + 90, function()
+      assert.is_nil(world.arm(player), "the arm is still out")
+      assert.is_true(stored() <= ceiling,
+        ("the grid holds %.0fJ where the grid and the arm together held %.0fJ")
+          :format(stored(), ceiling))
+    end)
+  end)
+
   it("is not burnt by an idle character", function()
     local before = stored()
     after_ticks(A_BUILD * 4, function()

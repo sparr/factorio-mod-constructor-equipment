@@ -521,7 +521,12 @@ describe("following the inserter capacity research", function()
     player.insert{ name = BELT, count = 40 }
     world.several(player, BELT, 12)
     local most = { n = 0 }
-    for n = 2, ticks do
+    -- From the first tick rather than the second. What is being looked for is the number
+    -- the claw set off with, which lives from the departure until the first delivery, and
+    -- the departure falls on the mod's own check tick -- whose phase against the start of a
+    -- test moves whenever a test is added anywhere before this one. Starting a tick late
+    -- read 10 of an 11 the claw had already begun spending.
+    for n = 1, ticks do
       after_ticks(n, function()
         local job = world.job(player)
         if job then most.n = math.max(most.n, job.left or 1) end
@@ -922,6 +927,55 @@ describe("four arms, one of each tier, offered four ghosts at once", function()
           ("the %d tile arm was sent to %s rather than to the ghost %d tiles out"):format(
             away + 1, tostring(sent[away + 1]), away))
       end
+    end)
+  end)
+end)
+
+--- A round of many, at the very edge of what an arm can reach.
+---
+--- The swing limit is there to catch a reach that cannot finish, and it used to be answered
+--- by turning the claw to another ghost rather than by giving up. That could not stop: the
+--- limit is measured from when the leg began, turning to another left that where it was, so
+--- the next tick had run over as well. Measured on twelve ghosts on a circle of exactly five
+--- tiles, a bulk claw built three of them and then turned to a fresh one on every tick for
+--- as long as it was watched -- four hundred turns, nothing delivered, and never home.
+---
+--- Two things were wrong and both are fixed here. A reach that has run over is written off
+--- rather than redirected, because pointing a stuck claw somewhere else does not unstick it;
+--- and a claw that does turn to another ghost starts the clock again, because that is a new
+--- leg, which is what the fetch side has always done.
+describe("a bulk claw working a ring at the edge of its reach", function()
+  --- Twelve points at exactly five tiles, which the integer grid allows because of the
+  --- three four five triangle.
+  local RING = {
+    { 5, 0 }, { 4, 3 }, { 3, 4 }, { 0, 5 }, { -3, 4 }, { -4, 3 },
+    { -5, 0 }, { -4, -3 }, { -3, -4 }, { 0, -5 }, { 3, -4 }, { 4, -3 },
+  }
+
+  --- Put back afterwards. The research is the force's, so a test that leaves it on hands
+  --- every test after it a claw that holds eleven.
+  after_each(function()
+    for n = 1, 3 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = false end
+    end
+    player.force.technologies["bulk-inserter"].researched = false
+  end)
+
+  it("clears every one of them", function()
+    for n = 1, 3 do
+      local tech = player.force.technologies["inserter-capacity-bonus-" .. n]
+      if tech then tech.researched = true end
+    end
+    player.force.technologies["bulk-inserter"].researched = true
+    world.equip(player, { tiers.list[4].name, "fission-reactor-equipment",
+      "battery-mk2-equipment" }, true, "power-armor")
+    player.insert{ name = BELT, count = 60 }
+    for _, at in ipairs(RING) do world.ghost(player, BELT, at[1], at[2]) end
+    -- Measured at 1110 ticks, where before this it never finished at all.
+    after_ticks(2000, function()
+      assert.are.equal(0, world.ghosts(player),
+        world.ghosts(player) .. " of the twelve are still standing")
     end)
   end)
 end)

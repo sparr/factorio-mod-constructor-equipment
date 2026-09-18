@@ -375,6 +375,25 @@ describe("a character wearing the equipment", function()
       return total, marked, stranger
     end
 
+    -- The claw goes back for the shed, because the shed is marked and marked things are
+    -- work like any other. What it must not go on to is the chest it has just put down: that
+    -- is the player's, nobody marked it, and emptying it would undo the swap a plate at a
+    -- time.
+    it("does not go on to empty the chest it just built", function()
+      full_chest_marked_down()
+      after_ticks(world.CYCLE * 12, function()
+        local standing = player.surface.find_entities_filtered{ name = "iron-chest",
+          position = { world.ORIGIN.x + 2, world.ORIGIN.y }, radius = 0.6 }[1]
+        assert.is_not_nil(standing, "the chest the swap put down is gone")
+        local inside = standing.get_inventory(defines.inventory.chest)
+        assert.are.equal(3200, inside.get_item_count("iron-plate"),
+          ("the new chest is down to %d of the 3200 it took")
+            :format(inside.get_item_count("iron-plate")))
+        assert.is_false(standing.to_be_deconstructed(),
+          "something marked the chest the swap put down")
+      end)
+    end)
+
     it("leaves it on the ground rather than in the character's pockets", function()
       full_chest_marked_down()
       -- The tick they are shed, rather than a tick the swap ought to have happened by. The

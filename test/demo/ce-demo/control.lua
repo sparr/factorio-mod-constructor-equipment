@@ -320,7 +320,7 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
         end },
       { "What a swing costs",
-        "Stand on the mark and open your armour. It takes the reactor back off, leaving one small battery: with a reactor in there the charge comes back faster than a swing can spend it and there is nothing to watch.",
+        "Stand on the mark and open your armour. It takes the reactor back off, leaving one small battery: with a reactor in there the charge comes back faster than a swing can spend it and there is nothing to watch. The jump back up when the arm folds away is the claw handing back what was left in its own buffer, which is a couple of swings' worth: an arm coming and going costs nothing either way.",
         function(x, y)
           bay_kit(x + 5, y + 6, {
             armour = "power-armor",

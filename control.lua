@@ -1209,6 +1209,27 @@ local function work_near(wearer, range)
   return found
 end
 
+---Whether there is anywhere to put what taking this up would bring back.
+---
+---An arm that sets off for something it has nowhere to put comes home holding it and
+---stands there, worn, slowing its owner and doing nothing, until somewhere turns up. That
+---is the right thing to do once the claw is holding a player's belt -- dropping it on the
+---floor because their pockets filled is worse -- and it is no reason to set off in the
+---first place. So a fetch is only taken on if what it will bring back will go somewhere.
+---
+---What it will bring back is the first clawful rather than the thing itself: a chest with
+---something in it is emptied before it goes, so what has to fit is what is inside it.
+---@param inventory LuaInventory
+---@param work LuaEntity
+---@return boolean
+local function room_for(inventory, work)
+  local name, grade = yields(work)
+  -- Nothing comes back from it, so nowhere to put it is no obstacle. A tile marked for
+  -- removal whose prototype yields nothing is still worth taking up.
+  if not name then return true end
+  return inventory.can_insert{ name = name, quality = grade, count = 1 }
+end
+
 ---Pick something to build out of what was found near the player.
 ---
 ---Asks nothing about power: a claw already out and carrying does not have to bank a fresh
@@ -1323,7 +1344,8 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
       --
       -- Two arms both reaching for the same ghost would mean one of them delivering into a
       -- space the other had already built in, and coming home having wasted a swing.
-      if (item or taking(ghost)) and not (claimed and claimed[claim_of(ghost)])
+      if (item or (taking(ghost) and room_for(inventory, ghost)))
+          and not (claimed and claimed[claim_of(ghost)])
           and not standing_in(ghost, standing)
           and not reach.out_of_range(from, ghost.position, range)
           and buildable(ghost) then
@@ -2938,8 +2960,10 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     local to = aimed_at(job, record)
     arm.drop_position = { to.x, to.y }
     -- A new leg of the journey, so the swing limit counts from here rather than from the
-    -- start of a round that may take half a dozen of them.
-    job.started = game.tick
+    -- start of a round that may take half a dozen of them. The leg rather than the journey:
+    -- job.started says which journey this is and does not move, since a round that turns to
+    -- a fresh thing is still the same round.
+    job.leg = game.tick
     return true
   end
 
@@ -2978,6 +3002,10 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
   job.ghost = ghost
   job.target = ghost.position
   job.shift = nil
+  -- A new leg, so the swing limit counts from here. The fetch path above has always done
+  -- this and this one did not, so a long round wrote itself off partway through on a clock
+  -- that had been running since its first ghost.
+  job.leg = game.tick
   return true
 end
 
@@ -3091,10 +3119,23 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
 
     -- the character can walk off mid swing, or the vehicle drive off, and an arm that
     -- stretched to follow would be no kind of inserter
-    if not still_wanted(job.ghost)
+    -- A reach that has run over its limit is a reach that is not getting anywhere, and
+    -- pointing it at something else will not unstick it. It is written off where it
+    -- stands, and the claw comes home.
+    --
+    -- Turning to another ghost instead is what it used to do, and it could not stop: the
+    -- limit is measured from when the leg began, redirect left that where it was, so the
+    -- next
+    -- tick had run over as well. Measured on a round of twelve at five tiles, the claw
+    -- built three, reached three hundred ticks of age on the third, and then turned to a
+    -- fresh ghost on every tick for as long as it was watched -- four hundred turns, no
+    -- deliveries, and never home.
+    local over = game.tick - (job.leg or job.started or game.tick) > SWING_LIMIT
+    if over then
+      abandon(record, job)
+    elseif not still_wanted(job.ghost)
         or standing_in(job.ghost, wearer.position)
-        or reach.out_of_range(from, job.ghost.position, tier_of(record).range)
-        or game.tick - (job.started or game.tick) > SWING_LIMIT then
+        or reach.out_of_range(from, job.ghost.position, tier_of(record).range) then
       local tier = tier_of(record)
       if not redirect(player, wearer, from, record, job, claimed, tier.range, nearby) then
         abandon(record, job)
@@ -3109,7 +3150,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     end
   elseif reach.distance(arm.held_stack_position, record.rest or mounting(wearer, slot, count))
         < within(tier_of(record), HOME, moved)
-      or game.tick - (job.started or game.tick) > SWING_LIMIT then
+      or game.tick - (job.leg or job.started or game.tick) > SWING_LIMIT then
     -- Home is the mounting point, which is not where the character's feet are. Anything
     -- still in the claw was paid for on the way out, so it is handed back rather than
     -- destroyed. If it will not fit and the player would rather not have it on the ground,
@@ -3200,7 +3241,13 @@ local function assign(player, wearer, list, tick, nearby)
           quality = quality,
           count = count,
           going = "out",
+          -- When this journey began, which is what says one journey from the next. It does
+          -- not move when the claw turns to another thing: that is the same journey going
+          -- on.
           started = tick,
+          -- When this leg of it began, which is what the swing limit is measured from. A
+          -- round of half a dozen is half a dozen legs and each gets its own clock.
+          leg = tick,
         }
         -- Paid for on the way out, not on arrival. Filling the claw from nothing made
         -- every item in it a counterfeit, so any path where the engine put one somewhere
