@@ -521,6 +521,32 @@ describe("equipment in a vehicle's own grid", function()
   end)
 end)
 
+--- A vehicle's own arms, reaching for what is lying under it.
+---
+--- A claw stuttering for ever over a plate beneath the hull was the same arrival test as a
+--- character walking past one: a fetch waited for the engine to say the hand was settled
+--- over its source, and an arm bolted to something that moves never settles.
+describe("a vehicle over something marked", function()
+  it("picks up what is lying under it", function()
+    local tank = world.vehicle(player)
+    world.fit(tank, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    for _, at in ipairs{ { 0, 0 }, { 0, 2.5 } } do
+      local loose = player.surface.create_entity{ name = "item-on-ground",
+        position = { tank.position.x + at[1], tank.position.y + at[2] },
+        stack = { name = BELT, count = 1 } }
+      assert.is_not_nil(loose, "the plate would not go on the floor")
+      loose.order_deconstruction(player.force)
+    end
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(0, player.surface.count_entities_filtered{
+        name = "item-on-ground", position = tank.position, radius = 6 },
+        "something marked was left lying under the tank")
+      local hold = tank.get_inventory(defines.inventory.car_trunk)
+      assert.are.equal(2, hold.get_item_count(BELT), "they did not come home to the hold")
+    end)
+  end)
+end)
+
 describe("the slowdown a vehicle's arms ask for", function()
   local tank
 

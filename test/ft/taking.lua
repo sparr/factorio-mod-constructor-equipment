@@ -58,12 +58,23 @@ describe("a thing marked for deconstruction", function()
     end)
   end)
 
+  -- Watched rather than sampled. What this is about is the belt spending time in the claw
+  -- on its way back, and exactly when that falls moves with how quickly the claw arrives.
   it("comes home in the claw rather than teleporting", function()
     doomed(BELT, 2, 0)
-    after_ticks(world.DELIVERED, function()
-      assert.are.equal(0, world.count(player, BELT), "the belt has not been taken up yet")
-      assert.are.equal(BELT, world.held(player), "the claw is not carrying it")
-      assert.are.equal(0, player.get_item_count(BELT), "it went straight to the pockets")
+    local carried, early = false, false
+    for n = 1, world.CYCLE * 2 do
+      after_ticks(n, function()
+        if world.held(player) == BELT then carried = true end
+        -- In the pockets before it was ever seen in the hand is the teleport this forbids.
+        if not carried and player.get_item_count(BELT) > 0 then early = true end
+      end)
+    end
+    after_ticks(world.CYCLE * 2 + 5, function()
+      assert.are.equal(0, world.count(player, BELT), "the belt was never taken up")
+      assert.is_true(carried, "the claw never carried it")
+      assert.is_false(early, "it was in the pockets before the claw ever held it")
+      assert.are.equal(1, player.get_item_count(BELT), "it never arrived")
     end)
   end)
 
@@ -165,9 +176,20 @@ describe("several things marked at once", function()
     -- marked far first, so index order and distance order disagree
     far.order_deconstruction(player.force)
     near.order_deconstruction(player.force)
-    after_ticks(world.DELIVERED, function()
-      assert.is_false(near.valid, "it went for the far one first")
-      assert.is_true(far.valid, "both went at once")
+    -- Which went first, rather than which had gone by a given tick: a claw that is quick
+    -- enough can have both by then, and that says nothing about the order it went in.
+    local order = {}
+    for n = 1, world.CYCLE * 2 do
+      after_ticks(n, function()
+        if not near.valid and not order.near then order.near = n end
+        if not far.valid and not order.far then order.far = n end
+      end)
+    end
+    after_ticks(world.CYCLE * 2 + 5, function()
+      assert.is_not_nil(order.near, "the near one was never taken up")
+      assert.is_true(order.far == nil or order.near < order.far,
+        ("the far one went on tick %s and the near one on %s")
+          :format(tostring(order.far), tostring(order.near)))
     end)
   end)
 end)
@@ -422,6 +444,42 @@ end)
 --- of the chest instead, handed them to its owner, and went back for five more, while the
 --- plate it had been sent for lay there. Measured on a showroom save: fourteen hundred
 --- marked plates on the ground, untouched, and the chest counting down.
+--- Marked things gone past rather than stood next to.
+---
+--- A fetch used to call itself arrived when the engine said the hand was waiting for source
+--- items, which an inserter reports once it is there and settled. An arm rides on somebody
+--- who is walking, so its hand is re-aimed every tick and never settles: measured on a
+--- character strolling past ten marked plates, the claw reached every one of them, sat on
+--- it, and took none of the ten.
+describe("things marked on the ground while their owner walks past", function()
+  it("picks them up on the way by", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    player.get_inventory(defines.inventory.character_main).clear()
+    local laid = 0
+    for step = 0, 9 do
+      local loose = player.surface.create_entity{ name = "item-on-ground",
+        position = { world.ORIGIN.x + 2 + step * 1.5, world.ORIGIN.y + 1.5 },
+        stack = { name = BELT, count = 1 } }
+      if loose then
+        loose.order_deconstruction(player.force)
+        laid = laid + 1
+      end
+    end
+    assert.are.equal(10, laid, "the scatter did not go down")
+    -- Walked past at a ninth of a tile a tick, which is a stroll.
+    for n = 1, 400 do
+      after_ticks(n, function()
+        player.teleport({ world.ORIGIN.x + n * 0.09, world.ORIGIN.y })
+      end)
+    end
+    after_ticks(420, function()
+      assert.are.equal(10, player.get_item_count(BELT),
+        ("only %d of the ten were picked up on the way past")
+          :format(player.get_item_count(BELT)))
+    end)
+  end)
+end)
+
 describe("a thing marked beside something full", function()
   it("takes what it was sent for and leaves the chest alone", function()
     world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)

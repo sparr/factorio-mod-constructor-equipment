@@ -2780,7 +2780,19 @@ local function take_up(player, wearer, record, job, claimed, nearby, from, range
     if record.rest then arm.drop_position = { record.rest.x, record.rest.y } end
     return
   end
-  if arm.status ~= defines.entity_status.waiting_for_source_items then return end
+  -- Arrived, measured as a distance rather than asked of the engine. An inserter reaching
+  -- for an empty source reports waiting_for_source_items once it is there, and that was
+  -- what this used -- but only once it is there and *settled*. An arm rides on somebody who
+  -- is walking, so the hand is re-aimed every tick and never settles: measured on a
+  -- character strolling past ten marked plates at a ninth of a tile a tick, the claw
+  -- reached every one of them, sat on it, and took none of the ten.
+  --
+  -- The same window and the same frame the crossing branch above uses, which has always
+  -- measured it this way.
+  if reach.distance(arm.held_stack_position, aimed_at(job, record))
+      > within(tier_of(record), HOME) then
+    return
+  end
 
   local box = record.catcher
   if not (box and box.valid) then return end
