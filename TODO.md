@@ -15,30 +15,40 @@ to fix.
 
 ## 12. An arm should aim where its target will be, not where it is
 
-Half done, and the other half looks like a dead end.
-
 An arm does not set off for something its owner is walking away from that it could not reach
-in time. That part stands: twenty four departures become fifteen on a pass of ghosts laid
-abeam, and every delivery that landed before still lands.
+in time. That part is in and measured: twenty four departures become fifteen on a pass of
+ghosts laid abeam, and every delivery that landed before still lands.
 
-Aiming a held course at the meeting point does not pay, and the reason is worth keeping.
-The earliest meeting on a fixed bearing is the smaller root of |D - v*n| = r0 + n*extension,
-which is a quadratic, and the straight line to it is the shortest path there -- that much is
-right, and it was implemented and checked against a brute force scan. What it leaves out is
-that the engine turns and extends at once, so the hand's reach at time t is not a disc of
-radius r0 + t*extension but an annulus sector, and a curve through that sector meets the
-target nearer in and sooner than any straight line can. Measured on a ghost one tile abeam
-of a fourth tier arm, on a fixture scrubbed between cases: chasing it took 17 ticks at a
-twentieth of a tile a tick where a course took 10, but 6 against 11 at seven hundredths, and
-3 against 7 at a ninth. One win, two losses, and the losses are the bigger share of the
-swing.
+The rest is open, and the interesting half of it is that an arm only ever looks as far as
+its own reach. work_near searches range plus the hull's spread round where its owner is
+standing, so a ghost is invisible until it is already in reach, and the hand starts
+unfolding at the moment the thing is level rather than being out there waiting for it. A
+first tier hand takes 57 ticks to go from folded to full stretch, which is five tiles of
+walking. Looking ahead by a full stretch of the slowest arm is the obvious fix and it was
+built far enough to measure.
 
-So the next attempt wants the sector rather than the disc: the soonest t at which the
-target's track crosses both what the hand can extend to and what it can turn to by then,
-and aim at that. Whether it beats simply aiming at the thing -- which is what the arms do
-now, and which already arrives at about that bound wherever the bearing is trackable -- is
-the question to answer before writing any of it.
+It is not simply a win, and the obstacles are worth writing down.
 
-The tiers' own numbers are the other half. A first tier hand extends at 0.035 tiles a tick
-against a walk of 0.09 to 0.15, so it cannot reach most of what goes past its owner whatever
-it aims at, and the fourth tier's 0.1 is only just enough.
+- The arm is hardly ever idle in a dense row, so there is no time to leave early in: traced
+  on twelve ghosts two tiles apart, the first departure was early and every one after it was
+  for something already in reach. The case that pays is a scattered yard, where the arm has
+  been home for a while. At fourteen tiles apart and a fast walk, a fourth tier arm went from
+  four of eight to eight of eight.
+- The first tier cannot use it. Its hand extends at 0.035 tiles a tick, so at a walk of 0.13
+  there is no meeting to be had at all, and setting off early for one spends the swing that
+  would have caught the next. Gating on whether a meeting exists is necessary and was not
+  sufficient: the first tier still came out worse.
+- Holding the load is the hard part. What a tier calls its range is this mod's own word and
+  not a limit the engine keeps: measured on 2.1.19, a two tile arm told to drop six tiles out
+  stretched to 5.72 and put the belt on the ground. So an arm out early has to hold what it
+  is carrying, which means the pickup and the drop being the same point, which means the mod
+  has to make the handover itself -- and every version of that so far has leaked an item or
+  two onto the floor across a run.
+
+The way round the last one is probably to set off with an empty claw and load it when the
+thing comes into reach. An empty hand reaches for its pickup rather than its drop, which is
+the aiming a fetch already uses, so the arm would stretch out towards the meeting point with
+nothing in it to drop, and the claw would be filled from the pockets at the moment it
+arrives. Nothing to shed means nothing to lose. What that costs is the accounting: the
+pockets are charged when an arm sets off, deliberately, so that nothing the engine does
+afterwards can mint an item, and moving the charge to arrival wants care.
