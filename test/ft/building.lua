@@ -572,3 +572,70 @@ describe("a load the engine put on the ground", function()
     end)
   end)
 end)
+
+--- What an arm does about a ghost its owner is walking away from.
+---
+--- A ghost abeam of somebody under way is left behind faster than a claw can follow: the
+--- bearing to a thing one tile to the side of a character strolling at a ninth of a tile a
+--- tick sweeps at nearly twice the speed the last tier's arm can turn, so the hand trails it
+--- and never lands. Nothing aims its way out of that. What the arm can do is not go.
+describe("a ghost its owner is walking away from", function()
+  ---Walk east at `pace` from the arena's middle, for as long as the caller wants.
+  local function stroll(pace, ticks, watch)
+    for n = 1, ticks do
+      after_ticks(n, function()
+        player.teleport({ world.ORIGIN.x + n * pace, world.ORIGIN.y })
+        if watch then watch(n) end
+      end)
+    end
+  end
+
+  before_each(function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    player.get_inventory(defines.inventory.character_main).clear()
+    player.insert{ name = BELT, count = 50 }
+  end)
+
+  -- Laid down astern of a character already under way, so there is no approach to deliver
+  -- on and the whole swing would be spent chasing a bearing going aft.
+  it("does not set off for one it cannot reach in time", function()
+    local swings, had = 0, false
+    after_ticks(1, function() world.ghost(player, BELT, -1, 3) end)
+    stroll(0.09, 160, function()
+      local working = world.job(player) ~= nil
+      if working and not had then swings = swings + 1 end
+      had = working
+    end)
+    after_ticks(180, function()
+      assert.are.equal(0, world.count(player, BELT),
+        "it built one it was walking away from, which would be a better test than this")
+      assert.are.equal(0, swings,
+        ("the arm set off %d times for a ghost it could never reach"):format(swings))
+    end)
+  end)
+
+  -- The other direction, which is the one this must not touch: walking towards a thing
+  -- shortens the reach as the hand goes, so a swing that looks too long from where the arm
+  -- stands is finished well before the estimate says. Judged both ways, an arm turned down
+  -- a row of twelve it had been building every one of.
+  it("still sets off for one it is walking towards", function()
+    for step = 0, 5 do world.ghost(player, BELT, 3 + step * 2, 1.2) end
+    local wanted = world.ghosts(player)
+    stroll(0.09, 300)
+    after_ticks(320, function()
+      assert.are.equal(wanted, world.count(player, BELT),
+        ("only %d of the %d ahead went up"):format(world.count(player, BELT), wanted))
+    end)
+  end)
+
+  -- Standing still, nothing is predicted at all and the edge of the range is the edge of
+  -- the range.
+  it("sets off for one at the edge of its reach when nobody is moving", function()
+    local range = tiers.list[4].range
+    world.ghost(player, BELT, range, 0)
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "a ghost at the edge of the range was left standing by a character stood still")
+    end)
+  end)
+end)

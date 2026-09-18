@@ -940,6 +940,67 @@ local function standing_clear(job, record, at)
   return nil
 end
 
+---Where an arm's base will have got to by the time its hand can reach a spot.
+---
+---Everything an arm reaches for is fixed in the world; the arm is not. It rides on somebody
+---walking or on something being driven, so how far away a thing is at the moment of asking
+---is not how far away it will be when the hand arrives. How long the hand needs is
+---reach.swing_ticks, the same estimate that puts targets in order, and the current heading
+---and speed are assumed to hold for that long -- nothing here knows where anybody is going,
+---and the last step is the best guess at the next one.
+---
+---A folded arm has its hand at its own base, which is where its next swing starts from.
+---This is read before an arm comes out as well as while one is out, and an arm that has not
+---come out yet is exactly the one worth not sending.
+---@param record table the arm
+---@param from {x: number, y: number} where it reaches from now
+---@param at {x: number, y: number} what it would reach for
+---@return {x: number, y: number}
+local function arriving_at(record, from, at)
+  local drift = record and record.drift
+  if not (drift and (drift.x ~= 0 or drift.y ~= 0)) then return from end
+  local arm = record.entity
+  local hand = (arm and arm.valid) and arm.held_stack_position or from
+  local ticks = reach.swing_ticks(tier_of(record), from, hand, at)
+  if ticks <= 0 then return from end
+  return { x = from.x + drift.x * ticks, y = from.y + drift.y * ticks }
+end
+
+---Whether a thing is out of reach, or will be by the time the hand gets to it.
+---
+---What this saves is the swing that was never going to arrive. A ghost abeam of somebody
+---walking is left behind faster than a claw can follow: measured on two dozen passes, with
+---a ghost laid down one to three tiles to the side of a character already under way, nine
+---of them were set off for and written off without a delivery. None of those nine is built
+---now either -- the arm cannot reach what its owner is walking away from, and no amount of
+---aiming changes that -- but none of them costs a swing, the charge that pays for it, or the
+---slowdown its owner wears while an arm is working.
+---
+---Only what its owner is walking away from, which is the whole of why this is a dot product
+---rather than a distance. Walking towards a thing shortens the reach as the hand goes, so a
+---swing that looks too long from here is finished long before the estimate says it will be:
+---predicted both ways, an arm turned down a row of twelve ghosts it had in fact been
+---building, every one of them, because the estimate had its owner overshooting past them.
+---Walking away is the honest direction -- the reach only gets longer from here.
+---
+---Asked when an arm is deciding to set off and not while it is out. A swing already under
+---way is judged on where its target is now, because the engine can still finish one this
+---says is hopeless: predicting mid swing as well threw away a delivery that landed on tick
+---forty five.
+---@param record table the arm
+---@param from {x: number, y: number} where it reaches from now
+---@param at {x: number, y: number} what it would reach for
+---@param range number
+---@return boolean
+local function out_of_reach(record, from, at, range)
+  if reach.out_of_range(from, at, range) then return true end
+  local drift = record and record.drift
+  if not (drift and (drift.x * (from.x - at.x) + drift.y * (from.y - at.y)) > 0) then
+    return false
+  end
+  return reach.out_of_range(arriving_at(record, from, at), at, range)
+end
+
 ---Where a claw is aimed for a ghost: the ghost, carried up into the frame the arm swings in.
 ---
 ---This is what keeps a lifted arm honest. The engine swings a hand out from wherever the
@@ -1490,7 +1551,7 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
       if (item or (taking(ghost) and room_for(inventory, ghost)))
           and not (claimed and claimed[claim_of(ghost)])
           and not standing_in(ghost, standing)
-          and not reach.out_of_range(from, ghost.position, range)
+          and not out_of_reach(record, from, ghost.position, range)
           and buildable(ghost) then
         return ghost, item, needed, quality
       end
@@ -3311,6 +3372,17 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
   -- every tick rather than remembered: the vehicle it is bolted to turns, and an arm on the
   -- back of one that has turned round is somewhere else entirely.
   local from = reaching_from(wearer, slot, count)
+
+  -- How far its owner went last tick, which is what out_of_reach() reads the future from.
+  -- Measured rather than asked for: a character answers walking_state, a car answers speed
+  -- and orientation, a spidertron answers neither in the same units and a train answers for
+  -- the whole train, where the difference between two positions is the same answer for all
+  -- of them, needs no model of any of them, and is what happened rather than what was meant
+  -- to.
+  local was = record.last_wearer
+  record.last_wearer = { x = wearer.position.x, y = wearer.position.y }
+  record.drift = was and { x = wearer.position.x - was.x, y = wearer.position.y - was.y }
+    or { x = 0, y = 0 }
 
   if job then
     record.busy = game.tick
