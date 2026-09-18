@@ -580,6 +580,24 @@ end)
 --- tick sweeps at nearly twice the speed the last tier's arm can turn, so the hand trails it
 --- and never lands. Nothing aims its way out of that. What the arm can do is not go.
 describe("a ghost its owner is walking away from", function()
+  --- Every case here walks its character a long way from the middle of the arena, so what
+  --- the last one left behind lies well outside the radius world.clear sweeps. Left there,
+  --- it is an arm's next job: a claw that turned round for a belt fifty tiles back is not
+  --- the swing the case meant to measure, and it read as a chase spending four times the
+  --- rotation it really does.
+  local function scrub()
+    player = world.player()
+    for _, thing in pairs(player.surface.find_entities_filtered{
+        position = world.ORIGIN, radius = 200 }) do
+      if thing.valid and (thing.name == BELT or thing.type == "entity-ghost"
+          or thing.type == "item-entity") then
+        thing.destroy()
+      end
+    end
+    player.teleport(world.ORIGIN)
+    world.clear(player)
+  end
+
   ---Walk east at `pace` from the arena's middle, for as long as the caller wants.
   local function stroll(pace, ticks, watch)
     for n = 1, ticks do
@@ -591,10 +609,13 @@ describe("a ghost its owner is walking away from", function()
   end
 
   before_each(function()
+    scrub()
     world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
     player.get_inventory(defines.inventory.character_main).clear()
     player.insert{ name = BELT, count = 50 }
   end)
+
+  after_each(scrub)
 
   -- Laid down astern of a character already under way, so there is no approach to deliver
   -- on and the whole swing would be spent chasing a bearing going aft.
