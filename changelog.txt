@@ -33,6 +33,7 @@ Version: 2.1.5
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
     - An arm whose armour runs flat part way through a reach is now put away, handing back what it was carrying, rather than hanging at full stretch until the swing gives up on it
+    - Fixed an arm coming out and standing there doing nothing when what it was sent to take up had something standing beside it, which is what a line of belts marked with the planner is
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.4
 Date: 2026-09-14

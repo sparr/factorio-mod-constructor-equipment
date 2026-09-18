@@ -356,6 +356,62 @@ end)
 -- inserter turns and extends at once and on the long arms the turn is the slower of the
 -- two. That arithmetic is unit tested in reach_spec; this is only a floor, so that a change
 -- which halves the rate is noticed.
+--- Things standing next to each other, which is what a line of belts marked with the
+--- planner is and what a scatter of loose items is not.
+---
+--- The claw hands its load over through a box put down where the claw is going, and an
+--- inserter resolves its pickup to one entity: measured, a transport belt standing in the
+--- same place as the box wins, and one marked for deconstruction wins and is then refused,
+--- so the hand never leaves home at all. The box goes a lift above the thing it is
+--- fetching -- seven tenths of a tile on a character -- so anything with a neighbour one
+--- tile north of it put the box on the neighbour's tile, and the arm stood there doing
+--- nothing until the swing limit gave up on it. Which is a line of belts, every time.
+describe("several things marked side by side", function()
+  ---@param laid table[] offsets from the character
+  local function doomed_at(laid)
+    for _, at in ipairs(laid) do doomed(BELT, at[1], at[2]) end
+  end
+
+  it("takes up one with a neighbour standing north of it", function()
+    world.equipped(player)
+    player.get_inventory(defines.inventory.character_main).clear()
+    -- Only the near one is inside a first tier arm's two tiles. The other is there to
+    -- stand where the near one's box wants to go.
+    doomed_at{ { 2, 0 }, { 2, -1 } }
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "the one with a neighbour north of it was never taken up")
+      assert.are.equal(1, player.get_item_count(BELT), "it never came home")
+    end)
+  end)
+
+  it("clears a column of five", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    player.get_inventory(defines.inventory.character_main).clear()
+    doomed_at{ { 2, -2 }, { 2, -1 }, { 2, 0 }, { 2, 1 }, { 2, 2 } }
+    after_ticks(world.CYCLE * 8, function()
+      assert.are.equal(0, world.count(player, BELT),
+        world.count(player, BELT) .. " of the five are still standing")
+      assert.are.equal(5, player.get_item_count(BELT), "they did not all come home")
+    end)
+  end)
+
+  it("clears a solid block of nine", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    player.get_inventory(defines.inventory.character_main).clear()
+    local laid = {}
+    for dx = 2, 4 do
+      for dy = -1, 1 do laid[#laid + 1] = { dx, dy } end
+    end
+    doomed_at(laid)
+    after_ticks(world.CYCLE * 10, function()
+      assert.are.equal(0, world.count(player, BELT),
+        world.count(player, BELT) .. " of the nine are still standing")
+      assert.are.equal(9, player.get_item_count(BELT), "they did not all come home")
+    end)
+  end)
+end)
+
 describe("a claw with a yardful of things to pick up", function()
   local LAID = 40
   local RUN = 360

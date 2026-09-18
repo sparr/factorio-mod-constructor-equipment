@@ -719,6 +719,112 @@ local function mounting(wearer, slot, count)
   return { x = at.x, y = at.y - lift }, lift
 end
 
+--- What beats a claw's box when an inserter looks round for something to take from.
+---
+--- An inserter resolves its pickup to one entity, and only one. Measured on 2.1.19, with a
+--- box and something else standing in the same place: a transport belt wins, and so does a
+--- ghost; a chest, a chest marked for deconstruction and an item lying on the ground all
+--- leave the box alone. A belt that is itself marked for deconstruction is the worst of
+--- them -- the belt is chosen and then refused, and the hand does not leave home at all,
+--- which is a claw that deploys and then stands there doing nothing until the swing limit
+--- gives up on it.
+---
+--- Which is exactly what a line of belts marked for taking up looks like. The box goes a
+--- lift above the thing it is fetching, and a lift is seven tenths of a tile on a
+--- character, so for anything with a neighbour one tile to the north the box lands on the
+--- neighbour's tile and is never seen.
+---
+--- Only the pickup end is at risk. The same measurement on the drop end put the load in the
+--- box every time, under a belt, a marked belt, a ghost and a chest alike.
+local SHADOWS = {
+  ["transport-belt"] = true, ["underground-belt"] = true, ["splitter"] = true,
+  ["linked-belt"] = true, ["loader"] = true, ["loader-1x1"] = true,
+  ["entity-ghost"] = true,
+}
+
+--- How far back along its own bearing a fetch's box may be pulled to find a spot of its
+--- own, and in what steps. A quarter of a tile is small enough that the first clear spot is
+--- barely off the mark, and a tile and a half is further than any neighbour is wide.
+local CLEAR_STEP = 0.25
+local CLEAR_BACK = 1.5
+
+--- How far off a tile's edge the box has to stand, which is only enough that rounding
+--- cannot put the engine and this on opposite sides of it. A lift is seven tenths of a
+--- tile, so the spot a box is asked for is a third of a tile from an edge to begin with and
+--- any real margin here would rule out every spot there is.
+local CLEAR_EDGE = 0.02
+
+--- How far inside a tile to look for what is standing on it. A belt's box reaches exactly
+--- to the edge of its own tile and a search by area counts a box that merely touches, so
+--- without this the empty tile beside a belt answers that the belt is on it.
+local CLEAR_INSET = 0.1
+
+---Whether anything standing here would be picked from in preference to a box put here.
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---@return boolean
+local function shadowed(surface, at)
+  -- By the tile, because that is what an inserter reads. A belt's own collision box is
+  -- inset from the tile it stands on, so asking what covers the exact spot says clear for
+  -- a spot the engine still resolves to the belt.
+  local tx, ty = math.floor(at.x), math.floor(at.y)
+  -- And not on a tile's edge, where which of the two the engine reads is a coin toss.
+  if at.x - tx < CLEAR_EDGE or tx + 1 - at.x < CLEAR_EDGE then return true end
+  if at.y - ty < CLEAR_EDGE or ty + 1 - at.y < CLEAR_EDGE then return true end
+  -- Inset, because a search by area counts a box that merely touches the edge of it: the
+  -- belt on the next tile along reaches exactly to the boundary and answered every query
+  -- about the empty tile beside it.
+  for _, entity in pairs(surface.find_entities_filtered{
+      area = { { tx + CLEAR_INSET, ty + CLEAR_INSET },
+               { tx + 1 - CLEAR_INSET, ty + 1 - CLEAR_INSET } } }) do
+    if SHADOWS[entity.type] then return true end
+  end
+  return false
+end
+
+---How far to pull a fetch's box back so that the claw will see it.
+---
+---Back along the line to the arm, a quarter tile at a time, until the box has a spot to
+---itself. Where it ends up is cosmetic: the box is a hand-over point rather than a place
+---the claw has to touch, and what is taken up is the thing the job went out for wherever
+---the box ends up standing. Stopping a little short of a packed line is better than
+---standing still in front of it.
+---
+---Worked out once for a job and remembered, since it is a search and the answer does not
+---change while the claw is on its way. Cleared wherever job.target is.
+---@param job table
+---@param record table
+---@param at {x: number, y: number} where the box would go
+---@return {x: number, y: number}? the offset to apply, if any
+local function standing_clear(job, record, at)
+  if job.shift then
+    if job.shift.x == 0 and job.shift.y == 0 then return nil end
+    return job.shift
+  end
+  local arm = record.entity
+  if not (arm and arm.valid) then return nil end
+  local surface = arm.surface
+  job.shift = { x = 0, y = 0 }
+  if not shadowed(surface, at) then return nil end
+
+  local dx, dy = arm.position.x - at.x, arm.position.y - at.y
+  local length = math.sqrt(dx * dx + dy * dy)
+  if length < 0.01 then return nil end
+  local back = math.min(CLEAR_BACK, length)
+  local step = CLEAR_STEP
+  while step <= back do
+    local shift = { x = dx / length * step, y = dy / length * step }
+    if not shadowed(surface, { x = at.x + shift.x, y = at.y + shift.y }) then
+      job.shift = shift
+      return shift
+    end
+    step = step + CLEAR_STEP
+  end
+  -- Nowhere clear within a tile and a half. Left where it was asked for, which is no worse
+  -- than it was before there was anywhere else to try.
+  return nil
+end
+
 ---Where a claw is aimed for a ghost: the ghost, carried up into the frame the arm swings in.
 ---
 ---This is what keeps a lifted arm honest. The engine swings a hand out from wherever the
@@ -739,8 +845,11 @@ end
 ---@return {x: number, y: number}
 local function aimed_at(job, record)
   local lift = record.lift or 0
-  if lift == 0 then return job.target end
-  return { x = job.target.x, y = job.target.y - lift }
+  local at = (lift == 0) and job.target
+    or { x = job.target.x, y = job.target.y - lift }
+  local shift = job.take and standing_clear(job, record, at) or nil
+  if not shift then return at end
+  return { x = at.x + shift.x, y = at.y + shift.y }
 end
 
 ---Where an arm reaches from.
@@ -2806,6 +2915,8 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     if claimed then claimed[claim_of(ghost)] = true end
     job.ghost = ghost
     job.target = ghost.position
+    -- A new thing to stand over, so where its box goes is asked again.
+    job.shift = nil
     -- Crossing to it, which takes aiming the drop at where it is going. An inserter will
     -- not carry a load past its drop position: measured, a claw holding one belt and sent to
     -- the next thing with its drop still at home put the belt down at home -- which for a
@@ -2866,6 +2977,7 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
   if claimed then claimed[claim_of(ghost)] = true end
   job.ghost = ghost
   job.target = ghost.position
+  job.shift = nil
   return true
 end
 

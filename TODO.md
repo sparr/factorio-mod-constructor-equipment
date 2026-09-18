@@ -6,6 +6,12 @@ extension and rotation speeds -- changed and then put back, once arms were point
 change turned out to have been paying for a cost that no longer exists -- and 16 was
 pointing an arm at what it is reaching for.
 
+Pointing carried four more off with it, which is what the walk round's dispatch and
+delivery complaints turned out to be: 7 was the wrong arm going first, 8 was an arm that
+did nothing, 9 was the bulk claw coming home mid round, and 10 was an underground pair
+going on the floor. 13 was not pointing at all -- a claw that deployed and then stood
+there was its box landing on the neighbour's tile, where an inserter cannot see it.
+
 ## 1. "Four arms, four reaches": the words overlap
 
 The bay's description text runs down into the "STAND HERE" text below it.
@@ -19,25 +25,6 @@ effects.
 
 Base them at the foot of the wheels, and lift them to draw above the wheels.
 
-## 7. "Four arms, four reaches": the wrong arm goes first
-
-After the teleport the tier 4 arm took the closest belt, then tier 2 and tier 3 took the
-next two, and then tier 4 took the last.
-
-## 8. "One arm for every copy": one arm does nothing
-
-The tier 1 arm did no work at all, with the closest belt left unbuilt while everything else
-went up.
-
-## 9. "The bulk claw": it comes home mid round
-
-Goes out, builds one, turns to a second, and comes home without building it. Unchanged by
-the arc fix.
-
-## 10. "An underground pair": both ends are dropped
-
-Still drops both yellow undergrounds on the floor and makes a separate trip to fetch them.
-
 ## 11. "Pockets full": it deploys with nowhere to put anything
 
 The arm deploys even with no room, and should stay in. Once space is cleared it stays out
@@ -48,10 +35,6 @@ the rest, which smells like a stale search.
 
 After picking up some of the shed, the arm goes on to empty the chest it just built, once
 that is the nearest target.
-
-## 13. "A thing taken up": it waits before starting
-
-The arm deploys and then stands there for seconds before doing anything.
 
 ## 14. "What a swing costs": the battery refills itself
 
@@ -83,3 +66,14 @@ reach that has run over by redirecting rather than giving up, while redirect() l
 job.started where it was -- so the next tick has run over too, and it redirects again,
 every tick, for ever. Unverified: the behaviour above is what was measured, that paragraph
 is where to look.
+
+## 18. Can an arm be pointed more finely than the four cardinals?
+
+Pointing an arm at what it is reaching for rounds its bearing to the nearest quarter,
+because `direction` on an inserter takes the four cardinals and truncates anything else.
+That leaves an eighth of a turn to swing through at worst, which hides behind the extension
+at any reach worth making and does not at a short one.
+
+Look for the prototype flag that lets an entity be built facing eight or sixteen ways
+rather than four, and whether an inserter can carry it. If it can, an arm can be pointed to
+within a sixteenth and the residual turn goes away entirely.
