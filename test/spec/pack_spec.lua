@@ -55,6 +55,13 @@ describe("which facing a vector points nearest to", function()
     assert.are.equal(12, pack.towards(x, y, 4))
   end)
 
+  it("rounds to the nearest sixteenth when it is not asked for fewer", function()
+    -- Half a sixteenth past north, which is north's half of the step
+    local angle = 0.5 / pack.DIRECTIONS * 2 * math.pi
+    assert.are.equal(0, pack.towards(math.sin(angle) * 0.99, -math.cos(angle)))
+    assert.are.equal(1, pack.towards(math.sin(angle) * 1.01, -math.cos(angle)))
+  end)
+
   it("gives only the four cardinals when asked for four", function()
     for d = 0, 15 do
       local x, y = pack.facing(d)

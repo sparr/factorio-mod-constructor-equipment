@@ -989,14 +989,22 @@ end)
 --- reach. So an arm is built facing what it is about to reach for, which is the only way to
 --- point one -- an inserter's hand does not follow its entity's direction once it exists.
 describe("which way an arm is pointed", function()
-  --- Inside the fourth tier's five tiles, and far enough out that the bearing is not noise.
-  local OUT = 4
+  --- Inside the fourth tier's five tiles on the diagonal as well as on the square, and far
+  --- enough out that the bearing is not noise.
+  local OUT = 3
 
   local WAYS = {
     { name = "north", x = 0, y = -1, facing = defines.direction.north },
     { name = "east", x = 1, y = 0, facing = defines.direction.east },
     { name = "south", x = 0, y = 1, facing = defines.direction.south },
     { name = "west", x = -1, y = 0, facing = defines.direction.west },
+    -- The four between them, which an arm can only be pointed at because its prototype
+    -- carries building-direction-16-way. Without it the engine takes the four cardinals and
+    -- truncates the rest, and a ghost lying north-east had its arm built facing north.
+    { name = "north east", x = 1, y = -1, facing = defines.direction.northeast },
+    { name = "south east", x = 1, y = 1, facing = defines.direction.southeast },
+    { name = "south west", x = -1, y = 1, facing = defines.direction.southwest },
+    { name = "north west", x = -1, y = -1, facing = defines.direction.northwest },
   }
 
   for _, way in ipairs(WAYS) do

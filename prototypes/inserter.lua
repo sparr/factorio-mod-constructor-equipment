@@ -96,6 +96,18 @@ for _, tier in ipairs(tiers.list) do
     hidden_in_factoriopedia = true,
     flags =
     {
+      -- Sixteen ways to face rather than four. Without this an inserter takes the four
+      -- cardinals and truncates anything else -- ask for west by way of a fifteenth of a
+      -- turn and it faces south -- and control.lua points an arm at what it is about to
+      -- reach for by building it facing that way. Four leaves an eighth of a turn to swing
+      -- through at worst, which hides behind the extension on a long reach and does not on
+      -- a short one; sixteen leaves a thirty-second, which is nothing anywhere.
+      --
+      -- Measured on 2.1.19: with this flag all sixteen stick and the hand starts exactly on
+      -- its bearing, seven tenths of a tile out, at every one of them. It is a flag about
+      -- how a player builds a thing, and nobody builds these: they are hidden, not
+      -- blueprintable, and made only by script.
+      "building-direction-16-way",
       "not-on-map",
       "not-blueprintable",
       "not-deconstructable",

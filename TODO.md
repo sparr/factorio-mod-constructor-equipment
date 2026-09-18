@@ -14,6 +14,20 @@ was its box landing on the neighbour's tile, where an inserter cannot see it. 11
 setting off for something it had nowhere to put, and 17 was a reach that had run over its
 limit turning to another ghost instead of giving up, every tick, for ever.
 
+19 is a no, and measured rather than assumed: a hand resting north was asked to face east
+eleven ways -- setting direction, writing orientation, rotate(), nudging the entity a
+quantum, four quantums and a sixteenth of a tile, teleporting it forty tiles away and back,
+and cloning it -- and every one left the hand creeping round at its own speed, tick for
+tick identical to doing nothing. The rotation is the hand's own state and only building the
+entity again resets it. That is written down in point(), where the decision lives.
+
+18 is in: `building-direction-16-way` is a real entity flag, an inserter takes it, and with
+it all sixteen directions stick and the hand starts exactly on its bearing. An arm is
+pointed to the nearest sixteenth now. It buys nothing at a long reach, where the extension
+already hid the quarter-turn rounding, and it buys the short ones: a fourth tier arm
+reaching one tile ran 5 to 17 ticks depending on the bearing and now runs 6 to 10, with the
+four diagonals -- 15, 17, 15 and 14 ticks -- coming down to 7, 9, 10 and 9.
+
 1 was the showroom rather than the mod, and was eight bays rather than one: a bay's note
 grows downwards and its mark's words sat a fixed distance below the mark, so any note over
 three lines was written through them. The marks' words go under the bay's now. 15 was a
@@ -35,23 +49,3 @@ effects.
 ## 5. Locomotive: the south side arms are based too far south
 
 Base them at the foot of the wheels, and lift them to draw above the wheels.
-
-## 18. Can an arm be pointed more finely than the four cardinals?
-
-Pointing an arm at what it is reaching for rounds its bearing to the nearest quarter,
-because `direction` on an inserter takes the four cardinals and truncates anything else.
-That leaves an eighth of a turn to swing through at worst, which hides behind the extension
-at any reach worth making and does not at a short one.
-
-Look for the prototype flag that lets an entity be built facing eight or sixteen ways
-rather than four, and whether an inserter can carry it. If it can, an arm can be pointed to
-within a sixteenth and the residual turn goes away entirely.
-
-## 19. Point an arm without building it again
-
-Pointing one now means destroying it and building a new one facing the right way, because
-setting `direction` on an inserter that already exists does not move its hand. Worth trying
-instead: nudge the claw's own position a few quantums -- a quantum is 1/256 of a tile --
-toward where it is being sent, which may make the engine recompute the rotation on the
-spot. If it does, an arm is re-pointed without being rebuilt, which costs nothing, keeps
-whatever is in the hand, and would work mid round as well as at a departure.

@@ -2011,15 +2011,26 @@ local POINTED = 0.3
 ---What a reach costs is the longer of two things happening at once: extending out, which
 ---is the same whichever way it faces, and turning to face it, which at a half turn is
 ---three times the extension and at nothing at all is free. So an arm is pointed before it
----sets off, and what is left to turn through is small enough to hide behind the extension.
+---sets off, and there is next to nothing left to turn through.
 ---
----Four directions is all there are to point it at: the engine allows an inserter the four
----cardinals and truncates anything else -- ask for west by way of a fifteenth of a turn and
----it faces south -- so the bearing is rounded to the nearest quarter, leaving an eighth of
----a turn at worst. It will not turn one that already exists either: setting direction on a
----built inserter moves nothing. Pointing one therefore means building it again, which is
----why this happens once, as it leaves, and never during a reach: the claw is empty on the
----way out and there is nothing in the air to drop.
+---Sixteen directions, which is as fine as the game counts them. An inserter takes the four
+---cardinals and truncates anything else unless it is flagged building-direction-16-way, and
+---these are: see prototypes/inserter.lua, where that is measured. So what is left to turn
+---through is a thirty-second of a turn at worst, which is nothing at any reach.
+---
+---It will not turn one that already exists, and that has been looked into properly. A hand
+---resting to the north was asked to face east eleven ways on 2.1.19: setting direction,
+---which changes what direction reads and moves nothing; writing orientation, which is taken
+---and reads back nought; rotate(), which is taken and leaves direction where it was;
+---nudging the entity a quantum, four quantums and a sixteenth of a tile; teleporting it
+---forty tiles away and back; and cloning it. Every one of them left the hand creeping round
+---at its own speed, tick for tick identical to doing nothing at all. (active is read only
+---on an inserter, so that one cannot even be tried.) The hand's rotation is its own state
+---and nothing but building the entity again resets it.
+---
+---So pointing means building it again, which is why this happens once, as it leaves, and
+---never during a reach: the claw is empty on the way out and there is nothing in the air to
+---drop.
 ---@param player LuaPlayer
 ---@param wearer LuaEntity the character or vehicle the arm is mounted on
 ---@param record table the arm
@@ -2032,7 +2043,7 @@ local function point(player, wearer, record, slot, count, job)
   -- that is the bearing the hand will actually travel along.
   local dx, dy = job.target.x - mount.x, (job.target.y - lift) - mount.y
   if dx * dx + dy * dy < POINTED * POINTED then return end
-  local wanted = pack.towards(dx, dy, 4)
+  local wanted = pack.towards(dx, dy)
 
   local arm = record.entity
   if not (arm and arm.valid) then
