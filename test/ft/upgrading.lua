@@ -296,6 +296,37 @@ describe("a character wearing the equipment", function()
         assert.are.equal(before, held, "the tunnel's cargo was lost in the swap")
       end)
     end)
+
+    -- The cargo counted everywhere rather than only in the tunnel. Both can be right at
+    -- once: for a while the swap laid every item back on the line and put a copy of it on
+    -- the floor as well, because force_insert_at answers nil whether it worked or not and
+    -- the answer was read as a refusal. The tunnel kept its load and the ground grew one
+    -- iron plate per tunnel line beside it, which the test above cannot see.
+    it("leaves no more iron plates than it found", function()
+      local near = pair("iron-plate")
+      local before = near.get_item_count()
+      assert.is_true(before > 0, "the tunnel was empty to begin with")
+      local pocketed = player.get_item_count("iron-plate")
+      player.insert{ name = FASTER_UNDER, count = 5 }
+      after_ticks(A_BUILD, function()
+        local ends = player.surface.find_entities_filtered{ name = FASTER_UNDER }
+        assert.are.equal(2, #ends, "the pair was not upgraded")
+        local held = 0
+        for _, one in pairs(ends) do held = held + one.get_item_count() end
+        local loose = 0
+        for _, item in pairs(player.surface.find_entities_filtered{
+            position = world.ORIGIN, radius = 20, type = "item-entity" }) do
+          if item.stack.valid_for_read and item.stack.name == "iron-plate" then
+            loose = loose + item.stack.count
+          end
+        end
+        assert.are.equal(0, loose,
+          ("the swap left %d iron plates on the ground"):format(loose))
+        assert.are.equal(before + pocketed,
+          held + loose + player.get_item_count("iron-plate"),
+          "the swap did not end with as many iron plates as it began with")
+      end)
+    end)
   end)
 
   it("leaves one out of reach alone", function()

@@ -1,10 +1,5 @@
 # Outstanding, from the walk round of 2026-09-19
 
-## 6. "An underground pair": two iron plates spill on the ground
-
-The pair itself is swapped and both old ends come home. What is left on the floor is two
-iron plates, dropped during the upgrade.
-
 ## 9. An arm stops when its owner stands on what it was reaching for
 
 It should give up on that one and go to something else rather than waiting. Wants

@@ -2582,13 +2582,23 @@ local function swap_pair(porter, work, partner, quality)
     local onto = (made and made.belt_to_ground_type == saved.was) and made
       or ((other and other.belt_to_ground_type == saved.was) and other)
     for index, line in ipairs(saved.lines) do
-      local insert = onto and onto.get_transport_line(index + 2).force_insert_at
+      local onto_line = onto and onto.get_transport_line(index + 2)
       for slot = 1, #line.held do
         local stack = line.held[slot]
         if stack.valid_for_read then
+          -- Whether it went on is measured rather than asked. force_insert_at says nothing
+          -- at all: measured on 2.1.19 it puts the item on the line and answers nil either
+          -- way, and it does not empty the stack it was handed either. Read as a refusal,
+          -- that laid every item back in the tunnel and then put a copy of it on the floor
+          -- as well -- which is where the showroom's pair kept its load and grew two iron
+          -- plates beside it, one for each of the tunnel's two lines.
+          local before = onto_line and onto_line.get_item_count() or 0
+          if onto_line then
+            onto_line.force_insert_at(line.contents[slot].position, stack)
+          end
           -- Half a swap, or a line that will not take it back, and it goes on the floor
           -- rather than into the void, which is where the base game would have left it.
-          if not (insert and insert(line.contents[slot].position, stack)) then
+          if not (onto_line and onto_line.get_item_count() > before) then
             surface.spill_item_stack{ position = at, stack = stack,
               enable_looted = false, force = force, allow_belts = false }
           end
