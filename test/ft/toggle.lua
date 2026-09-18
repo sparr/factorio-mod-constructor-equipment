@@ -128,6 +128,33 @@ describe("the constructor equipment toggle", function()
     end)
   end)
 
+  -- Pressing it off lifts the arm out of its owner's list and leaves it folding on its own,
+  -- so pressing it on again straight away built a second one beside it -- and took a second
+  -- belt out of the pockets for it -- while the first was still swinging in. There is one
+  -- piece of equipment, so there should never be two arms.
+  it("does not deploy a second arm while the first is still coming home", function()
+    world.ghost(player, BELT, 2, 0)
+    local most, took = 0, nil
+    after_ticks(14, function()
+      took = player.get_item_count(BELT)
+      press(player)
+      after_ticks(6, function()
+        press(player)
+        for n = 1, 60 do
+          after_ticks(n, function()
+            most = math.max(most, #world.arms(player))
+          end)
+        end
+      end)
+    end)
+    after_ticks(A_FOLD, function()
+      assert.are.equal(1, most,
+        ("%d arms were out at once for one piece of equipment"):format(most))
+      assert.is_true(player.get_item_count(BELT) >= took,
+        "a second belt was taken out of the pockets for a second arm")
+    end)
+  end)
+
   it("gives back what a claw was carrying when it is pressed mid reach", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(12, function()

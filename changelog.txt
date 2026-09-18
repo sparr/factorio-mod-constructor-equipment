@@ -38,6 +38,7 @@ Version: 2.1.5
     - An arm no longer sets off for something it has nowhere to put: with full pockets it stays in rather than fetching one thing and standing there holding it, and it starts again the moment there is room
     - Fixed a claw working a round of several getting stuck on one of them for good, turning to a fresh target every tick without ever delivering or coming home
     - A claw switched off mid reach now comes all the way in before the arm folds away, rather than being taken away two thirds of a tile out with the item winking out in mid air
+    - Switching the arms off and straight back on no longer puts a second arm out beside the one still swinging home, with a second item out of your pockets to go with it
     - A vehicle's arms are bolted inboard of its running gear and drawn up on the body, rather than out on the tracks or hanging off the bottom of the hull
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.4

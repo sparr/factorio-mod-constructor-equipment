@@ -2038,6 +2038,45 @@ end
 ---@param player LuaPlayer
 ---@param wearer LuaEntity the character or vehicle wearing the equipment
 ---@return table[]
+---Take back an arm that is still swinging home from having been switched off.
+---
+---Pressing the button off lifts an arm out of its owner's list and leaves it folding on its
+---own; pressing it on again straight away used to build a second one beside it, with a
+---second load out of the pockets, while the first was still coming in. There is only one
+---piece of equipment, so there should only ever be one arm.
+---
+---Matched on the tier and the grid, which is what muster matches everything else on.
+---@param player LuaPlayer
+---@param level integer
+---@param grid LuaEquipmentGrid?
+---@return table? the record, no longer folding
+local function reclaim(player, level, grid)
+  local folding = storage.constructor_folding
+  if not (folding and #folding > 0) then return nil end
+  for index, entry in ipairs(folding) do
+    local record = entry.record
+    if entry.player == player.index and record and record.level == level
+        and record.grid == grid and record.entity and record.entity.valid then
+      table.remove(folding, index)
+      -- Only one with an empty hand. A claw still carrying what it set off with is carrying
+      -- something out of its owner's pockets, and the handing back happens when an arm is
+      -- put away: kept as it is, the load stayed in the hand while the fresh job took a
+      -- second one out for the same ghost. Putting it away hands it back, and the arm that
+      -- takes its place is made at the next departure, so there is still only ever one.
+      if record.entity.held_stack.valid_for_read then
+        put_away(player, record)
+        return nil
+      end
+      -- It is an arm again rather than one on its way out: it has no job, so it will be
+      -- given one or put away like any other idle arm.
+      record.folded = nil
+      record.came = nil
+      return record
+    end
+  end
+  return nil
+end
+
 local function muster(player, wearer)
   local list = arms(player)
   local want = worn(wearer)
@@ -2050,10 +2089,10 @@ local function muster(player, wearer)
   for slot = 1, #want do
     local record = list[slot]
     if not record then
-      list[slot] = { level = want[slot] }
+      list[slot] = reclaim(player, want[slot], grid) or { level = want[slot] }
     elseif record.level ~= want[slot] or record.grid ~= grid then
       put_away(player, record)
-      list[slot] = { level = want[slot] }
+      list[slot] = reclaim(player, want[slot], grid) or { level = want[slot] }
     end
   end
 

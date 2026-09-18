@@ -10,16 +10,6 @@ the same again, over and over.
 Moving near ghosts, the claws jump back and forth about a quarter of a tile instead of
 carrying on towards what they are reaching for.
 
-## 4. The toolbar button deploys a second arm before the first is home
-
-Pressing it on and off quickly, with one piece of equipment worn, puts a new arm out while
-the old one is still swinging home.
-
-## 5. The toolbar button deploys an arm mid reach
-
-Switching the arms back on near a ghost belt spawns an arm already half way out and already
-holding a belt. It then comes home, sets off again, and delivers.
-
 ## 6. "An underground pair": the old ends are left on the ground
 
 Both yellow undergrounds end up on the floor rather than coming home in the claw that
