@@ -94,6 +94,40 @@ describe("the constructor equipment toggle", function()
     end)
   end)
 
+  -- Coming home is not the same as getting there. An ordinary reach is called home as soon
+  -- as the hand is within HOME of the rest point, which is early on purpose so the next
+  -- reach can start sooner. Nothing follows a fold, and being early there is visible:
+  -- measured, the button took the arm away with the claw still 0.63 of a tile out and the
+  -- belt still in it, so the item winked out in mid air and the claw jumped the rest of the
+  -- way to where it is drawn being stowed.
+  it("brings the claw all the way in before it folds away", function()
+    world.ghost(player, BELT, 2, 0)
+    local last_out, last_held
+    after_ticks(20, function()
+      press(player)
+      for n = 21, 200 do
+        after_ticks(n, function()
+          local arm = world.arms(player)[1]
+          if arm and arm.valid then
+            last_out = reach.distance(arm.position, arm.held_stack_position)
+            last_held = arm.held_stack.valid_for_read
+          end
+        end)
+      end
+    end)
+    after_ticks(210, function()
+      assert.is_nil(world.arms(player)[1], "the arm never folded away")
+      assert.is_not_nil(last_out, "the arm was never seen after the button was pressed")
+      -- A hand will not retract inside a minimum extension of its own, and where that
+      -- leaves it is the tier's business rather than the mod's: measured at 0.19 on a first
+      -- tier arm folding from a two tile reach. What is asked is that it got there.
+      assert.is_true(last_out < 0.3,
+        ("the claw was %.2f tiles out when the arm was taken away"):format(last_out))
+      assert.is_false(last_held,
+        "the claw was still holding the belt on the last tick it was seen")
+    end)
+  end)
+
   it("gives back what a claw was carrying when it is pressed mid reach", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(12, function()

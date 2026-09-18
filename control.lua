@@ -68,6 +68,24 @@ local REST = 0.2
 local HOME = 0.4
 local ARRIVED = 0.3
 
+--- How little a hand has to move in a tick to count as having stopped.
+---
+--- What says a claw being folded away has arrived. An ordinary reach is called home as soon
+--- as the hand is within HOME of the rest point, which is early on purpose: the load is
+--- handed over and the next reach can start without waiting out the last tenth of the
+--- retraction. Nothing follows a fold, and being early there is the whole of what the walk
+--- round saw -- the button took the arm away with the claw still 0.63 of a tile out and the
+--- belt still in it, so the item winked out in mid air and the claw jumped the rest of the
+--- way to the stowing position.
+---
+--- Asked as "has it stopped" rather than as a distance, because how near the base a hand
+--- can actually get is not a number the mod owns: a hand will not retract inside a minimum
+--- extension of its own, and where that leaves it depends on the tier, on the bearing it
+--- came in along and on how far up its owner the arm is strapped. Measured on a first tier
+--- arm folding from a two tile reach, it settles 0.19 from the base and stays there. So the
+--- claw is home when it has come as far in as it is going to.
+local SETTLED = 0.01
+
 ---How close is close enough for one arm. See lib/reach.lua, which the tests measure the
 ---real thing against.
 ---@param tier table
@@ -1910,7 +1928,12 @@ local function folding()
       -- predict. The limit is the backstop: a wearer that stops moving mid retraction, or
       -- a hand that cannot reach its rest point for some reason nobody has thought of,
       -- must not leave an arm hanging about for the rest of the game.
-      home = reach.distance(hand, rest) < within(tier_of(record), HOME, moved)
+      -- Home when the hand has stopped coming in, rather than when it is near enough. It
+      -- has to be near the base as well, so that a hand held up somewhere out in the air --
+      -- by a flat armour, or by anything nobody has thought of -- is not read as a claw that
+      -- has arrived; that one waits for the limit below.
+      home = (moved ~= nil and moved < SETTLED
+            and reach.distance(hand, mount) < within(tier_of(record), HOME, moved))
           or game.tick - (record.folded or game.tick) > SWING_LIMIT
     end
     if not home then

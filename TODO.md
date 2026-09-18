@@ -14,16 +14,18 @@ was its box landing on the neighbour's tile, where an inserter cannot see it. 11
 setting off for something it had nowhere to put, and 17 was a reach that had run over its
 limit turning to another ghost instead of giving up, every tick, for ever.
 
+1 was the showroom rather than the mod, and was eight bays rather than one: a bay's note
+grows downwards and its mark's words sat a fixed distance below the mark, so any note over
+three lines was written through them. The marks' words go under the bay's now. 15 was a
+claw called home early -- which an ordinary reach does on purpose, so the next one can
+start sooner, and a fold has no next one.
+
 Two of them were not faults. 12, the arm emptying the chest it had just built, does not
 happen: watched for two thousand ticks, the new chest keeps all 3200 plates it took while
 the claw clears the shed around it, and there is a test saying so now. 14, the battery
 refilling itself, is the claw handing its buffer back as it folds away -- measured, the
 armour rises by exactly one buffer and the armour and the claw together rise by nothing at
 all. The showroom says so now, and a test holds the ledger to it.
-
-## 1. "Four arms, four reaches": the words overlap
-
-The bay's description text runs down into the "STAND HERE" text below it.
 
 ## 4. Spidertron: the claws are drawn over the body
 
@@ -33,11 +35,6 @@ effects.
 ## 5. Locomotive: the south side arms are based too far south
 
 Base them at the foot of the wheels, and lift them to draw above the wheels.
-
-## 15. "The toolbar button": the claw does not arrive
-
-It returns to a short distance from its owner, the item disappears early, and the arm warps
-to the stowed position rather than arriving.
 
 ## 18. Can an arm be pointed more finely than the four cardinals?
 

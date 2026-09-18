@@ -33,23 +33,31 @@ local function row_at(row)
   return 0, (row - 1) * ROW
 end
 
+--- Which bay is being built, so that pad() can record whose mark it is laying and the
+--- marks' own words can be kept clear of the bay's. Set around the bay closures and nil
+--- everywhere else, since the row pads are not any bay's.
+local building
+
 ---@param x number
 ---@param y number
 ---@param text string
 ---@param note string?
 ---@param colour table?
+---@return number how far down the page it got, so what comes next can start below it
 local function label(x, y, text, note, colour)
   rendering.draw_text{ text = text, surface = ground(), target = { x, y },
     color = colour or { 1, 0.9, 0.6 }, scale = 1.8, alignment = "left",
     scale_with_zoom = false }
-  if not note then return end
+  if not note then return y end
   -- Broken into lines rather than written as one. A bay is twenty two tiles wide and a
   -- sentence is longer than that, so left whole it runs across its neighbour's exhibit and
   -- both become unreadable.
   local line, at = "", 0
+  local bottom = y
   local function draw(text_line)
+    bottom = y + 1.3 + at * 1.1
     rendering.draw_text{ text = text_line, surface = ground(),
-      target = { x, y + 1.3 + at * 1.1 },
+      target = { x, bottom },
       color = { 0.72, 0.78, 0.85 }, scale = 1.1, alignment = "left",
       scale_with_zoom = false }
     at = at + 1
@@ -59,6 +67,22 @@ local function label(x, y, text, note, colour)
     else line = (line == "") and word or (line .. " " .. word) end
   end
   if line ~= "" then draw(line) end
+  return bottom
+end
+
+--- Where a bay's own words ended, so that the mark's words go under them rather than
+--- through them.
+---
+--- A bay's note is as long as it needs to be and its mark is at a fixed spot on the ground,
+--- so the two were laid out against different things: the note grew downwards from the
+--- title and STAND HERE sat a tile and a half below the mark whatever the note had done.
+--- Five lines of note reached exactly that far and the two were written over each other.
+---@param wanted number where the label would go if nothing were in the way
+---@return number
+local function under_the_words(wanted)
+  local words = building and building.bottom
+  if not words then return wanted end
+  return math.max(wanted, words + 1.2)
 end
 
 ---@param name string
@@ -102,10 +126,6 @@ end
 ---@param x number
 ---@param y number
 ---@param tile string
---- Which bay is being built, so that pad() can record whose mark it is laying. Set around
---- the bay closures and nil everywhere else, since the row pads are not any bay's.
-local building
-
 local function pad(x, y, tile)
   ground().set_tiles{ { name = tile, position = { x, y } } }
   eastmost = math.max(eastmost, x + 1)
@@ -128,7 +148,7 @@ end
 ---@param note string what standing on it is for
 local function bay_kit(x, y, kit, note)
   pad(x, y, "refined-concrete")
-  label(x - 1, y + 1.6, "STAND HERE", note, { 0.55, 0.9, 0.6 })
+  label(x - 1, under_the_words(y + 1.6), "STAND HERE", note, { 0.55, 0.9, 0.6 })
   storage.bay_kits = storage.bay_kits or {}
   storage.bay_kits[#storage.bay_kits + 1] = { x = x + 0.5, y = y + 0.5, kit = kit }
 end
@@ -147,7 +167,7 @@ end
 local function hop(from_x, from_y, to_x, to_y, note)
   pad(from_x, from_y, "refined-hazard-concrete-right")
   pad(to_x, to_y, "refined-hazard-concrete-left")
-  label(from_x - 1, from_y + 1.6, "STAND HERE", note, { 0.55, 0.9, 0.6 })
+  label(from_x - 1, under_the_words(from_y + 1.6), "STAND HERE", note, { 0.55, 0.9, 0.6 })
   storage.hops = storage.hops or {}
   storage.hops[#storage.hops + 1] = {
     from = { x = from_x + 0.5, y = from_y + 0.5 },
@@ -320,7 +340,7 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
         end },
       { "What a swing costs",
-        "Stand on the mark and open your armour. It takes the reactor back off, leaving one small battery: with a reactor in there the charge comes back faster than a swing can spend it and there is nothing to watch. The jump back up when the arm folds away is the claw handing back what was left in its own buffer, which is a couple of swings' worth: an arm coming and going costs nothing either way.",
+        "Stand on the mark and open your armour. One small battery and no reactor, so a swing takes a visible bite. The jump back up as the arm folds away is the claw handing back what was left in its own buffer.",
         function(x, y)
           bay_kit(x + 5, y + 6, {
             armour = "power-armor",
@@ -472,7 +492,7 @@ local ROWS = {
           end
         end },
       { "A patch of tiles",
-        "Stand on the mark. A tile marked for removal is an entity standing on it, and a claw with room in its hand goes from one to the next without coming home between them. It visits every one of them: nothing is taken up that the claw did not travel to.",
+        "Stand on the mark. A claw with room in its hand goes from one tile to the next without coming home, and visits every one: nothing is taken up that the claw did not travel to.",
         function(x, y)
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           local tiles = {}
@@ -723,8 +743,8 @@ local function clear_and_build()
     eastmost = rx
     for bay, what in ipairs(row.bays) do
       local x = rx + bay * BAY
-      label(x, ry + 3, what[1], what[2])
-      building = { row = index, bay = bay, title = what[1] }
+      local bottom = label(x, ry + 3, what[1], what[2])
+      building = { row = index, bay = bay, title = what[1], bottom = bottom }
       what[3](x, ry)
       building = nil
     end
