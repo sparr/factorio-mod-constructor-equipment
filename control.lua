@@ -760,16 +760,21 @@ end
 ---
 --- An inserter resolves its pickup to one entity, and only one. Measured on 2.1.19, with a
 --- box and something else standing in the same place: a transport belt wins, and so does a
---- ghost; a chest, a chest marked for deconstruction and an item lying on the ground all
---- leave the box alone. A belt that is itself marked for deconstruction is the worst of
---- them -- the belt is chosen and then refused, and the hand does not leave home at all,
---- which is a claw that deploys and then stands there doing nothing until the swing limit
---- gives up on it.
+--- ghost. A belt that is itself marked for deconstruction is the worst of them -- the belt
+--- is chosen and then refused, and the hand does not leave home at all, which is a claw
+--- that deploys and then stands there until the swing limit gives up on it.
 ---
---- Which is exactly what a line of belts marked for taking up looks like. The box goes a
---- lift above the thing it is fetching, and a lift is seven tenths of a tile on a
---- character, so for anything with a neighbour one tile to the north the box lands on the
---- neighbour's tile and is never seen.
+--- An empty chest leaves the box alone and a full one does not, which is the same rule
+--- seen from the other side: what the engine looks for is something with items in it. A
+--- claw sent to fetch a plate off the floor beside a full chest took five plates out of the
+--- chest instead, over and over, while the plate it was sent for lay there -- fourteen
+--- hundred of them still on the ground and the chest counting down.
+---
+--- So what shadows a box is a belt, a ghost, or anything holding anything.
+---
+--- Which is what a line of belts marked for taking up looks like too. The box goes a lift
+--- above the thing it is fetching, and a lift is seven tenths of a tile on a character, so
+--- anything with a neighbour one tile to the north put the box on the neighbour's tile.
 ---
 --- Only the pickup end is at risk. The same measurement on the drop end put the load in the
 --- box every time, under a belt, a marked belt, a ghost and a chest alike.
@@ -778,6 +783,32 @@ local SHADOWS = {
   ["linked-belt"] = true, ["loader"] = true, ["loader-1x1"] = true,
   ["entity-ghost"] = true,
 }
+
+--- The box a claw hands its load over through: the one container a box is allowed to share
+--- a tile with, since it is the box. Declared here because standing_clear() has to know it
+--- by name and runs long before catcher_at() is reached.
+local CATCHER = "constructor-equipment-catcher"
+
+---Whether this is something an inserter would find items in.
+---
+---Asked of the thing rather than of its type, because it is having something in it that
+---matters: an empty chest is no obstacle and the same chest with plates in it takes the
+---claw's whole journey.
+---@param entity LuaEntity
+---@return boolean
+local function holding_something(entity)
+  if entity.name == CATCHER then return false end
+  -- A thing lying on the ground holds nothing; asking it what its inventories are is asking
+  -- a stack of plates to open its pockets.
+  if entity.type == "item-entity" then return false end
+  local ok, most = pcall(function() return entity.get_max_inventory_index() end)
+  if not (ok and most) then return false end
+  for index = 1, most do
+    local held = entity.get_inventory(index)
+    if held and not held.is_empty() then return true end
+  end
+  return false
+end
 
 --- How far back along its own bearing a fetch's box may be pulled to find a spot of its
 --- own, and in what steps. A quarter of a tile is small enough that the first clear spot is
@@ -814,7 +845,7 @@ local function shadowed(surface, at)
   for _, entity in pairs(surface.find_entities_filtered{
       area = { { tx + CLEAR_INSET, ty + CLEAR_INSET },
                { tx + 1 - CLEAR_INSET, ty + 1 - CLEAR_INSET } } }) do
-    if SHADOWS[entity.type] then return true end
+    if SHADOWS[entity.type] or holding_something(entity) then return true end
   end
   return false
 end
@@ -1675,18 +1706,6 @@ local function take_back(record, name, quality, count)
   return took
 end
 
---- The box that stands on a ghost while an arm is delivering to it.
----
---- Without one, what the engine does with a claw arriving at a ghost depends on the ghost:
---- one whose entity could take the item makes the inserter wait for ever, one whose entity
---- could not is either built out of the claw or has the load dumped on the floor beside it.
---- None of those is the mod's decision and all three were reachable in play.
----
---- A container on the same tile settles it. An inserter puts things into containers, so
---- arrival stops being a distance the mod measures once a tick -- and could step clean over
---- -- and becomes a thing the engine reports by putting the item somewhere the mod owns.
---- The box collides with nothing, so the ghost underneath it stays revivable.
-local CATCHER = "constructor-equipment-catcher"
 
 --- How near the claw has to be before its box exists at all. Generous on purpose: being
 --- early costs nothing, and the whole point of the box is to stop measuring arrivals

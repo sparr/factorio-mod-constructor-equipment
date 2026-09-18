@@ -34,6 +34,7 @@ Version: 2.1.5
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
     - An arm whose armour runs flat part way through a reach is now put away, handing back what it was carrying, rather than hanging at full stretch until the swing gives up on it
     - Fixed an arm coming out and standing there doing nothing when what it was sent to take up had something standing beside it, which is what a line of belts marked with the planner is
+    - Fixed a claw sent to pick something up off the floor beside a full chest taking the chest's contents instead, handful after handful, while what it was sent for lay there
     - An arm no longer sets off for something it has nowhere to put: with full pockets it stays in rather than fetching one thing and standing there holding it, and it starts again the moment there is room
     - Fixed a claw working a round of several getting stuck on one of them for good, turning to a fresh target every tick without ever delivering or coming home
     - A claw switched off mid reach now comes all the way in before the arm folds away, rather than being taken away two thirds of a tile out with the item winking out in mid air

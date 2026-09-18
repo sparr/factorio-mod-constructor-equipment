@@ -414,6 +414,46 @@ describe("a thing marked with nowhere to put it", function()
   end)
 end)
 
+--- Something to fetch, standing next to something full.
+---
+--- An inserter resolves its pickup to one entity, and what it looks for is something with
+--- items in it: an empty chest leaves the claw's box alone and a full one takes the whole
+--- journey. A claw sent for a plate on the floor beside a full chest took five plates out
+--- of the chest instead, handed them to its owner, and went back for five more, while the
+--- plate it had been sent for lay there. Measured on a showroom save: fourteen hundred
+--- marked plates on the ground, untouched, and the chest counting down.
+describe("a thing marked beside something full", function()
+  it("takes what it was sent for and leaves the chest alone", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    player.get_inventory(defines.inventory.character_main).clear()
+    local chest = player.surface.create_entity{ name = "steel-chest",
+      position = { world.ORIGIN.x + 2, world.ORIGIN.y }, force = player.force }
+    chest.insert{ name = "iron-plate", count = 500 }
+    -- Nobody marked the chest. Where the plate lies is the whole of the test: a box goes a
+    -- lift above what it is fetching, and a lift on a character is seven tenths of a tile,
+    -- so a plate that far south of the chest puts the box on the chest itself. Measured
+    -- from a showroom save, where the spilled plates land wherever they land and one of
+    -- them landed exactly there.
+    local loose = player.surface.create_entity{ name = "item-on-ground",
+      position = { world.ORIGIN.x + 2, world.ORIGIN.y + 0.703 },
+      stack = { name = "copper-plate", count = 1 } }
+    assert.is_not_nil(loose, "the plate would not go on the floor")
+    loose.order_deconstruction(player.force)
+    after_ticks(world.CYCLE * 4, function()
+      assert.are.equal(1, player.get_item_count("copper-plate"),
+        "the plate it was sent for was never picked up")
+      assert.are.equal(0, player.get_item_count("iron-plate"),
+        ("%d plates came out of a chest nobody marked")
+          :format(player.get_item_count("iron-plate")))
+      assert.is_true(chest.valid, "the chest itself was taken")
+      -- Dotted, not colonned: a LuaObject's methods are already bound to it, and a colon
+      -- hands it over a second time.
+      local inside = chest.get_inventory(defines.inventory.chest)
+      assert.are.equal(500, inside.get_item_count("iron-plate"), "the chest was emptied")
+    end)
+  end)
+end)
+
 describe("several things marked side by side", function()
   ---@param laid table[] offsets from the character
   local function doomed_at(laid)

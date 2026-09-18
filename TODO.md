@@ -1,67 +1,53 @@
-# Outstanding, from the walk round of 2026-09-18
+# Outstanding, from the walk round of 2026-09-19
 
-Removed from this list as they are fixed. Numbers are stable so they can be referred to, so
-the gaps are the ones already done: 2 and 3 were the tank's and the car's arms, 6 was the
-extension and rotation speeds -- changed and then put back, once arms were pointed and the
-change turned out to have been paying for a cost that no longer exists -- and 16 was
-pointing an arm at what it is reaching for.
+## 1. "Four arms, four reaches": the teleporter fires while you are still moving
 
-Pointing carried four more off with it, which is what the walk round's dispatch and
-delivery complaints turned out to be: 7 was the wrong arm going first, 8 was an arm that
-did nothing, 9 was the bulk claw coming home mid round, and 10 was an underground pair
-going on the floor. 13 was not pointing at all -- a claw that deployed and then stood there
-was its box landing on the neighbour's tile, where an inserter cannot see it. 11 was an arm
-setting off for something it had nowhere to put, and 17 was a reach that had run over its
-limit turning to another ghost instead of giving up, every tick, for ever.
+It should wait until you have come to rest on the mark. Its words also overlap the pad
+itself.
 
-19 is a no, and measured rather than assumed: a hand resting north was asked to face east
-eleven ways -- setting direction, writing orientation, rotate(), nudging the entity a
-quantum, four quantums and a sixteenth of a tile, teleporting it forty tiles away and back,
-and cloning it -- and every one left the hand creeping round at its own speed, tick for
-tick identical to doing nothing. The rotation is the hand's own state and only building the
-entity again resets it. That is written down in point(), where the decision lives.
+## 2. "The bulk claw": it comes home mid round
 
-18 is in: `building-direction-16-way` is a real entity flag, an inserter takes it, and with
-it all sixteen directions stick and the hand starts exactly on its bearing. An arm is
-pointed to the nearest sixteenth now. It buys nothing at a long reach, where the extension
-already hid the quarter-turn rounding, and it buys the short ones: a fourth tier arm
-reaching one tile ran 5 to 17 ticks depending on the bearing and now runs 6 to 10, with the
-four diagonals -- 15, 17, 15 and 14 ticks -- coming down to 7, 9, 10 and 9.
+Delivers one belt, turns to the next ghost, and goes home without building it. Then does
+the same again, over and over.
 
-1 was the showroom rather than the mod, and was eight bays rather than one: a bay's note
-grows downwards and its mark's words sat a fixed distance below the mark, so any note over
-three lines was written through them. The marks' words go under the bay's now. 15 was a
-claw called home early -- which an ordinary reach does on purpose, so the next one can
-start sooner, and a fold has no next one.
+## 3. Arms stutter while their owner walks
 
-5 was the hull the arms are arranged around. A vehicle's selection box is padded so it is
-easier to click on, and on rolling stock the padding is past the outside of the wheels: a
-locomotive's collision box is 0.6 either side of the track where its selection box is 1.0.
-Arms bolted out there hung off the bottom of the train. They go on the tighter of the two
-boxes now, which on a tank and a car is the same box twice.
+Moving near ghosts, the claws jump back and forth about a quarter of a tile instead of
+carrying on towards what they are reaching for.
 
-Two of them were not faults. 12, the arm emptying the chest it had just built, does not
-happen: watched for two thousand ticks, the new chest keeps all 3200 plates it took while
-the claw clears the shed around it, and there is a test saying so now. 14, the battery
-refilling itself, is the claw handing its buffer back as it folds away -- measured, the
-armour rises by exactly one buffer and the armour and the claw together rise by nothing at
-all. The showroom says so now, and a test holds the ledger to it.
+## 4. The toolbar button deploys a second arm before the first is home
 
-## 4. Spidertron: the claws are drawn over the body
+Pressing it on and off quickly, with one piece of equipment worn, puts a new arm out while
+the old one is still swinging home.
 
-The claws draw on top of the spidertron. Photographed, so it is not in doubt: see
-test/demo/shots.sh, which stands a driver in a vehicle, lays ghosts along its flanks and
-takes the picture while the arms are working.
+## 5. The toolbar button deploys an arm mid reach
 
-It cannot be done from here, and that is now measured rather than guessed. The installation
-ships doc-html/prototype-api.json, and InserterPrototype and its parents have no field that
-says where a hand is drawn: draw_held_item, draw_inserter_arrow, draw_circuit_wires and
-draw_copper_wires say whether, and integration_patch_render_layer is about the patch under
-a machine. drawing_box_vertical_extension is only used to frame a thing in a tooltip, and
-selection_priority is about what a click lands on. SpiderVehiclePrototype has no such field
-either. Nor is the arm's own position a lever: its base is already two tiles north of the
-spidertron's middle -- the legs mount within 0.78 of the middle and the torso's own height
-of 1.5 is taken off on top of that -- and the hand still draws over the body from up there.
+Switching the arms back on near a ghost belt spawns an arm already half way out and already
+holding a belt. It then comes home, sets off again, and delivers.
 
-What is left is changing the spidertron's own prototype, which is every spidertron in
-everybody's game, and that is the side effect the question was asked to avoid.
+## 6. "An underground pair": the old ends are left on the ground
+
+Both yellow undergrounds end up on the floor rather than coming home in the claw that
+carried the red ones out.
+
+## 7. A claw settles on a loose item and never picks it up
+
+Running past items on the ground with a fourth tier arm, the claw reaches one, follows it
+as its owner moves, and never takes it. It may be missing by a fraction of a tile.
+
+## 9. An arm stops when its owner stands on what it was reaching for
+
+It should give up on that one and go to something else rather than waiting.
+
+## 10. Tank: the south arms are drawn at the foot of the treads
+
+Driving east or west, they should be lifted to the top of the treads, the way a character's
+arms sit at the height of their pack rather than at their feet.
+
+## 11. Tank: a claw stutters for ever over an item under the tank
+
+An item on the ground beneath the hull is reached for again and again and never taken.
+
+## 12. Tank: the arms of a north or south facing tank sit outside the tracks
+
+They should be inside the tracks, and lifted to draw above them.
