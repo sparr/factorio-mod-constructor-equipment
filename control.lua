@@ -609,15 +609,34 @@ end
 
 ---How wide and how long a wearer is, in tiles either side of its middle.
 ---
----The selection box rather than the collision box: what the arms are being arranged around
----is the hull a player sees, and a vehicle's selection box is drawn round exactly that.
+---Whichever of its two boxes is the tighter, which on most vehicles is the same box twice:
+---a tank and a car give identical collision and selection boxes, so this is the hull either
+---way. Rolling stock does not. A locomotive's collision box is 0.6 either side of the
+---track and its selection box is 1.0, because a selection box is padded to make a thing
+---easier to click on, and the extra four tenths is past the outside of its wheels. Arms
+---bolted out there hung off the bottom of the train and were drawn below the wheels rather
+---than on the side of the hull above them.
+---
+---The selection box was what this used, on the grounds that it is drawn round what a player
+---sees. That is true of a hull and not of the padding round a train.
 ---@param wearer LuaEntity
 ---@return number across half its width
 ---@return number along half its length
 local function hull_of(wearer)
-  local box = wearer.prototype.selection_box
-  return (box.right_bottom.x - box.left_top.x) / 2,
-         (box.right_bottom.y - box.left_top.y) / 2
+  local seen = wearer.prototype.selection_box
+  local solid = wearer.prototype.collision_box
+  local across = math.min((seen.right_bottom.x - seen.left_top.x) / 2,
+                          (solid.right_bottom.x - solid.left_top.x) / 2)
+  local along = math.min((seen.right_bottom.y - seen.left_top.y) / 2,
+                         (solid.right_bottom.y - solid.left_top.y) / 2)
+  -- A collision box can be nothing at all -- a thing that collides with nothing has one of
+  -- zero size -- and an arm bolted to the middle of its owner is an arm nobody can see. So
+  -- what a player sees is the fallback rather than the first answer.
+  if across < 0.01 or along < 0.01 then
+    return (seen.right_bottom.x - seen.left_top.x) / 2,
+           (seen.right_bottom.y - seen.left_top.y) / 2
+  end
+  return across, along
 end
 
 --- How far the near side of a hull is drawn above the ground it stands on, as a share of

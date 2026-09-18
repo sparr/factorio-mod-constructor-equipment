@@ -6,14 +6,14 @@
 --- player on a mark, waits for the arms to be out and working, and takes a picture.
 ---
 --- Pictures land in script-output/shots.
-local SETTLE = 240   -- long enough for the kit, the teleport and an arm to be out working
+local SETTLE = 70    -- long enough for an arm to be out and mid reach, short enough that it still is
 
 --- Which marks to photograph, by the title the showroom gives the bay, and how close.
 local WANTED = {
-  { title = "Arms on the legs", zoom = 2.5 },
-  { title = "Arms on a train", zoom = 2 },
-  { title = "Arms on the hull", zoom = 2.5 },
-  { title = "Four arms, four reaches", zoom = 1.2 },
+  { title = "Arms on the legs", zoom = 2.5, drive = true },
+  { title = "Arms on a train", zoom = 2, drive = true },
+  { title = "Arms on the hull", zoom = 2.5, drive = true },
+  { title = "Arms on a car", zoom = 2.5, drive = true },
 }
 
 local function marks()
@@ -41,6 +41,8 @@ script.on_event(defines.events.on_tick, function()
       say("DONE")
       return
     end
+    if state.riding and state.riding.valid then state.riding.set_driver(nil) end
+    state.riding = nil
     local found
     for _, mark in pairs(marks()) do
       if mark.title == wanted.title then found = mark break end
@@ -53,8 +55,55 @@ script.on_event(defines.events.on_tick, function()
     state.mark = found
     -- The row's own kit, so the bay has what it needs, and then stand on the mark.
     remote.call("ce-demo", "kit", player.index, found.row)
-    player.teleport({ found.x, found.y },
-      game.surfaces[remote.call("ce-demo", "surface")])
+    local made = game.surfaces[remote.call("ce-demo", "surface")]
+    player.teleport({ found.x, found.y }, made)
+    -- A vehicle row's arms are the vehicle's, and a vehicle nobody is driving wears none:
+    -- the mod works for whoever is at the controls. So get in whatever is standing here.
+    if wanted.drive then
+      local best, near
+      for _, thing in pairs(made.find_entities_filtered{
+          position = { found.x, found.y }, radius = 30,
+          type = { "car", "spider-vehicle", "locomotive" } }) do
+        local away = (thing.position.x - found.x) ^ 2 + (thing.position.y - found.y) ^ 2
+        if not near or away < near then best, near = thing, away end
+      end
+      if best then
+        best.set_driver(player)
+        state.riding = best
+        -- Something for the arms to be doing. A vehicle parked at the end of its row has
+        -- either finished its own row or never reached it, and an arm with nothing to do is
+        -- an arm nobody can photograph, so fresh ghosts go down along both flanks -- which
+        -- is where a hull's arms are bolted and so what they can reach.
+        local laid = 0
+        for along = -2, 2 do
+          for _, side in pairs{ -3, 3 } do
+            local spot = { best.position.x + along, best.position.y + side }
+            if made.count_entities_filtered{ position = spot, radius = 0.4 } == 0 then
+              if made.create_entity{ name = "entity-ghost", inner_name = "transport-belt",
+                  position = spot, force = player.force } then
+                laid = laid + 1
+              end
+            end
+          end
+        end
+        -- And something to build them out of, and a full grid: a vehicle standing about has
+        -- neither been charging nor been loaded.
+        local hold = best.get_inventory(defines.inventory.cargo_wagon)
+          or best.get_inventory(defines.inventory.car_trunk)
+          or best.get_inventory(defines.inventory.spider_trunk)
+        if hold then hold.insert{ name = "transport-belt", count = 50 } end
+        for _, wagon in pairs(best.train and best.train.cargo_wagons or {}) do
+          wagon.insert{ name = "transport-belt", count = 50 }
+        end
+        local grid = best.grid
+        if grid then
+          for _, piece in pairs(grid.equipment) do piece.energy = piece.max_energy end
+        end
+        say(("driving a %s, %d ghosts laid beside it"):format(best.name, laid))
+      else
+        say("nothing to drive here")
+      end
+    end
     state.waited = 1
     return
   end
@@ -64,12 +113,16 @@ script.on_event(defines.events.on_tick, function()
 
   local wanted = WANTED[state.at]
   local mark = state.mark
+  -- Centred on whatever is being photographed rather than on the mark, since a vehicle is
+  -- parked a bay east of it.
+  local middle = (state.riding and state.riding.valid) and state.riding.position
+    or (mark and { x = mark.x + 4, y = mark.y })
   if mark then
     local name = wanted.title:lower():gsub("[^%w]+", "-")
     game.take_screenshot{
       player = player,
       surface = game.surfaces[remote.call("ce-demo", "surface")],
-      position = { mark.x + 4, mark.y },
+      position = { middle.x, middle.y },
       resolution = { 1000, 800 },
       zoom = wanted.zoom,
       path = "shots/" .. name .. ".png",
@@ -78,7 +131,9 @@ script.on_event(defines.events.on_tick, function()
       daytime = 0,
       water_tick = 0,
     }
-    say(("took %s at %.1f,%.1f"):format(name, mark.x, mark.y))
+    say(("took %s at %.1f,%.1f"):format(name, middle.x, middle.y))
   end
+  -- Left sitting there. A screenshot is rendered at the end of the tick, and getting out
+  -- on the same tick put the character on the grass beside the vehicle in the picture.
   state.waited = 0
 end)

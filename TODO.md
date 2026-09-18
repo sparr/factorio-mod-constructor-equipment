@@ -34,6 +34,12 @@ three lines was written through them. The marks' words go under the bay's now. 1
 claw called home early -- which an ordinary reach does on purpose, so the next one can
 start sooner, and a fold has no next one.
 
+5 was the hull the arms are arranged around. A vehicle's selection box is padded so it is
+easier to click on, and on rolling stock the padding is past the outside of the wheels: a
+locomotive's collision box is 0.6 either side of the track where its selection box is 1.0.
+Arms bolted out there hung off the bottom of the train. They go on the tighter of the two
+boxes now, which on a tank and a car is the same box twice.
+
 Two of them were not faults. 12, the arm emptying the chest it had just built, does not
 happen: watched for two thousand ticks, the new chest keeps all 3200 plates it took while
 the claw clears the shed around it, and there is a test saying so now. 14, the battery
@@ -43,9 +49,19 @@ all. The showroom says so now, and a test holds the ledger to it.
 
 ## 4. Spidertron: the claws are drawn over the body
 
-The claw items draw on top of the spidertron. Reverse that if it can be done without side
-effects.
+The claws draw on top of the spidertron. Photographed, so it is not in doubt: see
+test/demo/shots.sh, which stands a driver in a vehicle, lays ghosts along its flanks and
+takes the picture while the arms are working.
 
-## 5. Locomotive: the south side arms are based too far south
+It cannot be done from here, and that is now measured rather than guessed. The installation
+ships doc-html/prototype-api.json, and InserterPrototype and its parents have no field that
+says where a hand is drawn: draw_held_item, draw_inserter_arrow, draw_circuit_wires and
+draw_copper_wires say whether, and integration_patch_render_layer is about the patch under
+a machine. drawing_box_vertical_extension is only used to frame a thing in a tooltip, and
+selection_priority is about what a click lands on. SpiderVehiclePrototype has no such field
+either. Nor is the arm's own position a lever: its base is already two tiles north of the
+spidertron's middle -- the legs mount within 0.78 of the middle and the torso's own height
+of 1.5 is taken off on top of that -- and the hand still draws over the body from up there.
 
-Base them at the foot of the wheels, and lift them to draw above the wheels.
+What is left is changing the spidertron's own prototype, which is every spidertron in
+everybody's game, and that is the side effect the question was asked to avoid.
