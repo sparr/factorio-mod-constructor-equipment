@@ -782,9 +782,15 @@ end)
 
 -- A bulk claw carrying several and handing them out one ghost at a time, at the distances
 -- the showroom uses. The walk round reported it building one, turning to the next and
--- coming home without building that one, over and over -- which was two of the five ghosts
--- sitting at 5.39 tiles from a five tile arm, so the claw was right and the yard was wrong.
--- The round itself is worth a test either way.
+-- coming home without building that one, over and over. Part of that was a yard fault --
+-- two of the five ghosts sat at 5.39 tiles from a five tile arm -- and part of it was real:
+-- the claw did turn to the next ghost and did then go all the way home before reaching it,
+-- because an inserter that has just let go swings back to its pickup before it will look at
+-- a new drop. Measured on the showroom's own save, a round of three cost 55 ticks a ghost
+-- where it now costs 5.
+--
+-- Counting what went up cannot see that: the claw built every one of them either way, only
+-- slowly. So the round is timed as well as counted.
 describe("a bulk claw with a yard of ghosts in reach", function()
   local ARC = { { 4, -2 }, { 4, 2 }, { 3, -3 }, { 3, 3 }, { 4, 1 } }
 
@@ -811,6 +817,38 @@ describe("a bulk claw with a yard of ghosts in reach", function()
       assert.are.equal(0, world.ghosts(player),
         "some of the arc is still standing")
       assert.are.equal(#ARC, world.count(player, BELT), "not all of them went up")
+    end)
+  end)
+
+  -- The round measured rather than merely observed to happen. A claw that comes home
+  -- between each ghost still builds all five, so the only thing that tells the two apart is
+  -- how long three of them take: a journey each is one whole out and back per ghost, and
+  -- this allows less than a single out leg for all three.
+  it("builds three inside one journey out", function()
+    for _, name in pairs{ "bulk-inserter", "inserter-capacity-bonus-1",
+                          "inserter-capacity-bonus-2" } do
+      player.force.technologies[name].researched = true
+    end
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { "constructor-equipment-4", "fission-reactor-equipment",
+                          "battery-mk2-equipment" }, true)
+    player.insert{ name = BELT, count = 50 }
+    for _, at in pairs(ARC) do world.ghost(player, BELT, at[1], at[2]) end
+
+    local first, third
+    for n = 1, world.CYCLE * 6 do
+      after_ticks(n, function()
+        local up = world.count(player, BELT)
+        if not first and up >= 1 then first = game.tick end
+        if not third and up >= 3 then third = game.tick end
+      end)
+    end
+    after_ticks(world.CYCLE * 6 + 5, function()
+      assert.is_truthy(first, "nothing was built at all")
+      assert.is_truthy(third, "the round never reached a third ghost")
+      assert.is_true(third - first <= world.SWING_TICKS,
+        ("three ghosts took %d ticks, which is a journey each rather than a round")
+          :format(third - first))
     end)
   end)
 

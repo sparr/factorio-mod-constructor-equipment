@@ -2252,6 +2252,22 @@ local function aim(player, wearer, record, slot, count, job)
         else
           arm.drop_position = { rest.x, rest.y }
         end
+      elseif job.crossing then
+        -- Crossing from the ghost just built to the next one of the round. The pickup end
+        -- goes with the drop end, and the two have to be the same point exactly, because
+        -- the engine will not carry a load past its pickup: an inserter that has just let
+        -- go swings back to wherever it picks up from before it will look at a new drop,
+        -- whatever is in its hand. Left pointing home, that is a round trip per ghost --
+        -- out, build, all the way back in, out again -- which is the whole of what the
+        -- bulk claw was meant to save. Pointed at the next ghost, the return swing is the
+        -- journey there.
+        --
+        -- The same arrangement a fetch crosses under, above, and for the same reason. It
+        -- lasts until the hand arrives, which is where advance() puts the pickup back on
+        -- the rest point so that the engine can make the drop: an inserter will not put
+        -- anything into the very thing it is picking up from.
+        arm.pickup_position = { target.x, target.y }
+        arm.drop_position = { target.x, target.y }
       else
         arm.drop_position = { target.x, target.y }
       end
@@ -3034,6 +3050,10 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
         nearby) then
     local target = aimed_at(job, record)
     arm.drop_position = { target.x, target.y }
+    -- Both ends, and both now rather than on the next tick's aim(). The engine has just
+    -- let go and its next move is towards its pickup: a tick of that still pointing home
+    -- is a tick of the claw setting off the wrong way.
+    arm.pickup_position = { target.x, target.y }
     -- shut to begin with: the claw is still at the ghost it has just built, and advance
     -- opens the box once it is near the new one
     catcher_at(record, arm.surface, target, false)
@@ -3164,6 +3184,12 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
   job.ghost = ghost
   job.target = ghost.position
   job.shift = nil
+  -- Crossing to it, the way a fetch does. The claw is holding the rest of the round and
+  -- the engine has just let go of what it delivered, so its next move is back to wherever
+  -- it picks up from whatever its hand holds. Pointed home that is a wasted journey each
+  -- way; aim() points it at the ghost instead for as long as this is set, and advance()
+  -- clears it when the hand gets there.
+  job.crossing = true
   -- A new leg, so the swing limit counts from here. The fetch path above has always done
   -- this and this one did not, so a long round wrote itself off partway through on a clock
   -- that had been running since its first ghost.
@@ -3199,6 +3225,34 @@ end
 ---@param slot integer which arm it is
 ---@param count integer how many arms there are
 ---@param claimed table<integer, boolean> what the other arms are reaching for
+---Put what the ghost underneath takes out of the claw and into its box.
+---
+---The engine's own drop, made by hand, for the one case the engine will not make it: a
+---claw crossing to the next thing of a round, whose pickup and drop are the same point so
+---that the load rides across in the hand. See advance(), which is the only caller.
+---
+---Only what this one ghost takes. The rest of the round stays in the hand for the things
+---after it.
+---@param record table
+---@param job table
+local function hand_over(record, job)
+  local arm = record.entity
+  local box = record.catcher
+  if not (arm and arm.valid and box and box.valid) then return end
+  if not arm.held_stack.valid_for_read then return end
+  local inside = box.get_inventory(defines.inventory.chest)
+  if not inside then return end
+
+  local quality = arm.held_stack.quality and arm.held_stack.quality.name or nil
+  local wanted = math.min(job.count, arm.held_stack.count)
+  if wanted < 1 then return end
+  local put = inside.insert{ name = arm.held_stack.name, quality = quality,
+                             count = wanted }
+  if put < 1 then return end
+  local left = arm.held_stack.count - put
+  if left > 0 then arm.held_stack.count = left else arm.held_stack.clear() end
+end
+
 local function advance(player, wearer, record, slot, count, claimed, nearby)
   local job = record.job
 
@@ -3278,6 +3332,29 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     -- inserter of the player's can fill it first.
     catcher_at(record, arm.surface, target, job.take
       or reach.distance(hand, target) <= within(tier_of(record), OPEN, moved))
+
+    -- The claw has crossed to the next ghost of its round and got there, so the handover
+    -- is made here rather than left to the engine.
+    --
+    -- The engine cannot make it. While the pickup and the drop are the same point it will
+    -- not let go -- an inserter never puts anything into the very thing it picks up from --
+    -- and that sameness is the only reason the load travelled across in the hand at all.
+    -- Putting the pickup back on the rest point to free the drop does not help either: a
+    -- hand that has not dropped is on its way to its pickup whatever is in it, so the claw
+    -- simply turned round and went home from the ghost it had just reached. Measured, that
+    -- is a twenty five tick detour each way, which is the whole of what the bulk claw was
+    -- meant to save.
+    --
+    -- So what this ghost takes goes from the hand into the box, and deliver() finds it
+    -- there further down this same tick. Nothing else can get at it in between, which
+    -- matters: the box is standing at the claw's own pickup position, and a tick of grace
+    -- would let the engine take the load straight back out of it.
+    --
+    -- A fetch is not this case; take_up() does its own crossing, the other way round.
+    if job.crossing and not job.take
+        and reach.distance(hand, target) <= within(tier_of(record), HOME, moved) then
+      hand_over(record, job)
+    end
 
     -- the character can walk off mid swing, or the vehicle drive off, and an arm that
     -- stretched to follow would be no kind of inserter
