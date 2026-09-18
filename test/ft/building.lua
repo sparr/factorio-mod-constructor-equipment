@@ -134,8 +134,13 @@ describe("a character wearing the equipment", function()
       timed(2, "south", function()
         assert.is_not_nil(took.north, "nothing was built in front")
         assert.is_not_nil(took.south, "nothing was built behind")
-        -- the arms are given work ten times a second, so two reaches of the same length can
-        -- still land a handful of ticks apart
+        -- Back to asking for the same time both ways, which is what an arm pointed at what
+        -- it is reaching for gives: a reach opens with no turn whichever way the ghost
+        -- lies. It had to allow a factor of two while every arm was built facing north and
+        -- reaching behind its owner meant swinging through a half turn first.
+        --
+        -- The arms are given work ten times a second, so two reaches of the same length can
+        -- still land a handful of ticks apart.
         assert.is_true(math.abs(took.north - took.south) <= 12,
           ("in front took %d ticks and behind %d, which is not the same reach both ways")
             :format(took.north, took.south))

@@ -540,7 +540,10 @@ local ROWS = {
           end
         end },
     },
-    vehicle = { name = "tank", at = { 3, 6 }, fuel = "solid-fuel" },
+    -- The fourth tier pair first. A grid packs in the order it is given, and two one by
+    -- fives after two one by fours leaves nowhere tall enough for them.
+    vehicle = { name = "tank", at = { 3, 6 }, fuel = "solid-fuel",
+                arms = { TIERS[4], TIERS[4], TIERS[3], TIERS[3] } },
   },
 
   {
@@ -587,7 +590,8 @@ local ROWS = {
           end
         end },
     },
-    vehicle = { name = "car", at = { 3, 6 }, fuel = "solid-fuel" },
+    vehicle = { name = "car", at = { 3, 6 }, fuel = "solid-fuel",
+                arms = { TIERS[3], TIERS[3], TIERS[3], TIERS[3] } },
   },
 
   {

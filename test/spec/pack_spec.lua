@@ -41,6 +41,41 @@ describe("which way a facing points", function()
   end)
 end)
 
+describe("which facing a vector points nearest to", function()
+  it("is the inverse of pack.facing at every one of the sixteen", function()
+    for d = 0, 15 do
+      local x, y = pack.facing(d)
+      assert.are.equal(d, pack.towards(x, y), "direction " .. d)
+    end
+  end)
+
+  it("rounds to the nearest rather than truncating", function()
+    -- A sixteenth short of west, which an inserter's own truncation would call south
+    local x, y = pack.facing(11)
+    assert.are.equal(12, pack.towards(x, y, 4))
+  end)
+
+  it("gives only the four cardinals when asked for four", function()
+    for d = 0, 15 do
+      local x, y = pack.facing(d)
+      local way = pack.towards(x, y, 4)
+      assert.are.equal(0, way % 4, "asked for a quarter and got " .. way)
+    end
+  end)
+
+  it("puts each quarter round the facing it belongs to", function()
+    assert.are.equal(0, pack.towards(0, -1, 4))
+    assert.are.equal(4, pack.towards(1, 0, 4))
+    assert.are.equal(8, pack.towards(0, 1, 4))
+    assert.are.equal(12, pack.towards(-1, 0, 4))
+  end)
+
+  it("does not care how long the vector is", function()
+    assert.are.equal(4, pack.towards(40, 1, 4))
+    assert.are.equal(4, pack.towards(0.04, 0.001, 4))
+  end)
+end)
+
 describe("where the arm is mounted", function()
   -- the camera looks from the south, so a character facing north has their back to it and
   -- the arm should sit on the side of them the camera can see

@@ -97,6 +97,17 @@ local MARK_TICKS = 30
 --- would be worn to bed.
 local IDLE_TICKS = 60
 
+--- How long an arm is given to move again before it is taken to be going nowhere.
+---
+--- An armour that dies partway through a reach leaves the claw where it stands: an empty
+--- buffer moves a hand no distance at all, so the arm can neither finish what it set off
+--- for nor come home from it. Left alone it hangs at full stretch until the swing limit
+--- below writes the whole reach off, five seconds later, holding a load its owner has
+--- already been charged for.
+---
+--- Long enough that a trickle of charge is not mistaken for none. An arm being fed slowly
+--- creeps rather than stopping, and any movement at all starts this over.
+local STRANDED_TICKS = 60
 
 --- How long a swing is allowed to take before it is written off.
 ---
@@ -1341,6 +1352,10 @@ local function arm_of(player, wearer, record)
       name = tier_of(record).inserter,
       position = wearer.position,
       force = player.force,
+      -- Which way it is built facing is which way its hand starts, and a hand cannot be
+      -- turned afterwards. See point(), which is what decides this; nothing here means
+      -- north, which is what an inserter faces when nobody says otherwise.
+      direction = record.facing,
     }
     -- Filled the moment it exists, out of its own equipment, so that it never spends a
     -- tick on empty. Out of the equipment, not out of nothing: handing it a free bufferful
@@ -1679,6 +1694,7 @@ local function put_away(player, record)
   record.busy = nil
   record.run = nil
   record.lift = nil
+  record.stranded = nil
 end
 
 ---Put every one of a player's arms away and forget they had any.
@@ -1824,6 +1840,72 @@ local function muster(player, wearer)
     record.wearer = wearer
   end
   return list
+end
+
+--- How far off a target has to be before which way it lies means anything. Nearer than
+--- this and the bearing is noise, and an arm pointed by noise is an arm pointed anywhere.
+local POINTED = 0.3
+
+---Build an arm facing what it is about to reach for.
+---
+---An inserter's hand starts where its entity faces and swings round from there, and a claw
+---turns slowly. Measured on the fourth tier at its full five tiles, with every arm built
+---facing north whatever it was about to do: a ghost due north was delivered on tick 32 and
+---one due south on tick 97, with the bearings between them spread evenly across that
+---range. The same reach, three times the wait, for a reason nothing on the screen explains.
+---
+---What a reach costs is the longer of two things happening at once: extending out, which
+---is the same whichever way it faces, and turning to face it, which at a half turn is
+---three times the extension and at nothing at all is free. So an arm is pointed before it
+---sets off, and what is left to turn through is small enough to hide behind the extension.
+---
+---Four directions is all there are to point it at: the engine allows an inserter the four
+---cardinals and truncates anything else -- ask for west by way of a fifteenth of a turn and
+---it faces south -- so the bearing is rounded to the nearest quarter, leaving an eighth of
+---a turn at worst. It will not turn one that already exists either: setting direction on a
+---built inserter moves nothing. Pointing one therefore means building it again, which is
+---why this happens once, as it leaves, and never during a reach: the claw is empty on the
+---way out and there is nothing in the air to drop.
+---@param player LuaPlayer
+---@param wearer LuaEntity the character or vehicle the arm is mounted on
+---@param record table the arm
+---@param slot integer which arm it is
+---@param count integer how many arms there are
+---@param job table what it is about to reach for
+local function point(player, wearer, record, slot, count, job)
+  local mount, lift = mounting(wearer, slot, count)
+  -- The target in the frame the arm swings in, the same lift aimed_at() applies, since
+  -- that is the bearing the hand will actually travel along.
+  local dx, dy = job.target.x - mount.x, (job.target.y - lift) - mount.y
+  if dx * dx + dy * dy < POINTED * POINTED then return end
+  local wanted = pack.towards(dx, dy, 4)
+
+  local arm = record.entity
+  if not (arm and arm.valid) then
+    -- There is none yet, and an arm that is about to be made can simply be made this way
+    -- round. This is the common case: an idle arm is put away, so most departures are a
+    -- first departure.
+    record.facing = wanted
+    return
+  end
+  if arm.direction == wanted then return end
+  -- A hand with something in it is a hand part way through a journey, whatever the list
+  -- says. Nothing here is worth taking a load out of the air for.
+  if arm.held_stack.valid_for_read then return end
+
+  -- The charge goes back where putting the arm away would put it and the new one draws it
+  -- out again on the same tick, so pointing an arm is not a way of burning a buffer. No
+  -- claw is drawn shrinking away either: this is an arm turning round, not one going away.
+  if record.grid and record.grid.valid then
+    refund(record.grid, record.piece, arm.energy)
+  end
+  arm.destroy()
+  record.entity = nil
+  record.facing = wanted
+  -- A fresh hand starts somewhere else entirely, and the window that decides whether the
+  -- claw has arrived is measured from wherever it was last seen.
+  record.last_hand = nil
+  arm_of(player, wearer, record)
 end
 
 ---Keep the inserter on its wearer and pointed at whatever it is reaching for.
@@ -2859,6 +2941,27 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
   local moved = record.last_hand and reach.distance(record.last_hand, hand) or 0
   record.last_hand = { x = hand.x, y = hand.y }
 
+  -- An arm that is standing still because it has nothing to move with. aim() has just
+  -- topped its buffer up out of its own equipment, so an empty buffer here means the
+  -- equipment had nothing to give either, and the hand is not going anywhere -- not on to
+  -- the ghost, and not home. Being stopped for want of charge is what is asked, rather
+  -- than merely being stopped: a claw waiting over a box for something to be put into it
+  -- is standing perfectly still as well, and there is nothing wrong with that one.
+  --
+  -- Put away rather than left hanging. What it is holding goes back to the pockets it came
+  -- out of, the claw folds up where the arm is bolted on, and it comes back out when there
+  -- is charge for it again, which is what happens to an arm that never set off in the
+  -- first place.
+  if moved == 0 and arm.energy < 1 then
+    record.stranded = (record.stranded or 0) + 1
+    if record.stranded > STRANDED_TICKS then
+      put_away(player, record)
+      return
+    end
+  else
+    record.stranded = nil
+  end
+
   if job.going == "out" then
     -- The box waiting on the ghost is opened only once this claw is near enough to be the
     -- one that fills it. Left open the whole way out, any inserter of the player's own
@@ -3011,6 +3114,10 @@ local function assign(player, wearer, list, tick, nearby)
             inventory and inventory.get_item_count{ name = item, quality = quality } or count,
             trips_for(player.force, tier))
         end
+        -- Pointed before it is aimed, and before anything is put in its hand: pointing an
+        -- arm is building it again, and a claw loaded first would be loaded into the arm
+        -- that is about to be replaced.
+        point(player, wearer, record, slot, #list, record.job)
         local arm = aim(player, wearer, record, slot, #list, record.job)
         if arm and record.job.take then
           -- Nothing leaves the pockets for a fetch. The claw sets off empty.
@@ -3040,6 +3147,20 @@ local function assign(player, wearer, list, tick, nearby)
             -- what the claw actually took, and what is being carried on its behalf
             record.job.carried = arm.held_stack.valid_for_read and arm.held_stack.count or 0
             record.job.escrow = taken - record.job.carried
+          end
+        end
+        -- The box has to be standing on the target before the engine next moves the hand,
+        -- rather than on the tick after. A freshly built arm's hand starts seven tenths of
+        -- a tile out along the way it faces -- measured, at every tier and every direction
+        -- -- so an arm pointed at something inside that is at its drop position already on
+        -- the tick it is loaded. The engine puts a load down when the hand arrives whether
+        -- anything is there to take it or not: with no box, a belt on the floor and the
+        -- ghost still standing. advance() opens the box once the claw is near, and on the
+        -- tick an arm sets off advance has already run.
+        if arm and record.job and not record.job.take then
+          local target = aimed_at(record.job, record)
+          if reach.distance(arm.held_stack_position, target) <= within(tier, OPEN) then
+            catcher_at(record, arm.surface, target, true)
           end
         end
         working = true

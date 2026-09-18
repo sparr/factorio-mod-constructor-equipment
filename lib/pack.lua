@@ -41,6 +41,25 @@ function pack.facing(direction)
   return math.sin(angle), -math.cos(angle)
 end
 
+---Which facing a vector on the map points nearest to.
+---
+---The other way round from pack.facing, and coarser on request: an inserter is allowed
+---four directions rather than sixteen, so what is wanted of it is the nearest quarter
+---rather than the nearest sixteenth. Rounded rather than truncated, which is not the same
+---thing: the engine's own truncation takes anything from a fifteenth of a turn down to
+---nought and calls it north, so a vector pointing very slightly north of west becomes
+---south if it is handed over unrounded.
+---@param x number
+---@param y number
+---@param of integer? how many ways to choose between, a factor of sixteen, defaulting to all
+---@return integer 0 to 15, north being 0
+function pack.towards(x, y, of)
+  of = of or pack.DIRECTIONS
+  -- Lua 5.2's two argument arctangent, which later versions fold into math.atan.
+  local turns = (math.atan2 or math.atan)(x, -y) / (2 * math.pi)
+  return math.floor(turns * of + 0.5) % of * (pack.DIRECTIONS / of)
+end
+
 ---Where on the back an arm sits, in body coordinates: how far across the shoulders and
 ---how far down the back, in tiles, before any of it is turned to face anywhere.
 ---

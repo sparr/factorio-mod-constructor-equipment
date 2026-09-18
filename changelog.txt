@@ -19,6 +19,7 @@ Version: 2.1.5
     - Arms on a spidertron are bolted where its legs meet its body, one to a leg, and stay where they are when its torso turns; a ninth and beyond ride round the body as before
     - An arm goes for whatever it can reach soonest rather than whatever is nearest, counting the turn as well as the reach, which clears a scattered yard about half again as quickly
     - The toolbar button greys out when you are wearing no arm, the way the exoskeleton's does
+    - An arm is built facing what it is about to reach for, so a reach costs the same whichever way the thing lies: a fourth tier arm delivered five tiles away in about thirty ticks in every direction, where reaching behind its owner used to take ninety seven
   Bugfixes:
     - Fixed the game ending when a player wearing arms climbed into a locomotive, which cannot take the slowdown sticker the arms put on their wearer
     - A claw with room left in its hand works a round of pickups, carrying its load from one thing to the next without coming home between them, and visits every one of them: nothing is taken up that the claw did not travel to
@@ -31,6 +32,7 @@ Version: 2.1.5
     - An arm switched off part way through a reach now swings home first, hands back what it was carrying and then folds away, rather than being taken away where it stood
     - Fixed the game failing to load alongside Enhanced Shadows
     - An arm now casts the base game's own hand shadow, rather than a silhouette of the claw itself
+    - An arm whose armour runs flat part way through a reach is now put away, handing back what it was carrying, rather than hanging at full stretch until the swing gives up on it
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.4
 Date: 2026-09-14

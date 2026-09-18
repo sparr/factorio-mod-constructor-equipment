@@ -14,10 +14,6 @@ local A_BUILD = world.BUILD_INTERVAL * 2
 --- they reach for are out past the hull rather than round their owner's feet.
 local A_VEHICLE_BUILD = A_BUILD * 3
 
---- Part way through a reach, which is when there is a slowdown to look at. One ghost is one
---- swing, and a swing that has been and gone takes its slowdown with it.
-local MID_REACH = 30
-
 ---A spot out to the right of a vehicle, which is where a lone arm is mounted and so the one
 ---place it can reach without the hull being in the way.
 ---
@@ -198,9 +194,10 @@ describe("equipment in a vehicle's own grid", function()
     world.fitted(tank)
     tank.insert{ name = BELT, count = 5 }
     world.ghost(player, BELT, beside(tank))
-    after_ticks(12, function()
-      assert.are.equal(4, tank.get_item_count(BELT),
-        "the arm should have taken a belt out of the hold to carry")
+    -- The tick the belt leaves the hold, rather than a tick chosen as roughly then: an arm
+    -- pointed at what it is reaching for can be there and back inside the window this used
+    -- to wait out.
+    world.once(function() return tank.get_item_count(BELT) == 4 end, function()
       -- getting out puts the arms away mid reach, which is the moment the load has to go
       -- back somewhere
       player.driving = false
@@ -210,7 +207,7 @@ describe("equipment in a vehicle's own grid", function()
         assert.are.equal(0, player.get_item_count(BELT),
           "the belt in the claw went into the driver's pockets instead")
       end)
-    end)
+    end, "the arm never took a belt out of the hold to carry")
   end)
 
   it("pays for it out of the vehicle's own batteries", function()
@@ -443,8 +440,7 @@ describe("equipment in a vehicle's own grid", function()
     spider.set_driver(player)
     spider.insert{ name = BELT, count = 20 }
     world.ghost(player, BELT, SPIDER_REACH[1], SPIDER_REACH[2])
-    after_ticks(MID_REACH, function()
-      assert.is_not_nil(world.slowing_anything(spider), "the spidertron was never slowed")
+    world.once(function() return world.slowing_anything(spider) ~= nil end, function()
       assert.is_not_nil(world.sticker_on(spider, tiers.list[1].stickers.legs.flat)
         or world.sticker_on(spider, tiers.list[1].stickers.legs.slowing),
         "the spidertron took the wheeled slowdown rather than the legged one")
@@ -452,7 +448,7 @@ describe("equipment in a vehicle's own grid", function()
         assert.is_true(world.count(player, BELT) > 0, "the spidertron's own arms built nothing")
         spider.destroy()
       end)
-    end)
+    end, "the spidertron was never slowed")
   end)
 
   --- The point of aiming in the frame the arm is drawn in. A spidertron's torso rides a tile
@@ -495,8 +491,10 @@ describe("equipment in a vehicle's own grid", function()
       timed(1, "south", function()
         assert.is_not_nil(took.north, "nothing was built to the north")
         assert.is_not_nil(took.south, "nothing was built to the south")
-        -- the arms are given work ten times a second, so two builds of the same length can
-        -- still land a handful of ticks apart
+        -- The same time both ways, for the reason in building.lua: an arm is built facing
+        -- what it is about to reach for, so neither side opens with a turn. The arms are
+        -- given work ten times a second, so two builds of the same length can still land a
+        -- handful of ticks apart.
         assert.is_true(math.abs(took.north - took.south) <= 12,
           ("north took %d ticks and south %d, which is not the same reach both ways")
             :format(took.north, took.south))
@@ -528,17 +526,19 @@ describe("the slowdown a vehicle's arms ask for", function()
 
   it("lands on the vehicle", function()
     world.ghost(player, BELT, beside(tank))
-    after_ticks(MID_REACH, function()
-      assert.is_not_nil(world.slowing_anything(tank), "the vehicle was never slowed")
-    end)
+    world.once(function() return world.slowing_anything(tank) ~= nil end, function() end,
+      "the vehicle was never slowed")
   end)
 
   it("does not land on the driver", function()
     world.ghost(player, BELT, beside(tank))
-    after_ticks(MID_REACH, function()
+    -- Asked on the tick the vehicle is slowed rather than at a tick it ought to be by:
+    -- with nothing slowed yet, nothing is on the driver either, and the test passes
+    -- without having looked at anything.
+    world.once(function() return world.slowing_anything(tank) ~= nil end, function()
       assert.is_nil(world.slowing_anything(player.character),
         "the driver was slowed as well as the vehicle they are sat in")
-    end)
+    end, "the vehicle was never slowed")
   end)
 
   --- Measured rather than read off the prototype: LuaEntityPrototype does not hand back a
@@ -666,14 +666,13 @@ describe("the slowdown a vehicle's arms ask for", function()
 
   it("is given back when the driver gets out", function()
     world.ghost(player, BELT, beside(tank))
-    after_ticks(MID_REACH, function()
-      assert.is_not_nil(world.slowing_anything(tank), "the vehicle was never slowed")
+    world.once(function() return world.slowing_anything(tank) ~= nil end, function()
       player.driving = false
       after_ticks(2, function()
         assert.is_nil(world.slowing_anything(tank),
           "the vehicle is still slowed by arms nobody is driving")
       end)
-    end)
+    end, "the vehicle was never slowed")
   end)
 end)
 

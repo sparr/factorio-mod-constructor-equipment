@@ -768,13 +768,22 @@ describe("what a hop costs against what carrying on asks for", function()
         position = world.ORIGIN, radius = tier.range + 2 }
       local spent = before - stored()
       assert.are.equal(2, built, "both ghosts should have gone up in one journey")
-      -- Two reaches' worth covers both deliveries and the journey home, with room over.
+      -- Against what an arm must have in hand before it sets off, which is the property
+      -- that matters: a journey an arm can begin is a journey it can finish, with the item
+      -- arriving rather than the claw stopping halfway holding it.
       --
-      -- It used to be one and a bit. The saving a carrying claw buys is smaller than it
-      -- was: the mod used to count a delivery done three tenths of a tile short and cut
-      -- the swing off, and the engine now takes the hand the whole way onto the box. Two
-      -- deliveries half a turn apart measure about 1.85 reaches. Still a saving over two
-      -- separate journeys, which would be two full reaches out and two home.
+      -- The number is worth keeping written down, because it has moved three times. About
+      -- 1.2 reaches when the mod called a delivery done three tenths of a tile short and
+      -- cut the swing off there; about 1.85 once the engine took the hand the whole way
+      -- onto the box; 2.09 while arms turned a third slower than the inserters they borrow
+      -- from, since half a turn was most of this journey; and back under two now that they
+      -- turn at the inserter's own speed again. Departure is 2.5 reaches, so there is room
+      -- either way, and this is the test that says how much.
+      assert.is_true(spent < tier.departure,
+        ("two deliveries half a turn apart cost %.0fJ, and an arm sets off on %.0fJ")
+          :format(spent, tier.departure))
+      -- Still a saving over two separate journeys, which would be two full reaches out and
+      -- two home.
       assert.is_true(spent < tier.reach_energy * 2.0,
         ("two deliveries half a turn apart cost %.0fJ against a reach's %.0fJ")
           :format(spent, tier.reach_energy))
@@ -914,5 +923,77 @@ describe("four arms, one of each tier, offered four ghosts at once", function()
             away + 1, tostring(sent[away + 1]), away))
       end
     end)
+  end)
+end)
+
+--- Which way an arm is built facing.
+---
+--- An inserter's hand starts where its entity faces, and a claw turns much more slowly than
+--- it reaches. An arm built facing north whatever it was about to do therefore paid for a
+--- turn on every reach that was not northward: measured on a fourth tier arm at its full
+--- five tiles, thirty two ticks due north against ninety seven due south, for the same
+--- reach. So an arm is built facing what it is about to reach for, which is the only way to
+--- point one -- an inserter's hand does not follow its entity's direction once it exists.
+describe("which way an arm is pointed", function()
+  --- Inside the fourth tier's five tiles, and far enough out that the bearing is not noise.
+  local OUT = 4
+
+  local WAYS = {
+    { name = "north", x = 0, y = -1, facing = defines.direction.north },
+    { name = "east", x = 1, y = 0, facing = defines.direction.east },
+    { name = "south", x = 0, y = 1, facing = defines.direction.south },
+    { name = "west", x = -1, y = 0, facing = defines.direction.west },
+  }
+
+  for _, way in ipairs(WAYS) do
+    it("faces a ghost that lies " .. way.name, function()
+      world.equip(player, { tiers.list[4].name, "battery-equipment" }, true)
+      player.insert{ name = BELT, count = 5 }
+      world.ghost(player, BELT, way.x * OUT, way.y * OUT)
+      world.once(function() return world.arm(player) ~= nil end, function()
+        assert.are.equal(way.facing, world.arm(player).direction,
+          ("the arm was built facing %d rather than %s")
+            :format(world.arm(player).direction, way.name))
+      end, "no arm ever came out")
+    end)
+  end
+
+  it("does not drop its load on a ghost right beside it", function()
+    world.equip(player, { tiers.list[1].name, "battery-equipment" }, true)
+    player.insert{ name = BELT, count = 5 }
+    -- One tile off, which is inside the seven tenths of a tile a freshly built hand starts
+    -- out at. An arm pointed at something that close is at its drop position on the tick it
+    -- is loaded, so the box on the ghost has to be there already: the engine puts a load
+    -- down when the hand arrives whether there is anything to take it or not, and with
+    -- nothing there it goes on the floor.
+    world.ghost(player, BELT, 0, 1)
+    world.once(function() return world.ghosts(player) == 0 end, function()
+      assert.are.equal(1, world.count(player, BELT), "the ghost was not built")
+      assert.are.equal(0, player.surface.count_entities_filtered{
+          name = "item-on-ground", position = world.ORIGIN, radius = 5 },
+        "the belt went on the ground rather than into the ghost")
+      assert.are.equal(4, player.get_item_count(BELT),
+        "the character was charged for something that was never built")
+    end, "the ghost beside the character was never built")
+  end)
+
+  it("costs much the same to reach either side of its owner", function()
+    world.equip(player, { tiers.list[4].name, "battery-equipment" }, true)
+    player.insert{ name = BELT, count = 10 }
+    local began, northward = game.tick, nil
+    world.ghost(player, BELT, 0, -5)
+    world.once(function() return world.ghosts(player) == 0 end, function()
+      northward = game.tick - began
+      -- The second one goes to the far side, from an arm already out and resting on a
+      -- northward bearing, which is the reach that used to cost three times the first.
+      began = game.tick
+      world.ghost(player, BELT, 0, 5)
+      world.once(function() return world.ghosts(player) == 0 end, function()
+        local southward = game.tick - began
+        assert.is_true(southward < northward * 2,
+          ("north took %d ticks and south %d, which is the turn being paid for")
+            :format(northward, southward))
+      end, "the ghost on the far side was never built", world.CYCLE * 4)
+    end, "the ghost in front was never built", world.CYCLE * 4)
   end)
 end)

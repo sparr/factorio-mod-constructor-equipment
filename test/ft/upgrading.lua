@@ -180,13 +180,21 @@ describe("a character wearing the equipment", function()
       world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
       pair("iron-plate")
       player.insert{ name = FASTER_UNDER, count = 5 }
-      -- Part way home, before anything has been handed over.
-      after_ticks(world.DELIVERED + 4, function()
+      -- Watched rather than sampled. The claw holds both ends for about ten ticks on its
+      -- way home, and exactly when that falls moves with the check tick, so a single look
+      -- is a coin toss dressed up as a measurement.
+      local most, owed_ever = 0, 0
+      script.on_nth_tick(1, function()
         local claw, owed = in_flight()
-        assert.are.equal(2, claw,
-          ("the claw is carrying %d of the pair and %d is travelling with the job"):format(
-            claw, owed))
-        assert.are.equal(0, owed, "the job is carrying what the hand had room for")
+        most = math.max(most, claw)
+        owed_ever = math.max(owed_ever, owed)
+      end)
+      after_ticks(world.CYCLE * 2, function()
+        script.on_nth_tick(1, nil)
+        assert.are.equal(2, most,
+          ("the claw carried at most %d of the pair, and %d travelled with the job"):format(
+            most, owed_ever))
+        assert.are.equal(0, owed_ever, "the job carried what the hand had room for")
       end)
     end)
 
@@ -314,7 +322,10 @@ describe("a character wearing the equipment", function()
   it("keeps the old belt in the claw when the pockets are full", function()
     world.fill_pockets(player)
     world.to_upgrade(player, BELT, FASTER, 2, 0)
-    after_ticks(world.CYCLE, function()
+    -- On the way home rather than after it. Spending a belt on the swap empties the stack
+    -- it came from, which frees the slot the old one then goes into, so the pockets are only
+    -- full while the claw is carrying -- which is the whole of what this is about.
+    after_ticks(world.DELIVERED, function()
       assert.are.equal(1, world.count(player, FASTER), "the swap never happened")
       assert.are.equal(BELT, world.held(player),
         "the belt that came off was lost rather than held")
@@ -366,13 +377,17 @@ describe("a character wearing the equipment", function()
 
     it("leaves it on the ground rather than in the character's pockets", function()
       full_chest_marked_down()
-      after_ticks(A_BUILD, function()
+      -- The tick they are shed, rather than a tick the swap ought to have happened by. The
+      -- shed is marked, so it is work like any other and the claw comes straight back for
+      -- it: what this has is a window between the swap and the first plate going home, and
+      -- where in the run that window falls moves with how fast an arm swings.
+      world.once(function() return on_the_floor() > 0 end, function()
         local total = on_the_floor()
         assert.are.equal(1600, total,
           "the plates the iron chest could not hold are not on the ground")
         assert.are.equal(0, player.get_item_count("iron-plate"),
           "the plates went into the character's pockets, which no robot would do")
-      end)
+      end, "nothing was ever shed onto the ground", world.CYCLE * 2)
     end)
 
     it("does it with the pockets full as well", function()

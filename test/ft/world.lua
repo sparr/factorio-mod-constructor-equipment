@@ -25,11 +25,22 @@ world.BUILD_RANGE = 2
 --- Roughly how long a first tier arm takes to reach a ghost at the edge of its two tiles.
 ---
 --- The swing is the inserter entity's own, at the base game's extension and rotation speeds
---- for a plain inserter, so this is measured rather than set. Measured at two tiles, a
---- reach starts on tick 6, delivers on tick 37 and is home by tick 77.
-world.SWING_TICKS = 31
+--- for the inserter the tier borrows from, so this is measured rather than set. Measured at
+--- two tiles, six runs: the claw sets off within a check tick of the ghost appearing and
+--- delivers 37 ticks after that, so a ghost put down at an arbitrary tick is built between
+--- tick 38 and tick 43, and the claw is home again by tick 89.
+---
+--- It was 26 for a while, when an arm's hand extended half again as fast as the inserter's
+--- and turned a third slower. That was worth having only while an arm was built facing
+--- north whatever it was about to reach for: an arm pointed at what it is reaching for
+--- hardly turns at all, so the faster extension was buying back a cost that no longer
+--- exists, and the tiers are on the inserters' own numbers again. Every window in the tests
+--- is built from this one, so re-measuring it is what a change to the tiers' speeds costs.
+world.SWING_TICKS = 41
 
---- Comfortably after a swing has reached its target and delivered.
+--- Comfortably after a swing has reached its target and delivered, and before it is home
+--- again. Both ends matter: tests wait this long to see what was delivered, and others wait
+--- this long to see what the claw is still holding on its way back.
 world.DELIVERED = world.SWING_TICKS + 20
 
 --- A whole out and back, with room to spare. Generous: the return leg is quicker than the
@@ -314,6 +325,34 @@ function world.top_up(player, name, n)
       position = { at.x, at.y }, force = player.force,
     }
   end
+end
+
+---Wait for something to be so, rather than for a number of ticks.
+---
+---A window counted in ticks is a guess about how long an arm takes, and it goes stale the
+---moment anything changes what a reach costs: a fixture meaning "while the claw is out"
+---that says "on tick thirty" quietly starts measuring an arm that is already home. Where
+---what a test is waiting for can be asked of the world, it should be asked.
+---
+---Gives up after a limit, so a condition that never comes is a failure that says what it
+---was waiting for rather than a test that runs to the end of its timeout.
+---@param condition fun(): boolean
+---@param act fun() what to do on the first tick it holds
+---@param complaint string what to say if it never holds
+---@param limit integer? how long to wait, defaulting to a whole out and back
+function world.once(condition, act, complaint, limit)
+  local began = game.tick
+  limit = limit or world.CYCLE
+  on_tick(function()
+    if condition() then
+      act()
+      return false
+    end
+    if game.tick - began > limit then
+      assert.is_true(false, ("waited %d ticks: %s"):format(limit, complaint))
+      return false
+    end
+  end)
 end
 
 ---How many real entities of this name are standing in the arena.
