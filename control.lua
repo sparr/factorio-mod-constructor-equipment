@@ -1184,14 +1184,33 @@ local function buildable(work)
   }
 end
 
+---Whether a spot falls inside a thing's own footprint.
+---
+---Measured against the tiles the thing takes up, not its collision box. Plenty of entities
+---have a collision box far smaller than their footprint -- a medium electric pole occupies
+---a whole tile and collides across a third of one -- and using the box let a character
+---stand a fifth of a tile off a pole's centre and still count as clear of it.
+---@param work LuaEntity
+---@param at {x: number, y: number}
+---@return boolean
+local function underfoot(work, at)
+  local prototype = outcome_of(work) or work.prototype
+  local across = (prototype and prototype.tile_width or 1) / 2
+  local down = (prototype and prototype.tile_height or 1) / 2
+  local middle = work.position
+  return at.x >= middle.x - across and at.x <= middle.x + across
+     and at.y >= middle.y - down and at.y <= middle.y + down
+end
+
+--- What standing on a thing adds to the cost of going for it: enough that anything else in
+--- reach is done first, and not so much that it is never fetched at all. The units are the
+--- ticks a swing takes, so a reach nobody would ever make is plenty.
+local UNDERFOOT = 100000
+
 ---Whether a character is standing on the ground a ghost will occupy.
 ---
----Measured against the tiles the thing will take up, not its collision box. Plenty of
----entities have a collision box far smaller than their footprint -- a medium electric pole
----occupies a whole tile and collides across a third of one -- and using the box let the
----character stand a fifth of a tile off a pole's centre and still count as clear of it. The
----arm would then reach for something directly under its own base, fail, spring back, and
----try again for as long as the player stood there.
+---The arm would otherwise reach for something directly under its own base, fail, spring
+---back, and try again for as long as the player stood there.
 ---@param ghost LuaEntity
 ---@param at {x: number, y: number}
 ---@return boolean
@@ -1204,13 +1223,12 @@ local function standing_in(ghost, at)
   -- refusing to reach under its own base to put something down, which is a real refusal
   -- and looks like a twitch; taking something up from under your own feet is what a person
   -- does by bending down, and a heap of plates is most often exactly where you stand.
+  --
+  -- It is a reason to do something else first, which is not the same thing: see choose(),
+  -- which sorts what its owner is standing on to the back of the queue rather than out of
+  -- it.
   if taking(ghost) then return false end
-  local prototype = outcome_of(ghost) or ghost.prototype
-  local across = (prototype and prototype.tile_width or 1) / 2
-  local down = (prototype and prototype.tile_height or 1) / 2
-  local middle = ghost.position
-  return at.x >= middle.x - across and at.x <= middle.x + across
-     and at.y >= middle.y - down and at.y <= middle.y + down
+  return underfoot(ghost, at)
 end
 
 ---Every piece of work near enough to a wearer that some arm of theirs might reach it.
@@ -1359,9 +1377,16 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
   local cost = {}
   for _, work in pairs(nearby) do
     if work.valid then
-      cost[work.unit_number or work] = hand
+      local price = hand
           and reach.swing_ticks(tier, from, hand, work.position)
           or reach.distance(from, work.position)
+      -- What its owner is standing on goes to the back of the queue. A claw will take
+      -- something up from under their feet, which is right -- see standing_in() -- and it
+      -- is the slowest thing it can do: the box lands on the arm's own base, so the hand
+      -- comes all the way in and has to go out again for whatever is next. Anything else
+      -- in reach is worth doing first, and stepping off it is what makes it quick.
+      if taking(work) and underfoot(work, standing) then price = price + UNDERFOOT end
+      cost[work.unit_number or work] = price
     end
   end
   local function costs(work)
