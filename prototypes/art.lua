@@ -71,7 +71,10 @@ end
 ---wrong shape, and it left this mod claiming a shadow lived in a file that holds a hand.
 ---A mod that reskins inserter shadows by swapping the mod name in those filenames then
 ---looked for a hand where its own shadows are kept, found nothing, and took the load down
----with it (Enhanced Shadows, reported on the mod portal).
+---with it. That is Enhanced Shadows, and a player brought it to this mod's discussion page:
+---nothing has been said to its author, who has the harder half of the problem, since a
+---missing sprite is a load failure rather than a blank graphic and the error names whoever
+---declared the path.
 ---
 ---Copying the prototype keeps the two ends together: whatever file the source inserter
 ---says its shadow is in is the file this asks for, at this mod's own scale.
