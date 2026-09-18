@@ -223,53 +223,55 @@ describe("equipment in a vehicle's own grid", function()
     end)
   end)
 
-  it("mounts a lone arm on the right side of the hull", function()
+  --- A tank is the one vanilla vehicle with a turret, and its arms go on that rather than
+  --- out on its flanks: see TURRETED in control.lua. Turned north, the two arrangements are
+  --- far apart -- a flank arm sits two thirds of a tile east or west of the hull's middle
+  --- and square on the ground, where a turret arm sits on the middle and is drawn north of
+  --- it, up on the turret -- so north is the facing these are asked in.
+  it("mounts a lone arm on the tank's turret", function()
     local tank = world.vehicle(player)
+    tank.orientation = 0
     world.fitted(tank)
     tank.insert{ name = BELT, count = 5 }
-    world.ghost(player, BELT, beside(tank))
+    world.ghost(player, BELT, 0, -2)
     after_ticks(12, function()
       local arm = world.arm(player)
       assert.is_not_nil(arm, "the vehicle grew no arm")
-      -- world.vehicle puts it down facing east, so its right is south of it
-      local box = tank.prototype.selection_box
-      local across = (box.right_bottom.x - box.left_top.x) / 2
-      local out = arm.position.y - tank.position.y
-      assert.is_true(out > 0 and out < across,
-        ("the arm sits %.2f south, where the side is %.2f out"):format(out, across))
       assert.is_true(math.abs(arm.position.x - tank.position.x) < 0.05,
-        "the arm is fore or aft rather than in the middle of the side")
+        ("the arm sits %.2f off the middle of the hull, which is out on a flank")
+          :format(arm.position.x - tank.position.x))
+      -- The turret's round part runs from 0.60 to 1.62 north of the tank's own position,
+      -- and an arm bolted to it stands at the bottom edge.
+      local up = tank.position.y - arm.position.y
+      assert.is_true(up > 0.35 and up < 0.9,
+        ("the arm is drawn %.2f north of the tank, where the turret's foot is 0.60")
+          :format(up))
     end)
   end)
 
-  --- The camera looks from the south, so the near side of a hull is drawn above the ground
-  --- it stands on and an arm bolted out there has to be lifted to meet it. The far side is
-  --- hidden behind the body and stays where it is.
-  it("lifts an arm on the side facing the camera, and not one facing away", function()
+  --- A turret sits over the middle of its hull whichever way the hull is pointed, so an arm
+  --- bolted to one stays put as the vehicle turns. This is what the tank has instead of the
+  --- near side lift, which it used to take out on its flanks: the lift itself is
+  --- pack.nearness, and lives in test/spec/pack_spec.lua, since no vanilla vehicle with an
+  --- equipment grid mounts on its flanks any more.
+  it("keeps a tank's arm on its turret as the hull turns", function()
     local tank = world.vehicle(player)
+    tank.orientation = 0
     world.fitted(tank)
     tank.insert{ name = BELT, count = 5 }
-    local box = tank.prototype.selection_box
-    local across = (box.right_bottom.x - box.left_top.x) / 2
-    world.ghost(player, BELT, beside(tank))
+    world.ghost(player, BELT, 0, -2)
     after_ticks(12, function()
-      -- facing east, its right hand arm is the southern one and is lifted
-      local south = world.arm(player).position.y - tank.position.y
-      assert.is_true(south < across - 0.2,
-        ("the southern arm sits %.2f out, as low as the box's own %.2f"):format(south, across))
-
-      -- facing west, the same arm is the northern one, where a lift would poke it out over
-      -- the roof. It is not on the box's own edge either: arms are bolted inboard of the
-      -- running gear, which on a tank is its tracks, so what is asked is that it is out on
-      -- that side and not lifted off it.
-      tank.orientation = 0.75
+      local first = world.arm(player).position
+      local up = tank.position.y - first.y
+      tank.orientation = 0.25
       after_ticks(2, function()
-        local north = world.arm(player).position.y - tank.position.y
-        assert.is_true(north < 0 and north > -across,
-          ("the northern arm sits %.2f out, where the side is %.2f"):format(north, -across))
-        assert.is_true(north < -0.5 * across,
-          ("the northern arm sits %.2f out, which is lifted rather than square on the side")
-            :format(north))
+        local turned = world.arm(player).position
+        assert.is_true(math.abs(turned.x - tank.position.x) < 0.05,
+          ("the arm swung %.2f off the middle when the hull turned")
+            :format(turned.x - tank.position.x))
+        assert.is_true(math.abs((tank.position.y - turned.y) - up) < 0.05,
+          ("the arm was drawn %.2f north facing north and %.2f facing east")
+            :format(up, tank.position.y - turned.y))
       end)
     end)
   end)
@@ -344,64 +346,103 @@ describe("equipment in a vehicle's own grid", function()
     end)
   end)
 
-  it("puts two arms out on the sides", function()
+  -- Two of them ring the turret the way two on a character ring the middle of their back:
+  -- side by side and level, rather than one a side of the hull.
+  it("rings a pair of arms round the tank's turret", function()
     local tank = world.vehicle(player)
+    tank.orientation = 0
     world.fit(tank, { "constructor-equipment", "constructor-equipment", "battery-equipment" },
       true)
     tank.insert{ name = BELT, count = 5 }
-    -- world.SPOTS includes the two straight out to the sides, which is where a pair of arms
-    -- is mounted and so what they can reach
     world.several(player, BELT, 4)
     after_ticks(12, function()
       local arms = world.arms(player)
       assert.are.equal(2, #arms, "two of the equipment did not grow two arms")
-      local box = tank.prototype.selection_box
-      local across = (box.right_bottom.x - box.left_top.x) / 2
-      -- Facing east, its sides are north and south of it, and both are bolted inboard of
-      -- the tracks. The northern one sits square on its side; the southern one is lifted
-      -- onto the near face of the hull, which is drawn above the ground it stands on, so it
-      -- ends up nearer the middle than the northern one is.
-      local out = {}
-      for _, arm in pairs(arms) do table.insert(out, arm.position.y - tank.position.y) end
-      table.sort(out)
-      assert.is_true(out[1] < -0.5 * across and out[1] > -across,
-        ("the northern arm sits %.2f out, where the side is %.2f"):format(out[1], -across))
-      assert.is_true(out[2] > 0 and out[2] < across,
-        ("the southern arm sits %.2f out, where the side is %.2f"):format(out[2], across))
-      assert.is_true(math.abs(out[2]) < math.abs(out[1]),
-        "the southern arm was not lifted onto the hull")
+      local across, up = {}, {}
+      for _, arm in pairs(arms) do
+        table.insert(across, arm.position.x - tank.position.x)
+        table.insert(up, tank.position.y - arm.position.y)
+      end
+      table.sort(across)
+      assert.is_true(across[1] < -0.05 and across[2] > 0.05,
+        ("the pair sits at %.2f and %.2f across, which is not a pair at all")
+          :format(across[1], across[2]))
+      assert.is_true(math.abs(across[1] + across[2]) < 0.05,
+        "the pair is not centred on the turret")
+      -- Both on the same side of the ring, so they read as two arms rather than as a pair
+      -- of hips: the top two of the arrangement of four.
+      assert.is_true(math.abs(up[1] - up[2]) < 0.05,
+        ("one is drawn %.2f north and the other %.2f"):format(up[1], up[2]))
+      assert.is_true(up[1] > 0.35, ("the pair is drawn %.2f north, off the turret")
+        :format(up[1]))
+      -- On the turret and nowhere near the flanks, which on a tank facing north are two
+      -- thirds of a tile east and west.
+      assert.is_true(math.abs(across[1]) < 0.4,
+        ("the pair sits %.2f out, which is on the flanks"):format(across[1]))
     end)
   end)
 
+  -- A reach is measured from where the arm is bolted, which for a spidertron is a leg and
+  -- not the middle of it: a leg mount is most of a tile out, so a spot the torso could not
+  -- reach is well inside what the arm on the leg nearest it can.
   it("reaches from the arm's own base rather than from the middle of the vehicle", function()
-    local tank = world.vehicle(player)
-    world.fitted(tank)
-    tank.insert{ name = BELT, count = 5 }
-    local dx, dy = beside(tank)
+    local spider = player.surface.create_entity{
+      name = "spidertron", position = world.ORIGIN, force = player.force }
+    world.fit(spider, SPIDER_ARMS, true)
+    spider.set_driver(player)
+    spider.insert{ name = BELT, count = 50 }
+    local range = tiers.list[1].range
+    local mounts = leg_mounts(spider)
+    local furthest = 0
+    for _, mount in pairs(mounts) do
+      furthest = math.max(furthest, math.sqrt(mount.x * mount.x + mount.y * mount.y))
+    end
+    assert.is_true(furthest > 0.4,
+      ("the legs are only %.2f off the middle, which is no test at all"):format(furthest))
+    -- Out past what the middle could reach and inside what the nearest leg can, which on a
+    -- spidertron wants a corner rather than a beam: the legs are most of a tile out
+    -- diagonally and barely half a tile out square. Whole tiles, because a one by one ghost
+    -- snaps to the middle of a tile and a spot worked out to two decimal places is not the
+    -- spot the ghost ends up on.
+    local dx, dy = 1, -2
     local away = math.sqrt(dx * dx + dy * dy)
-    -- further from the middle of the tank than the tier reaches, and well within reach of
-    -- the arm bolted to its side
-    assert.is_true(away > tiers.list[1].range,
-      ("the spot beside it is only %.2f from the middle, which the middle could reach")
-        :format(away))
+    assert.is_true(away > range,
+      ("%.2f tiles out is inside the %.2f the middle itself reaches"):format(away, range))
+    local nearest = math.huge
+    for _, mount in pairs(mounts) do
+      nearest = math.min(nearest,
+        math.sqrt((dx - mount.x) ^ 2 + (dy - mount.y) ^ 2))
+    end
+    assert.is_true(nearest < range,
+      ("the nearest leg is %.2f off it, which is past the %.2f an arm reaches")
+        :format(nearest, range))
     world.ghost(player, BELT, dx, dy)
     after_ticks(A_VEHICLE_BUILD, function()
       assert.are.equal(1, world.count(player, BELT),
-        ("nothing was built %.2f tiles out to the side, where the arm is"):format(away))
+        ("nothing was built %.2f tiles out, where the middle cannot reach and a leg can")
+          :format(away))
+      spider.destroy()
     end)
   end)
 
-  it("will not reach across its own hull to the far side", function()
+  -- The other side of mounting on the turret: it sits over the middle of the hull, so a
+  -- tank's reach is the same off its nose as off its flank. Out on the flanks it was not --
+  -- an arm on the side could not stretch to the front of its own tank -- and that is the
+  -- price of putting them where a player looks.
+  it("reaches as far off a tank's nose as off its flank", function()
     local tank = world.vehicle(player)
+    tank.orientation = 0
     world.fitted(tank)
     tank.insert{ name = BELT, count = 5 }
-    -- two tiles from the middle, which is inside what the tier promises, and further than
-    -- that from the arm out on the side, which is not
-    world.ghost(player, BELT, 2, 0)
-    after_ticks(A_VEHICLE_BUILD, function()
-      assert.are.equal(0, world.count(player, BELT),
-        "the arm stretched from the back of the tank to the front of it")
-      assert.are.equal(1, world.ghosts(player), "the ghost went somewhere")
+    local range = tiers.list[1].range
+    -- The nose, which is past the hull's own end, and the flank, which is past its side.
+    world.ghost(player, BELT, 0, -range)
+    world.ghost(player, BELT, range, 0)
+    after_ticks(A_VEHICLE_BUILD * 2, function()
+      assert.are.equal(2, world.count(player, BELT),
+        ("only %d of the two went up, so the reach is not the same all round")
+          :format(world.count(player, BELT)))
+      assert.are.equal(0, world.ghosts(player), "a ghost is still standing there")
     end)
   end)
 

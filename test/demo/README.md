@@ -77,9 +77,11 @@ that the claw did not travel to. And a cliff, which is not a demolition at all b
 the claw carries one explosive out and comes home with nothing.
 
 **7. A tank** and **8. a spidertron**, the two vehicles the base game gives an equipment
-grid. Get in and drive along the ghosts on either side. The arms are mounted along the hull
-and reach from where they are bolted rather than from the middle, and the vehicle pays out of
-its own hold rather than your pockets.
+grid. Get in and drive along the ghosts on either side. A tank's arms are bolted to its
+turret, which sits over the middle of the hull; a spidertron's are bolted to its legs, and a
+vehicle with neither carries them along its flanks. Each reaches from where it is bolted
+rather than from the middle, and the vehicle pays out of its own hold rather than your
+pockets.
 
 **9. A car** and **10. a locomotive** are **not vanilla**. Neither has an equipment grid in
 the base game, and the showroom adds one so there is something to look at. The locomotive
@@ -92,7 +94,7 @@ nothing takes over.
 ## What the smoke run should say
 
 ```
-ce-demo: built 10 rows, 26 bays, 187 ghosts, 4 vehicles
+ce-demo: built 10 rows, 26 bays, 375 ghosts, 4 vehicles
 everything placed
 ```
 

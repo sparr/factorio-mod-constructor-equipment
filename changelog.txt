@@ -43,6 +43,7 @@ Version: 2.1.5
     - A vehicle's arms are bolted inboard of its running gear and drawn up on the body, rather than out on the tracks or hanging off the bottom of the hull
     - A bulk claw carrying a round of ghosts now crosses straight from one to the next, rather than swinging all the way home and out again between each, which cost it a whole journey a ghost and left it looking as though it had given up on the one it had just turned to
     - Fixed an underground pair upgrade putting a copy of what was travelling in the tunnel on the ground beside it, one item per lane, while the tunnel kept its load as well
+    - A tank's arms are bolted to its turret, ringing the middle of it and drawn at its bottom edge, rather than standing out on its flanks over the tracks
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.4
 Date: 2026-09-14

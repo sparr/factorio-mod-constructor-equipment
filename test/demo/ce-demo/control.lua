@@ -550,8 +550,8 @@ local ROWS = {
     vanilla = true,
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
-      { "Arms on the hull",
-        "Get in and drive east. They are mounted along the sides and reach from where they are bolted,",
+      { "Arms on the turret",
+        "Get in and drive east. A tank's arms are bolted to its turret and reach from over the middle,",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
           for i = 0, 14 do

@@ -655,6 +655,26 @@ end
 --- A share of the hull rather than a fixed height, so a small vehicle gets a small lift.
 local TREADS = 0.5
 
+--- Vehicles whose arms go on the turret rather than along the hull.
+---
+--- A tank's arms used to stand out on its flanks, which is right for a hull with nothing on
+--- top of it and wrong for one with a turret: the claws sat out over the tracks while the
+--- thing a player watches, and the only round part of a tank, went by empty.
+---
+--- By name, because nothing at runtime will answer the question. turret_animation is a data
+--- stage field and LuaEntityPrototype does not carry it, and turret_rotation_speed is no
+--- substitute -- the car has one too, and no turret to go with it.
+local TURRETED = { tank = true }
+
+--- How far north of a turreted vehicle's own position the bottom edge of its turret is
+--- drawn, which is where an arm bolted to it sits.
+---
+--- Measured off the sprite rather than guessed at. The tank's turret mask -- the round part,
+--- the thing the tint goes on -- is 66 source pixels tall at half scale, so a little over a
+--- tile, and its middle is shifted 35.5 screen pixels north of the tank, which is 1.109
+--- tiles. Half the mask's height back south of that is the bottom edge.
+local TURRET = 0.6
+
 --- How far in from the edge of a hull an arm is bolted, as a share of the hull's half
 --- width.
 ---
@@ -712,7 +732,12 @@ local function station_on(wearer, slot, count)
     -- a hull's arms do. Eight arms on a spidertron is one on each leg; a ninth has nowhere
     -- of its own to go and rides on the torso.
     local legs = leg_mounts(wearer)
-    if slot and legs[slot] then
+    if TURRETED[wearer.name] then
+      -- The turret's middle projected straight down, which is the vehicle's own position:
+      -- the sprite is shifted north of it by the turret's height and by nothing else, and
+      -- height is the one part of a shift that is not a place on the ground.
+      offset = pack.turret(facing_of(wearer), slot, count)
+    elseif slot and legs[slot] then
       offset = legs[slot]
     else
       local across, along = hull_of(wearer)
@@ -740,6 +765,14 @@ end
 ---@return number how far north to draw it, in tiles
 local function lift_of(wearer, at, slot, count)
   if wearer.type == "character" then return pack.lift(slot, count) end
+
+  -- Up onto the turret, to its bottom edge, which is the far side of the same split a
+  -- character's back is answered in: pack.turret gives the part of the ring that is a place
+  -- on the ground and the part that is a height, and this is the height.
+  if TURRETED[wearer.name] then
+    local _, down = pack.turret(facing_of(wearer), slot, count)
+    return TURRET - down
+  end
 
   local body = wearer.prototype.height
   if body then
@@ -965,6 +998,9 @@ end
 ---@return number
 local function spread_of(wearer)
   if wearer.type == "character" then return 0 end
+  -- A turreted vehicle's arms are all on the turret, which is over the middle, so they
+  -- spread no further than the ring they sit on.
+  if TURRETED[wearer.name] then return pack.RADIUS end
   local across, along = hull_of(wearer)
   return math.sqrt(across * across + along * along)
 end

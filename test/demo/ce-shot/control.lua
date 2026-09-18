@@ -10,8 +10,8 @@ local SETTLE = 70    -- long enough for an arm to be out and mid reach, short en
 
 --- Which marks to photograph, by the title the showroom gives the bay, and how close.
 local WANTED = {
-  { title = "Arms on the hull", zoom = 4, drive = true, facing = defines.direction.east },
-  { title = "Arms on the hull", zoom = 4, drive = true, facing = defines.direction.north },
+  { title = "Arms on the turret", zoom = 4, drive = true, facing = defines.direction.east },
+  { title = "Arms on the turret", zoom = 4, drive = true, facing = defines.direction.north },
   { title = "Arms on a train", zoom = 2.5, drive = true },
 }
 

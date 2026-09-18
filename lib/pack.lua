@@ -223,6 +223,29 @@ function pack.nearness(offset)
   return math.max(0, offset.y / out)
 end
 
+---Where an arm sits on a turret, in the same two parts a character's back is answered in.
+---
+---A turret is a round thing on top of a hull, which is the same shape as somebody's back
+---and takes the same arrangement: one arm in the middle of it, two at the top, and more
+---than that evenly round a small circle. So the circle is pack.station's, turned to face
+---whichever way the vehicle is, and how far down the circle an arm sits comes back
+---separately because that half of it is a height rather than a distance -- see pack.lift,
+---which is the same split.
+---
+---The hull's own facing rather than the turret's. A turret swings round to aim while the
+---hull it stands on drives where it is pointed, and arms that slid round with the gun would
+---read as sitting on the barrel rather than being bolted to the vehicle.
+---@param direction number 0 to 16, north being 0, and fractional for a vehicle
+---@param slot integer? which arm this is, from 1
+---@param count integer? how many arms there are altogether
+---@return {x: number, y: number} where it stands, relative to the vehicle
+---@return number how far down the circle it sits, to come off the lift
+function pack.turret(direction, slot, count)
+  local fx, fy = pack.facing(direction or 0)
+  local across, down = pack.station(slot, count)
+  return { x = -fy * across, y = fx * across }, down
+end
+
 ---Where to put the inserter, relative to the vehicle it is bolted to.
 ---
 ---Both axes turn with the vehicle, which is the difference from a character: an arm on
