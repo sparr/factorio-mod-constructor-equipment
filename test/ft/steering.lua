@@ -6,10 +6,15 @@
 --- swings at its tier's own rotation speed with no way to be turned faster. So the question
 --- is whether a wearer can out-turn its own arm.
 ---
---- Measured, it cannot, and the reason is that the vehicle which turns fastest cannot carry
---- an arm at all. A car has no equipment grid in the base game. What is left is a tank,
---- whose body comes round at 1.26 degrees a tick against a fourth tier claw's 2.88, and a
---- spidertron, whose body does not turn at all -- it walks.
+--- A tank's body comes round at 1.26 degrees a tick against a fourth tier claw's 2.88, and a
+--- spidertron does not turn at all -- it walks. A car is the awkward one: it swings round at
+--- 3.32 degrees a tick, which the slowest claw cannot follow.
+---
+--- A car has no equipment grid in the base game, but plenty of mods give it one and the
+--- showroom does too, so the arms have to work on it. test/ft/ce-tests hands cars and
+--- locomotives a grid for the same reason the showroom does. Supported rather than tuned
+--- for: what is asked here is that nothing breaks and nothing is lost, not that a car is
+--- a good place to build from.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
 local reach = require("lib.reach")
@@ -28,7 +33,7 @@ local function sweep()
   local area = { { world.ORIGIN.x - half, world.ORIGIN.y - half },
                  { world.ORIGIN.x + half, world.ORIGIN.y + half } }
   for _, thing in ipairs(player.surface.find_entities_filtered{ area = area,
-        name = { BELT, "tank", "spidertron", "item-on-ground",
+        name = { BELT, "tank", "spidertron", "car", "item-on-ground",
                  "constructor-equipment-catcher" } }) do
     if thing.valid then thing.destroy() end
   end
@@ -119,12 +124,17 @@ local function drive_through(name, turning, done)
     local all_told = vehicle.get_item_count(BELT) + standing + held + loose + claw
     world.unseat(player)
     vehicle.destroy()
+    -- Written down as well as asserted on. The assertions only say nothing broke; what is
+    -- worth reading is how much a steering wearer gets done against one going straight.
+    helpers.write_file("steering.txt",
+      ("%-11s %-8s built %2d  worst claw lag %5.1f deg  belts all told %d\n")
+        :format(name, turning and "turning" or "straight", standing, worst, all_told), true)
     done(standing, worst, all_told)
   end, "the drive never ended", A_DRIVE + 200)
 end
 
 describe("a wearer that steers", function()
-  for _, name in ipairs{ "tank", "spidertron" } do
+  for _, name in ipairs{ "tank", "spidertron", "car" } do
     it("builds while a " .. name .. " holds a straight line", function()
       drive_through(name, false, function(built, lag, all_told)
         assert.is_true(built >= 3,
@@ -143,4 +153,90 @@ describe("a wearer that steers", function()
       end)
     end)
   end
+end)
+
+--- A train steers only where the rails do, so nothing here turns. What makes it worth its
+--- own case is everything else about it: it is the fastest wearer there is at 0.4 tiles a
+--- tick, which makes its cone a fourteen degree needle seventeen tiles long, and a
+--- locomotive has no hold of its own, so its arms build out of the wagons behind it.
+---
+--- Supported rather than tuned for. A locomotive has no equipment grid in the base game
+--- either; test/ft/ce-tests gives it one, as the showroom does.
+describe("a train", function()
+  local RAILS_FROM, RAILS_TO = -60, 220
+  local STOCK = 60
+
+  ---Lay a straight line of rail through the arena and put a fuelled train on it.
+  ---@return LuaEntity locomotive
+  ---@return LuaEntity wagon
+  local function a_train()
+    local surface, y = player.surface, world.ORIGIN.y
+    for x = world.ORIGIN.x + RAILS_FROM, world.ORIGIN.x + RAILS_TO, 2 do
+      surface.create_entity{ name = "straight-rail", position = { x, y },
+        direction = defines.direction.east, force = player.force }
+    end
+    local loco = surface.create_entity{ name = "locomotive",
+      position = { world.ORIGIN.x - 20, y }, direction = defines.direction.east,
+      force = player.force }
+    assert(loco, "the locomotive would not go on the rails")
+    local wagon = surface.create_entity{ name = "cargo-wagon",
+      position = { world.ORIGIN.x - 27, y }, direction = defines.direction.east,
+      force = player.force }
+    assert(wagon, "the wagon would not go on the rails")
+    loco.insert{ name = "nuclear-fuel", count = 5 }
+    -- The belts go in the wagon, because a locomotive has nowhere to put them.
+    wagon.insert{ name = BELT, count = STOCK }
+    world.fit(loco, { FOURTH.name, "battery-equipment" }, true)
+    loco.train.manual_mode = true
+    loco.set_driver(player)
+    return loco, wagon
+  end
+
+  local function clear_the_line()
+    local half = 300
+    for _, thing in ipairs(player.surface.find_entities_filtered{
+          area = { { world.ORIGIN.x - half, world.ORIGIN.y - half },
+                   { world.ORIGIN.x + half, world.ORIGIN.y + half } },
+          name = { "locomotive", "cargo-wagon", "straight-rail" } }) do
+      if thing.valid then thing.destroy() end
+    end
+  end
+
+  after_each(clear_the_line)
+
+  it("builds out of its wagons as it runs past", function()
+    local loco, wagon = a_train()
+    -- Either side of the line, clear of the rails themselves.
+    local laid = 0
+    for x = 10, 100, 10 do
+      for _, dy in ipairs{ -4, 4 } do world.ghost(player, BELT, x, dy); laid = laid + 1 end
+    end
+    local began = game.tick
+    world.once(function()
+      loco.train.speed = 0.4
+      return game.tick - began > 320
+    end, function()
+      local standing = player.surface.count_entities_filtered{ name = BELT,
+        position = world.ORIGIN, radius = 300 }
+      local loose = 0
+      for _, item in ipairs(player.surface.find_entities_filtered{ name = "item-on-ground",
+            position = world.ORIGIN, radius = 300 }) do
+        if item.stack and item.stack.valid_for_read and item.stack.name == BELT then
+          loose = loose + item.stack.count
+        end
+      end
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      local held = record and record.entity and record.entity.valid
+        and record.entity.held_stack.valid_for_read and record.entity.held_stack.count or 0
+      helpers.write_file("steering.txt",
+        ("%-11s %-8s built %2d of %d  belts all told %d\n")
+          :format("train", "on rails", standing, laid,
+            wagon.get_item_count(BELT) + standing + loose + held), true)
+      assert.is_true(standing >= 3,
+        ("a train ran past %d ghosts and built only %d"):format(laid, standing))
+      assert.are.equal(STOCK, wagon.get_item_count(BELT) + standing + loose + held,
+        "a belt was made or lost")
+      if loco.get_driver() then world.unseat(player) end
+    end, "the train never finished its run", 420)
+  end)
 end)
