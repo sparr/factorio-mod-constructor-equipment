@@ -1379,9 +1379,14 @@ end
 ---its own reach anyway -- see choose(), which turns away what it cannot get to.
 ---@param wearer LuaEntity the character or vehicle the arms are on
 ---@param list table[] the arms, whose tiers say how far and how long each reaches
+---
+---Global, and for the same reason press() is: what this promises is that nothing an arm
+---could meet is left out, and the only way to see what a search actually brought back is to
+---make it. The circle itself is arithmetic and is checked in test/spec/reach_spec.lua; this
+---is where that circle meets the engine.
 ---@param drift {x: number, y: number} how far their owner went last tick
 ---@return LuaEntity[]
-local function work_near(wearer, list, drift)
+function work_near(wearer, list, drift)
   local arms = {}
   for _, record in pairs(list) do
     local tier = tier_of(record)
@@ -3925,6 +3930,8 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.upgrading",
     "test.ft.cliffs",
     "test.ft.taking",
+    "test.ft.intercept",
+    "test.ft.course",
   }, {
     load_luassert = true,
     game_speed = 100,

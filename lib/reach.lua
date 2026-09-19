@@ -146,6 +146,124 @@ function reach.search(arms, drift)
     (ahead + behind) / 2
 end
 
+---Whether an arm could still put something down at a given spot, at any moment between now
+---and a swing's time from now.
+---
+---The exact question the search only answers roughly. A hand is not at full stretch the
+---moment it sets off: it starts where it was born and reaches out at the tier's own speed,
+---so what it can touch at tick k is whatever lies within `out + extension * k` of wherever
+---its owner has walked to by then, capped at the tier's reach. Sweep k from nought to the
+---horizon and that is a circle growing along a line -- a cone, and the convex hull of the
+---small circle it starts as and the full one it ends as.
+---
+---Which is a good deal less than the circle the search draws round it. A ghost square
+---abeam of a walking character at the very edge of the reach is inside that circle and is
+---not inside this: by the time the hand has stretched the five tiles, its owner has carried
+---the shoulder six tiles past, and the gap only ever opened. The arm was never going to
+---arrive, and this is what says so before a swing is spent finding out.
+---
+---Two pieces, because the reach is capped. While the hand is still growing the answer is
+---where a quadratic in k dips below nought, and once it has reached full stretch the circle
+---stops growing and merely slides, so the answer is the distance to a segment.
+---@param arm {range: number, extension: number, out: number?} out is how far the hand is
+---       out now, defaulting to where a hand is born
+---@param drift {x: number, y: number} how far its owner went last tick
+---@param offset {x: number, y: number} the spot, seen from the arm's own base
+---@param ticks number how far ahead to look
+---@return boolean
+function reach.meets(arm, drift, offset, ticks)
+  local out = arm.out or reach.BORN
+  local e, range = arm.extension, arm.range
+  local wx, wy = offset.x, offset.y
+  local speed2 = drift.x * drift.x + drift.y * drift.y
+
+  -- While the hand is still growing. The spot is met at tick k when the distance to it has
+  -- come down to what the hand has reached, and squaring both sides of that leaves a
+  -- quadratic whose dip below nought is the whole answer.
+  local growing = math.min(ticks, (range - out) / e)
+  if growing >= 0 then
+    local a = speed2 - e * e
+    local b = -2 * (wx * drift.x + wy * drift.y + out * e)
+    local c = wx * wx + wy * wy - out * out
+    local function dips(k) return a * k * k + b * k + c end
+    local least = math.min(dips(0), dips(growing))
+    -- Only where the quadratic opens upward is its turning point a minimum; where it opens
+    -- downward or is a straight line, the least over a stretch is at one of the ends.
+    if a > 0 then
+      local turn = -b / (2 * a)
+      if turn > 0 and turn < growing then least = math.min(least, dips(turn)) end
+    end
+    if least <= 0 then return true end
+  end
+
+  -- And once it is at full stretch, when the circle no longer grows and only slides. How
+  -- near the spot comes to the line its owner walks over what is left of the horizon.
+  --
+  -- Which is also the whole of the answer for somebody standing still: the line is a point,
+  -- and the question comes back to whether the spot is inside the reach. Written this way
+  -- round rather than as a case of its own so that the reach is compared against itself
+  -- rather than against a stretch worked out by dividing and multiplying it, which lands a
+  -- hair either side of it and made a ghost at exactly the reach a coin toss.
+  local along = growing
+  if speed2 > 0 then
+    along = (wx * drift.x + wy * drift.y) / speed2
+    if along < growing then along = growing elseif along > ticks then along = ticks end
+  end
+  local cap = math.min(range, out + e * along)
+  local dx, dy = wx - drift.x * along, wy - drift.y * along
+  return dx * dx + dy * dy <= cap * cap
+end
+
+---The circles to search a cone with, laid end to end along it.
+---
+---One circle round the whole cone is wasteful when the cone is long and thin, which is what
+---a cone becomes as its owner speeds up: a car covers 23 tiles while a hand stretches five,
+---so its cone is a ten degree needle and the circle round it is mostly the ground either
+---side. Cut the flight into pieces and draw a circle round each, and the chain follows the
+---needle instead of boxing it in.
+---
+---Each piece is the smallest circle holding the two discs at its ends, which is what makes
+---the chain cover the cone exactly rather than nearly: the cone between two moments is the
+---hull of the discs at those moments, and a circle round both holds all of it. Consecutive
+---circles overlap, so a thing can come back twice, and that is cheaper to live with than to
+---sift out -- see test/ft/intercept.lua, where the engine is measured charging far less to
+---find something than Lua charges to look at it.
+---
+---More pieces is not better. Every circle has the local width of the cone as a floor, so
+---past a handful the chain is paying for that floor over and over: measured on a car's cone,
+---one circle sweeps 649 tiles, four sweeps 430, and eight is back up to 500. On a walking
+---character, where the cone is stubby, one is always best.
+---@param arm {range: number, extension: number, out: number?}
+---@param drift {x: number, y: number}
+---@param ticks number how far ahead to look
+---@param pieces integer how many circles to lay
+---@return {at: {x: number, y: number}, radius: number}[] offsets from the arm's own base
+function reach.chain(arm, drift, ticks, pieces)
+  local out = arm.out or reach.BORN
+  local made = {}
+  for piece = 0, pieces - 1 do
+    local from, to = ticks * piece / pieces, ticks * (piece + 1) / pieces
+    local near = math.min(arm.range, out + arm.extension * from)
+    local far = math.min(arm.range, out + arm.extension * to)
+    local apart = math.sqrt(drift.x * drift.x + drift.y * drift.y) * (to - from)
+    local along, radius
+    if apart + near <= far then
+      along, radius = to, far
+    elseif apart + far <= near then
+      along, radius = from, near
+    else
+      radius = (apart + near + far) / 2
+      -- how far past the near end the middle sits, in ticks of its owner's walk
+      along = from + (radius - near) / (apart / (to - from))
+    end
+    made[#made + 1] = {
+      at = { x = drift.x * along, y = drift.y * along },
+      radius = radius,
+    }
+  end
+  return made
+end
+
 ---How far round the arm has to turn to get from one bearing to another, in whole turns.
 ---
 ---Never more than half a turn, because an arm turns whichever way is shorter.
