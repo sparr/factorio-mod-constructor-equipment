@@ -476,8 +476,11 @@ end
 --- the engine for a circle two and a half thousand tiles across -- twenty one million tiles
 --- of ground, which does not come back inside a tick, or a minute.
 ---
---- Two tiles a tick is comfortably past anything that travels. The fastest wearer measured
---- is a train at 0.4, and a locomotive flat out on straight rail does about 1.4. A wearer
+--- Two tiles a tick is comfortably past anything that travels. Measured on straight rail,
+--- a locomotive tops out at 1.2031 tiles a tick -- 260 km/h, and the same on coal, solid
+--- fuel, rocket fuel and nuclear fuel, since what the fuel buys is acceleration rather than
+--- a higher ceiling. That is the fastest wearer there is; a car does 0.54 and a walk 0.15. A
+--- wearer
 --- genuinely faster than this is only underestimated, which the intercept absorbs the same
 --- way it absorbs a vehicle accelerating: the course is worked out again next tick.
 local LEAP = 2
@@ -505,12 +508,15 @@ local function drift_of(player, wearer)
   if seen and seen.tick == game.tick then return seen.drift end
   local at = wearer.position
   local drift = { x = 0, y = 0 }
-  if seen and seen.wearer == wearer.unit_number then
+  -- The same ground as well as the same wearer: a step from one surface to another is not a
+  -- walk, and the coordinates either side of one have nothing to do with each other.
+  if seen and seen.wearer == wearer.unit_number and seen.surface == wearer.surface.index then
     local dx, dy = at.x - seen.x, at.y - seen.y
     if dx * dx + dy * dy <= LEAP * LEAP then drift = { x = dx, y = dy } end
   end
   storage.constructor_drift[player.index] = {
-    tick = game.tick, x = at.x, y = at.y, wearer = wearer.unit_number, drift = drift,
+    tick = game.tick, x = at.x, y = at.y, wearer = wearer.unit_number,
+    surface = wearer.surface.index, drift = drift,
   }
   return drift
 end
@@ -1786,8 +1792,15 @@ local function stow(tier, surface, at, wearer)
   -- where the character used to be, while the character walks off, is the one thing about
   -- putting an arm away that looked like a fault, and it happened every time an idle arm
   -- went away from somebody on the move.
+  --
+  -- Only while they are still on the same ground, though. A wearer can leave the surface
+  -- between one tick and the next -- boarding a rocket does exactly that -- and the arm does
+  -- not go with them, so by the time it is put away the two are in different worlds. A
+  -- sprite drawn on one surface and pinned to an entity on another is not something the
+  -- engine shrugs at: it raises, and it raises out of on_tick, which takes the whole mod
+  -- down with it. Left where the arm is instead, which is where it was.
   local target = { at.x, at.y }
-  if wearer and wearer.valid then
+  if wearer and wearer.valid and wearer.surface == surface then
     target = { entity = wearer,
                offset = { at.x - wearer.position.x, at.y - wearer.position.y } }
   end

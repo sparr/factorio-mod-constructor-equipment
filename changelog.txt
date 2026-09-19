@@ -7,6 +7,7 @@ Version: 2.1.6
   Bugfixes:
     - Fixed an arm running out of power partway home and hanging in the air with your item in its claw for five seconds before a backstop handed it back
     - Fixed a player being moved somewhere else mid reach, by a teleport, a respawn or a script, being read as a course and sending the arms looking for work across a circle thousands of tiles wide
+    - Fixed the game ending when a player wearing arms boarded a rocket while an arm was out
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.5
 Date: 2026-09-19

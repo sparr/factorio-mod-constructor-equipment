@@ -32,8 +32,9 @@ local function clear_the_walk(at)
   for _, entity in ipairs(at.surface.find_entities_filtered{
         area = { { world.ORIGIN.x - half, world.ORIGIN.y - half },
                  { world.ORIGIN.x + half, world.ORIGIN.y + half } },
-        name = { BELT, "fast-transport-belt", "iron-chest", "item-on-ground",
-                 "constructor-equipment-catcher", "tank", "car" } }) do
+        name = { BELT, "fast-transport-belt", "express-transport-belt",
+                 "turbo-transport-belt", "iron-chest", "item-on-ground",
+                 "constructor-equipment-catcher", "tank", "car", "spidertron" } }) do
     if entity.valid then entity.destroy() end
   end
   for _, ghost in ipairs(at.surface.find_entities_filtered{
@@ -41,6 +42,17 @@ local function clear_the_walk(at)
                  { world.ORIGIN.x + half, world.ORIGIN.y + half } },
         type = "entity-ghost" }) do
     if ghost.valid then ghost.destroy() end
+  end
+  -- Arms too. A test that ends with one still out leaves it standing wherever its owner
+  -- was, and the next test counts it: a surface change that left nothing behind read as
+  -- having stranded an arm, because a walk two tests earlier had.
+  local arms = {}
+  for _, tier in ipairs(tiers.list) do arms[#arms + 1] = tier.inserter end
+  for _, surface in pairs(game.surfaces) do
+    for _, arm in ipairs(surface.find_entities_filtered{ name = arms,
+          position = world.ORIGIN, radius = half }) do
+      if arm.valid then arm.destroy() end
+    end
   end
 end
 
@@ -771,4 +783,153 @@ describe("other ways a character moves", function()
       assert.are.equal(5, belts_anywhere(), "a belt was made or lost")
     end, "the walk never ended", 300)
   end)
+end)
+
+--- Being moved by something else, and being moved somewhere else.
+describe("a wearer carried rather than walking", function()
+  --- A belt carries whoever stands on it, at its own speed -- measured, each tier carries
+  --- at exactly the speed it moves items, from 0.031 for a yellow one to 0.125 for a turbo.
+  --- All of them are slower than a walk, so the cone is wider rather than narrower and there
+  --- is nothing to lose. The corner is the part worth having: a belt that turns swings its
+  --- passenger's whole course through a right angle over about four ticks, which is a sharper
+  --- turn than any vehicle can make.
+  it("builds while a belt carries it round a corner", function()
+    rewear({ FOURTH.name, "battery-equipment" }, "power-armor")
+    local quick = prototypes.entity["turbo-transport-belt"] and "turbo-transport-belt"
+      or "express-transport-belt"
+    -- The corner tile itself faces north, so the east leg feeds into it and its passenger is
+    -- carried round rather than set down at the end of a line.
+    for x = -2, 7 do
+      player.surface.create_entity{ name = quick, force = player.force,
+        position = { world.ORIGIN.x + x, world.ORIGIN.y }, direction = defines.direction.east }
+    end
+    for y = 0, -30, -1 do
+      player.surface.create_entity{ name = quick, force = player.force,
+        position = { world.ORIGIN.x + 8, world.ORIGIN.y + y },
+        direction = defines.direction.north }
+    end
+    -- Beside the far leg, so it can only be reached once the corner has been turned.
+    world.ghost(player, BELT, 4, -16)
+    player.teleport(world.ORIGIN)
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = false }
+      return world.ghosts(player) == 0 or game.tick - began > 320
+    end, function()
+      assert.are.equal(0, world.ghosts(player),
+        "a ghost beside the far leg was carried past without being built")
+      assert.are.equal(4, player.get_item_count(BELT), "it was not paid for")
+      for _, thing in ipairs(player.surface.find_entities_filtered{ name = quick,
+            position = world.ORIGIN, radius = 60 }) do
+        if thing.valid then thing.destroy() end
+      end
+    end, "the ride never ended", 420)
+  end)
+
+  --- Leaving the surface altogether, which is what boarding a rocket amounts to.
+  ---
+  --- This crashed. The arm does not go with its owner, so by the time it is put away the two
+  --- are on different surfaces, and the fading claw was drawn on the arm's surface while
+  --- pinned to the wearer -- which the engine refuses, out of on_tick, taking the whole mod
+  --- down with a non-recoverable error.
+  it("does not fall over when its owner leaves the surface", function()
+    rewear({ FOURTH.name, "battery-equipment" }, "power-armor")
+    local elsewhere = game.surfaces["ce-elsewhere"]
+      or game.create_surface("ce-elsewhere", { width = 200, height = 200 })
+    elsewhere.request_to_generate_chunks(world.ORIGIN, 3)
+    elsewhere.force_generate_chunk_requests()
+    world.ghost(player, BELT, 10, 4)
+    local nauvis = player.surface
+    local began, took, gone = game.tick, nil, false
+    world.once(function()
+      if not gone then
+        player.walking_state = { walking = true, direction = defines.direction.east }
+      end
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not gone and since == took + 8 then
+        player.teleport(world.ORIGIN, elsewhere)
+        gone = true
+      end
+      return since > 140
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_true(gone, "its owner never left")
+      assert.are.equal(0, nauvis.count_entities_filtered{ name = FOURTH.inserter,
+        position = world.ORIGIN, radius = 200 }, "an arm was left behind on the old surface")
+      assert.are.equal(5, player.get_item_count(BELT),
+        "the belt did not come back when its owner left the surface")
+      player.teleport(world.ORIGIN, nauvis)
+    end, "the walk never ended", 220)
+  end)
+end)
+
+--- Getting in and out of things, which changes which grid the arms hang off.
+describe("changing seats mid reach", function()
+  ---@param name string
+  ---@param boarding boolean
+  ---@param done fun(vehicle: LuaEntity)
+  local function swap(name, boarding, done)
+    local where = boarding and { world.ORIGIN.x - 6, world.ORIGIN.y - 6 }
+      or { world.ORIGIN.x, world.ORIGIN.y }
+    local vehicle = player.surface.create_entity{ name = name, position = where,
+      force = player.force }
+    assert.is_not_nil(vehicle, "no " .. name .. " could be placed")
+    vehicle.insert{ name = "nuclear-fuel", count = 5 }
+    if boarding then
+      rewear({ FOURTH.name, "battery-equipment" }, "power-armor")
+    else
+      world.fit(vehicle, { FOURTH.name, "battery-equipment" }, true)
+      vehicle.insert{ name = BELT, count = 5 }
+      vehicle.set_driver(player)
+    end
+    -- One being left is parked, so its ghost has to be inside its own reach already.
+    world.ghost(player, BELT, boarding and 10 or 4, boarding and 4 or 0)
+    local began, took, swapped = game.tick, nil, false
+    world.once(function()
+      if boarding and not player.vehicle then
+        player.walking_state = { walking = true, direction = defines.direction.east }
+      end
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not swapped and since == took + 10 then
+        -- Stepping out, not scrapping it: world.unseat destroys the vehicle, and its hold
+        -- with every belt in it.
+        if boarding then vehicle.set_driver(player) else player.driving = false end
+        swapped = true
+      end
+      return since > 160
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_not_nil(took, "no arm ever set off")
+      assert.is_true(swapped, "the seat was never changed")
+      done(vehicle)
+      if player.vehicle then player.driving = false end
+      if vehicle.valid then vehicle.destroy() end
+    end, "the run never ended", 240)
+  end
+
+  for _, name in ipairs{ "car", "tank", "spidertron" } do
+    it("keeps the belt when its owner boards a " .. name, function()
+      swap(name, true, function(vehicle)
+        assert.are.equal(5, player.get_item_count(BELT) + vehicle.get_item_count(BELT)
+          + world.count(player, BELT),
+          "a belt went missing when its owner got in")
+        assert.is_nil(world.arm(player), "an arm was left out after its owner got in")
+      end)
+    end)
+
+    it("keeps the belt when its owner leaves a " .. name, function()
+      -- Ten: the five the fixture puts in the pocket and the five put in the hold, since a
+      -- vehicle's arms build out of the vehicle.
+      swap(name, false, function(vehicle)
+        assert.are.equal(10, player.get_item_count(BELT) + vehicle.get_item_count(BELT)
+          + world.count(player, BELT),
+          "a belt went missing when its owner got out")
+        assert.is_nil(world.arm(player), "an arm was left out after its owner got out")
+      end)
+    end)
+  end
 end)
