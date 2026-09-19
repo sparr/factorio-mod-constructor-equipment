@@ -2,6 +2,10 @@
 ---
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 local player
@@ -441,7 +445,7 @@ describe("taking the equipment off mid delivery", function()
     end)
   end)
 
-  it("gives the character their speed back", function()
+  slowed_it("gives the character their speed back", function()
     local full = player.character_running_speed
     reaching_then_stripped()
     after_ticks(10, function()

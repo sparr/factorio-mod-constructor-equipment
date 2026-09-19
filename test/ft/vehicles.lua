@@ -6,6 +6,10 @@
 --- same fraction off its own speed.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 local A_BUILD = world.BUILD_INTERVAL * 2
@@ -477,7 +481,7 @@ describe("equipment in a vehicle's own grid", function()
     end)
   end)
 
-  it("works the same in a spidertron's grid", function()
+  slowed_it("works the same in a spidertron's grid", function()
     local spider = player.surface.create_entity{
       name = "spidertron", position = world.ORIGIN, force = player.force }
     -- One arm on a spidertron is bolted to its first leg rather than out on its right, so
@@ -588,7 +592,7 @@ describe("a vehicle over something marked", function()
   end)
 end)
 
-describe("the slowdown a vehicle's arms ask for", function()
+slowed_describe("the slowdown a vehicle's arms ask for", function()
   local tank
 
   before_each(function()
@@ -752,7 +756,7 @@ end)
 -- Climbing into a locomotive wearing arms ended a session: slow() puts a sticker on
 -- whoever is wearing the arms, rolling stock does not accept stickers, and create_entity
 -- raises over it rather than returning nothing.
-describe("a wearer that will not take a sticker", function()
+slowed_describe("a wearer that will not take a sticker", function()
   it("is slowed down by nothing rather than taking the game down", function()
     -- Rolling stock goes where the track lets it rather than where it is asked for, so
     -- the rail goes down first and the locomotive onto whichever rail took.

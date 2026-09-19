@@ -4,6 +4,11 @@
 --- the sticker is that this mod no longer writes to anything anyone else can see, and
 --- that the slowdown ends on its own rather than because the mod remembered to end it.
 local world = require("test.ft.world")
+local tiers = require("lib.tiers")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 local A_BUILD = world.BUILD_INTERVAL * 2
 local BELT = "transport-belt"
@@ -23,7 +28,7 @@ after_each(function()
   player.character_running_speed_modifier = 0
 end)
 
-describe("the slowdown", function()
+slowed_describe("the slowdown", function()
   it("is one sticker of the mod's own", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(world.DELIVERED, function()
@@ -68,7 +73,7 @@ end)
 --- rather than snapping back. The ramp belongs at the end because that is the only place
 --- there is one of it: while there is work, the slowdown's life keeps being restarted, and
 --- an interpolating sticker would restart with it and read as a stutter.
-describe("coming back up to speed", function()
+slowed_describe("coming back up to speed", function()
   local BELT_FULL
 
   before_each(function()
@@ -188,7 +193,7 @@ end)
 --- sticker: two of the same name do not stack, so a second one would sit there doing
 --- nothing while the first expired on its original schedule, and the character would
 --- speed up in the middle of a run.
-describe("building several things in a row", function()
+slowed_describe("building several things in a row", function()
   it("keeps one sticker rather than piling them up", function()
     world.several(player, BELT, 5)
     -- partway through the run rather than after it: sampled once the run is over, the
@@ -251,7 +256,7 @@ end)
 --- which had been the same question as whether there was anything left to build only
 --- because the gap never existed. Once it did, the character surged between every ghost
 --- along a blueprint.
-describe("building things close enough together to leave gaps", function()
+slowed_describe("building things close enough together to leave gaps", function()
   local NEAR = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 1, 1 }, { -1, 1 }, { 1, -1 } }
 
   local function near_ghosts()

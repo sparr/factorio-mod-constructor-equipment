@@ -30,6 +30,21 @@ tiers.RANGE = 2
 --- floor.
 tiers.SCALE = 0.2
 
+--- Whether the equipment slows its wearer at all.
+---
+--- Off, for the moment, while the arms are being taught to reach for where a ghost will be
+--- rather than where it is. A lead is worked out from how far the wearer went last tick,
+--- and a slowdown that ramps their speed down at the start of a run and back up at the end
+--- makes that figure a moving target: a lead is laid in at one speed and walked out at
+--- another, and the claw arrives somewhere its owner is no longer going to be. Whether the
+--- aiming genuinely needs a steady speed, or is only easier to measure with one, is what
+--- this switch is here to settle.
+---
+--- Nothing else has to know. A tier that asks for none of the penalty has neither a
+--- modifier nor stickers, which is a case the mod already handles -- the fourth tier has
+--- always been that case -- so turning this off makes every tier look like the fourth.
+tiers.SLOWS = false
+
 --- How fast the character walks while the first tier is working, as a fraction of their
 --- usual. Each tier takes a smaller share of that penalty, and the last two take none of
 --- it at all: a better arm is a lighter one to carry.
@@ -200,6 +215,9 @@ tiers.by_level = {}
 
 for level, spec in ipairs(DEFINED) do
   local reach = spec.reach
+  --- What share of the walking penalty this tier asks for, or none of it at all
+  --- while the penalty is switched off. See tiers.SLOWS.
+  local slows = tiers.SLOWS and spec.slows or 0
   local name = level == 1 and tiers.FIRST or (tiers.FIRST .. "-" .. level)
   local tier = {
     level = level,
@@ -242,9 +260,9 @@ for level, spec in ipairs(DEFINED) do
     research = spec.research,
     --- How much of the walking penalty this tier asks of its wearer, and the stickers that
     --- apply it. A tier that asks for none of it has neither.
-    slowdown = spec.slows > 0 and (1 - (1 - tiers.SLOWED) * spec.slows) or nil,
-    stickers = spec.slows > 0 and {
-      modifier = 1 - (1 - tiers.SLOWED) * spec.slows,
+    slowdown = slows > 0 and (1 - (1 - tiers.SLOWED) * slows) or nil,
+    stickers = slows > 0 and {
+      modifier = 1 - (1 - tiers.SLOWED) * slows,
       flat = name .. "-slowdown",
       slowing = name .. "-slowing",
       recovery = name .. "-recovery",
@@ -254,7 +272,7 @@ for level, spec in ipairs(DEFINED) do
       --- of the figure and a spider vehicle's goes with the figure itself, so the same
       --- share of speed has to be asked for twice, in two different currencies.
       legs = {
-        modifier = 1 - (1 - tiers.SLOWED) * spec.slows,
+        modifier = 1 - (1 - tiers.SLOWED) * slows,
         flat = name .. "-slowdown-legs",
         slowing = name .. "-slowing-legs",
         recovery = name .. "-recovery-legs",

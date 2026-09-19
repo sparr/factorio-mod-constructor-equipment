@@ -7,6 +7,10 @@
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
 local reach = require("lib.reach")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 
@@ -178,7 +182,7 @@ describe("how far a hand moves in a tick", function()
   end
 end)
 
-describe("tiers worn together", function()
+slowed_describe("tiers worn together", function()
   local function lowest_while_working(pairs_of)
     world.equip(player, pairs_of, true, "power-armor")
     player.insert{ name = BELT, count = 60 }
@@ -254,7 +258,7 @@ end)
 --- an arm that gets home before its clock is due waits a few ticks -- and a ramp that ran
 --- out in one of those gaps was replaced by a second ramp rather than by the flat sticker.
 --- The character eased towards a speed they never actually reached, over and over.
-describe("easing into the slowdown", function()
+slowed_describe("easing into the slowdown", function()
   --- Close ghosts, so the arm finishes early and waits: that is what makes the gaps.
   local CLOSE = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { -1, 1 },
                   { 1, -1 }, { -1, -1 }, { 2, 0 }, { -2, 0 } }

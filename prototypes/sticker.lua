@@ -137,4 +137,6 @@ for _, tier in ipairs(tiers.list) do
   end
 end
 
-data:extend(stickers)
+-- Nothing at all when the penalty is switched off, and data:extend refuses an empty list
+-- rather than shrugging at one. See tiers.SLOWS.
+if #stickers > 0 then data:extend(stickers) end

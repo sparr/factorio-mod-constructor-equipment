@@ -1,5 +1,10 @@
 --- What target_movement_modifier_from and _to actually do over a sticker's life.
 local world = require("test.ft.world")
+local tiers = require("lib.tiers")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 local player
 
@@ -37,7 +42,7 @@ describe("putting the same sticker on twice", function()
   end)
 end)
 
-describe("a sticker with a from and a to", function()
+slowed_describe("a sticker with a from and a to", function()
   it("walks the modifier from one to the other over its life", function()
     local character = player.character
     local full = player.character_running_speed

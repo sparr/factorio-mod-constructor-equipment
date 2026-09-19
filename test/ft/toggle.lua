@@ -4,7 +4,12 @@
 --- rather than to build, or items wanted for something else. Taking the equipment out of
 --- the armour does the same thing and costs a trip through the inventory each way.
 local world = require("test.ft.world")
+local tiers = require("lib.tiers")
 local reach = require("lib.reach")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 local A_BUILD = world.BUILD_INTERVAL * 2
@@ -198,7 +203,7 @@ describe("the constructor equipment toggle", function()
     end)
   end)
 
-  it("hands the speed back at once rather than waiting for the sticker to run out", function()
+  slowed_it("hands the speed back at once rather than waiting for the sticker to run out", function()
     world.several(player, BELT, 4)
     after_ticks(world.DELIVERED, function()
       assert.is_not_nil(world.slowed_by(player), "the character was never slowed")

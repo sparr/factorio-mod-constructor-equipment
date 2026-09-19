@@ -1,6 +1,10 @@
 --- What the equipment does, and what it declines to do.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
+--- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
+--- switch is meant to be flipped back. See tiers.SLOWS.
+local slowed_describe = tiers.SLOWS and describe or describe.skip
+local slowed_it = tiers.SLOWS and it or it.skip
 
 --- Comfortably more than one build interval, so a test is not at the mercy of which tick
 --- of the cycle it started on.
@@ -54,7 +58,7 @@ describe("a character wearing the equipment", function()
   end)
 
   -- the trade the mod offers: it builds for you, and you walk slowly while it does
-  it("slows the character down while it is working", function()
+  slowed_it("slows the character down while it is working", function()
     local full = player.character_running_speed
     world.ghost(player, BELT, 2, 0)
     world.ghost(player, BELT, 3, 0)
