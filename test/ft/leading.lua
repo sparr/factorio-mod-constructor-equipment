@@ -120,6 +120,34 @@ describe("a ghost that is not in reach yet", function()
   end)
 end)
 
+--- The heart of it, and nothing above asserts it directly: the arm is out and travelling
+--- while the ghost is still nowhere near reachable. Measured on this very case, the job is
+--- taken on tick 7 and the hand is moving on tick 8, against a ghost that does not come
+--- inside the five tiles until tick 47.
+describe("an arm with a lead to hold", function()
+  it("sets off long before the ghost is in reach", function()
+    -- Where it stands, read once: the entity is gone the moment it is built, and asking a
+    -- built ghost where it was takes the run down.
+    local at = world.ghost(player, BELT, 10, 4).position
+    local out_while_unreachable, reachable_at = false, nil
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      local away = reach.distance(player.position, at)
+      if not reachable_at and away <= FOURTH.range then reachable_at = since end
+      if world.arm(player) and not reachable_at then out_while_unreachable = true end
+      return world.ghosts(player) == 0 or since > A_WALK
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_true(out_while_unreachable,
+        "the arm never came out while the ghost was still out of reach")
+      assert.is_not_nil(reachable_at, "the ghost never came within reach at all")
+      assert.are.equal(0, world.ghosts(player), "and it was not built")
+    end, "the walk never ended", A_WALK + 120)
+  end)
+end)
+
 describe("a ghost a walker can never catch", function()
   --- The cone an arm can reach into is a wedge opening the way its owner is going, because a
   --- character outruns their own hand: a fourth tier claw extends a tenth of a tile a tick
@@ -256,3 +284,92 @@ describe("an owner who changes their mind mid reach", function()
   end)
 end)
 
+
+describe("leading at every tier", function()
+  --- Every tier leads, and the first one leads furthest in proportion: a two tile arm that
+  --- is out for 37 ticks is carried five and a half tiles by its owner while the hand is
+  --- reaching, so it meets things three times its own reach away. Which is the opposite of
+  --- what an earlier attempt at this concluded -- that the first tier could not use a lead
+  --- at all because its hand extends slower than a character walks. That is true of what it
+  --- can reach to the side, and not of what it can reach straight ahead.
+  for level = 1, 4 do
+    local tier = tiers.by_level[level]
+    --- The far tip of that tier's cone: the reach, plus the ground its owner covers while
+    --- the hand is going all the way out.
+    local tip = tier.range + 0.1484375 * reach.full_swing(tier)
+
+    it("the " .. tier.name .. " arm meets something well past its own reach", function()
+      local ahead = math.floor(tip) - 1
+      assert.is_true(ahead > tier.range,
+        ("tier %d would be led no further than it reaches"):format(level))
+      world.unequip(player, FOURTH.name)
+      world.equip(player, { tier.name }, true, "power-armor")
+      world.ghost(player, BELT, ahead, 0)
+      walk_until_built(defines.direction.east, A_WALK, function(built)
+        assert.is_not_nil(built,
+          ("a ghost %d ahead was never built by a %g tile arm"):format(ahead, tier.range))
+      end)
+    end)
+  end
+end)
+
+describe("wearers other than one character on foot", function()
+  it("shares a walk between two arms and two ghosts", function()
+    world.unequip(player, FOURTH.name)
+    world.equip(player, { FOURTH.name, FOURTH.name }, true, "power-armor")
+    player.insert{ name = BELT, count = 5 }
+    -- One to either side, so neither arm can take both and each has to lead its own.
+    world.ghost(player, BELT, 10, 4)
+    world.ghost(player, BELT, 14, -4)
+    walk_until_built(defines.direction.east, A_WALK, function() end)
+    after_ticks(A_WALK, function()
+      assert.are.equal(0, world.ghosts(player), "a walk past two ghosts left one standing")
+      assert.are.equal(2, world.count(player, BELT), "both belts were not put down")
+    end)
+  end)
+
+  --- A vehicle leads out of its own hold, from its own arms, on its own measured drift. A
+  --- tank rather than a car only because a car's grid will not take a five tile arm.
+  it("leads from a tank driving in a straight line", function()
+    local tank = world.vehicle(player, "tank")
+    tank.insert{ name = "nuclear-fuel", count = 5 }
+    world.fit(tank, { FOURTH.name, "battery-equipment" }, true)
+    tank.insert{ name = BELT, count = 5 }
+    -- Thirty ahead, because a tank covers the ground a good deal faster than a walk.
+    world.ghost(player, BELT, 30, 4)
+    local began = game.tick
+    world.once(function()
+      tank.riding_state = { acceleration = defines.riding.acceleration.accelerating,
+        direction = defines.riding.direction.straight }
+      return world.ghosts(player) == 0 or game.tick - began > 300
+    end, function()
+      tank.riding_state = { acceleration = defines.riding.acceleration.nothing,
+        direction = defines.riding.direction.straight }
+      assert.are.equal(0, world.ghosts(player), "the tank drove past without building it")
+      assert.are.equal(4, tank.get_item_count(BELT),
+        "it was not paid for out of the tank's own hold")
+      world.unseat(player)
+      tank.destroy()
+    end, "the drive never ended", 380)
+  end)
+
+  it("takes up something marked while its owner walks past", function()
+    local chest = player.surface.create_entity{ name = "iron-chest",
+      position = { world.ORIGIN.x + 10, world.ORIGIN.y + 4 }, force = player.force }
+    chest.order_deconstruction(player.force)
+    local began, lifted = game.tick, nil
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      if not lifted and player.surface.count_entities_filtered{ name = "iron-chest" } == 0 then
+        lifted = game.tick
+      end
+      -- Kept walking well past the moment it leaves the ground, because what a fetch picks
+      -- up is in the claw until the claw is home again.
+      return (lifted and game.tick - lifted > world.CYCLE) or game.tick - began > A_WALK
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_not_nil(lifted, "a marked chest was walked past rather than taken up")
+      assert.are.equal(1, player.get_item_count("iron-chest"), "it never reached the pocket")
+    end, "the walk never ended", A_WALK + 200)
+  end)
+end)
