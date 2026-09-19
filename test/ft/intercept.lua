@@ -999,6 +999,70 @@ describe("searching a long thin cone", function()
     assert.is_true(laid > 4000, "the field was not laid")
   end)
 
+  --- A box the engine turns to lie along the cone, against the chain of circles.
+  ---
+  --- find_entities_filtered takes an orientation on its area, which turns the box about its
+  --- own middle, so one query can follow a cone that a circle has to box in. Verified to miss
+  --- nothing: swept over a field at four speeds and two headings, every ghost the cone could
+  --- reach came back inside the box.
+  ---
+  --- What it trades is shape against calls. A box holds more of the ground either side of a
+  --- cone than a chain of circles does, and an area query matches anything whose own box
+  --- merely overlaps, which widens it by about half a tile all round. Against that it is one
+  --- call where the chain is three or four, and a call is not free.
+  it("compares a box turned along the cone with a chain of circles", function()
+    local laid = lay_a_field()
+    local at = player.position
+    local surface = player.surface
+    helpers.write_file(REPORT,
+      ("a field of %d ghosts, a car's cone, %d rounds of each\n"):format(laid, ROUNDS), false)
+
+    local speed = reach.distance({ x = 0, y = 0 }, CAR)
+    local along = speed * HORIZON
+    local half_long = (along + TIER.range + reach.BORN) / 2
+    local middle = (along + TIER.range - reach.BORN) / 2
+    local ux, uy = CAR.x / speed, CAR.y / speed
+    -- Built long in x and turned from east round to the way its owner is going. Orientation
+    -- counts clockwise from north, so east is a quarter turn and has to come back off.
+    local turn = ((math.atan2 or math.atan)(ux, -uy) / (2 * math.pi) - 0.25) % 1
+    local box = {
+      left_top = { x = at.x + ux * middle - half_long, y = at.y + uy * middle - TIER.range },
+      right_bottom = { x = at.x + ux * middle + half_long, y = at.y + uy * middle + TIER.range },
+      orientation = turn,
+    }
+
+    -- Measured first and last, because the first shape timed in a test comes out about a
+    -- third quick whatever it is, and a box measured only first would read as a winner on
+    -- that alone.
+    local function time_the_box(when)
+      time("a turned box, " .. when, function()
+        return surface.find_entities_filtered{ area = box, type = "entity-ghost" }
+      end)
+    end
+    time_the_box("asked first")
+    for _, pieces in ipairs{ 1, 3, 4 } do
+      local ring = reach.chain(ARM, CAR, HORIZON, pieces)
+      time(("%d circle%s along the cone"):format(pieces, pieces > 1 and "s" or ""), function()
+        local found = surface.find_entities_filtered{
+          position = { at.x + ring[1].at.x, at.y + ring[1].at.y },
+          radius = ring[1].radius, type = "entity-ghost" }
+        for index = 2, #ring do
+          for _, work in ipairs(surface.find_entities_filtered{
+                position = { at.x + ring[index].at.x, at.y + ring[index].at.y },
+                radius = ring[index].radius, type = "entity-ghost" }) do
+            found[#found + 1] = work
+          end
+        end
+        return found
+      end)
+    end
+
+    time_the_box("asked last")
+
+    clear_the_field()
+    assert.is_true(laid > 4000, "the field was not laid")
+  end)
+
   it("charges differently for the two spellings of a position", function()
     local laid = lay_a_field()
     local at = player.position
