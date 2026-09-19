@@ -20,9 +20,34 @@ local A_WALK = 200
 
 local player
 
+--- What these tests leave behind, over the ground they actually cover.
+---
+--- world.clear sweeps thirty tiles around the arena, which is ample for a fixture whose
+--- character stands still. These walk forty five tiles and lay ghosts at forty, so their
+--- litter lands outside that box -- and world.ghosts and world.count count the whole
+--- surface, so a belt left at +40 is counted by every test that runs afterwards. Measured:
+--- it turned a passing suite into one failure that could not be reproduced on its own.
+local function clear_the_walk(at)
+  local half = 90
+  for _, entity in ipairs(at.surface.find_entities_filtered{
+        area = { { world.ORIGIN.x - half, world.ORIGIN.y - half },
+                 { world.ORIGIN.x + half, world.ORIGIN.y + half } },
+        name = { BELT, "iron-chest", "item-on-ground", "constructor-equipment-catcher",
+                 "tank", "car" } }) do
+    if entity.valid then entity.destroy() end
+  end
+  for _, ghost in ipairs(at.surface.find_entities_filtered{
+        area = { { world.ORIGIN.x - half, world.ORIGIN.y - half },
+                 { world.ORIGIN.x + half, world.ORIGIN.y + half } },
+        type = "entity-ghost" }) do
+    if ghost.valid then ghost.destroy() end
+  end
+end
+
 before_each(function()
   player = world.player()
   world.clear(player)
+  clear_the_walk(player)
   player.character_running_speed_modifier = 0
   world.equip(player, { FOURTH.name, "battery-equipment" }, true)
   player.insert{ name = BELT, count = 5 }
@@ -30,8 +55,23 @@ end)
 
 after_each(function()
   player.walking_state = { walking = false }
+  if player.vehicle then world.unseat(player) end
+  clear_the_walk(player)
   world.clear(player)
 end)
+
+---Swap whatever is being worn for an armour with exactly this in it.
+---
+---The slot holds one armour. world.equip inserts another and then reads the slot back, so
+---handing it a second armour while one is already on puts the new one in the pockets and
+---quietly fills the old one's grid instead -- which fits by luck or does not fit at all,
+---and in the full suite it did not.
+---@param equipment string[]
+---@param armour string?
+local function rewear(equipment, armour)
+  player.get_inventory(defines.inventory.character_armor).clear()
+  return world.equip(player, equipment, true, armour)
+end
 
 ---Walk a way for a while, then stop and check.
 ---@param way defines.direction
@@ -285,6 +325,55 @@ describe("an owner who changes their mind mid reach", function()
 end)
 
 
+--- One trip is out, do the job, and back. Everything above stops at the delivery, which is
+--- half of it: the claw still has to come home to a resting point that is walking away from
+--- it, and the arm still has to be put away, before the next thing can be reached for.
+describe("the rest of a trip", function()
+  it("brings the claw home and stows the arm, while its owner walks on", function()
+    world.ghost(player, BELT, 10, 4)
+    local began, built, stowed, furthest = game.tick, nil, nil, 0
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      if not built and world.ghosts(player) == 0 then built = since end
+      local arm = world.arm(player)
+      if built then
+        if arm and arm.valid then
+          -- Once the belt is delivered the hand should only ever be coming in.
+          furthest = math.max(furthest,
+            reach.distance(arm.position, arm.held_stack_position))
+        elseif not stowed then stowed = since end
+      end
+      return (stowed and since - stowed > 30) or since > 300
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_not_nil(built, "the ghost was never built")
+      assert.is_not_nil(stowed, "the arm was still out long after it had finished")
+      assert.is_true(furthest < FOURTH.range,
+        ("the hand went out to %.2f after delivering, rather than coming in"):format(furthest))
+    end, "the walk never ended", 380)
+  end)
+
+  --- Three scattered fifteen tiles apart, which is about what one trip out and back costs at
+  --- a walk, so each has to be led, met, delivered and left behind before the next is even
+  --- worth looking at. The last of them is a decisive case in its own right: it is in reach
+  --- for 41 ticks against a 43 tick reach, so an arm that waited for it would miss.
+  it("does one trip after another along a scattered line", function()
+    for _, dx in ipairs{ 10, 25, 40 } do world.ghost(player, BELT, dx, 4) end
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      return world.ghosts(player) == 0 or game.tick - began > 420
+    end, function()
+      player.walking_state = { walking = false }
+      assert.are.equal(0, world.ghosts(player),
+        ("%d of three scattered ghosts were walked past"):format(world.ghosts(player)))
+      assert.are.equal(3, world.count(player, BELT), "three belts were not put down")
+      assert.are.equal(2, player.get_item_count(BELT), "they were not paid for one apiece")
+    end, "the walk never ended", 520)
+  end)
+end)
+
 describe("leading at every tier", function()
   --- Every tier leads, and the first one leads furthest in proportion: a two tile arm that
   --- is out for 37 ticks is carried five and a half tiles by its owner while the hand is
@@ -302,8 +391,7 @@ describe("leading at every tier", function()
       local ahead = math.floor(tip) - 1
       assert.is_true(ahead > tier.range,
         ("tier %d would be led no further than it reaches"):format(level))
-      world.unequip(player, FOURTH.name)
-      world.equip(player, { tier.name }, true, "power-armor")
+      rewear({ tier.name, "battery-equipment" })
       world.ghost(player, BELT, ahead, 0)
       walk_until_built(defines.direction.east, A_WALK, function(built)
         assert.is_not_nil(built,
@@ -315,16 +403,14 @@ end)
 
 describe("wearers other than one character on foot", function()
   it("shares a walk between two arms and two ghosts", function()
-    world.unequip(player, FOURTH.name)
-    world.equip(player, { FOURTH.name, FOURTH.name }, true, "power-armor")
-    player.insert{ name = BELT, count = 5 }
+    rewear({ FOURTH.name, FOURTH.name, "battery-equipment" }, "power-armor")
     -- One to either side, so neither arm can take both and each has to lead its own.
     world.ghost(player, BELT, 10, 4)
     world.ghost(player, BELT, 14, -4)
-    walk_until_built(defines.direction.east, A_WALK, function() end)
-    after_ticks(A_WALK, function()
+    walk_until_built(defines.direction.east, A_WALK, function()
       assert.are.equal(0, world.ghosts(player), "a walk past two ghosts left one standing")
       assert.are.equal(2, world.count(player, BELT), "both belts were not put down")
+      assert.are.equal(3, player.get_item_count(BELT), "they were not paid for one apiece")
     end)
   end)
 
