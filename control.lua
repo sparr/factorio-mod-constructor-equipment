@@ -2132,6 +2132,13 @@ local function folding()
     local arm, wearer = record.entity, record.wearer
     local home = true
     if player and arm and arm.valid and wearer and wearer.valid and record.bearing then
+      -- Fed on the way in, the same as aim() feeds one on the way out. Without this a
+      -- folding arm retracts on whatever happened to be left in its buffer and stops dead
+      -- when that runs out: measured, a fourth tier claw carrying a belt ran its buffer
+      -- down over three tiles of retraction and halted 0.98 from its own base with twenty
+      -- megajoules in the battery beside it. It then hung there until the swing limit gave
+      -- up on it five seconds later, which is when the player finally got their belt back.
+      charge(record, arm)
       local mount, lift = mounting(wearer, record.slot, record.count)
       arm.teleport(mount)
       record.lift = lift

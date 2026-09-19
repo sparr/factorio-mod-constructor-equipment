@@ -160,6 +160,35 @@ describe("the constructor equipment toggle", function()
     end)
   end)
 
+  --- The same again with the claw a good deal further out, which is where it went wrong.
+  --- A folding arm was not fed, so it retracted on whatever was left in its buffer and
+  --- stopped dead when that ran out -- measured, a fourth tier claw carrying a belt halted
+  --- 0.98 tiles from its own base with twenty megajoules in the battery beside it. The
+  --- pockets did get their belt back, but only when the swing limit gave up on the arm five
+  --- seconds later, which is a long time to stand there holding somebody's belt.
+  ---
+  --- So this presses late enough for the hand to be three tiles out, and asks for the belt
+  --- inside a fold rather than inside a swing limit.
+  it("gives it back promptly from a claw that is a long way out", function()
+    world.equip(player, { "constructor-equipment-4", "battery-equipment" }, true,
+      "power-armor")
+    world.ghost(player, BELT, 4, 0)
+    after_ticks(25, function()
+      assert.are.equal(4, player.get_item_count(BELT),
+        "the arm should be carrying a belt by now")
+      local arm = world.arm(player)
+      assert.is_not_nil(arm, "there should be an arm out")
+      assert.is_true(reach.distance(arm.position, arm.held_stack_position) > 2,
+        "the claw should be well out by now")
+      press(player)
+      after_ticks(A_FOLD, function()
+        assert.are.equal(5, player.get_item_count(BELT),
+          "the belt was not handed back inside a fold")
+        assert.is_nil(world.arm(player), "the arm was still hanging about")
+      end)
+    end)
+  end)
+
   it("gives back what a claw was carrying when it is pressed mid reach", function()
     world.ghost(player, BELT, 2, 0)
     after_ticks(12, function()
