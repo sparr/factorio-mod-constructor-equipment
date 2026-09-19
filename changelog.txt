@@ -1,5 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.6
+  Features:
+    - The arms now reach for where a ghost will be by the time the claw gets there rather than for where it stands, so things go up while you are walking or driving past that could not be built at all before: the smallest arm meets things more than three times its own reach ahead of itself, and the largest more than twice
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.5
 Date: 2026-09-19

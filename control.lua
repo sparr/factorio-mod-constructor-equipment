@@ -473,9 +473,10 @@ end
 ---whole train, where the difference between two positions is the same answer for all of
 ---them, needs no model of any of them, and is what happened rather than what was meant to.
 ---
----Asked once a tick and remembered, because more than one thing reads it -- where to search,
----and whether a reach is worth setting off on -- and two arms working off two measurements
----of the same walk would disagree about which way their owner was going.
+---Asked once a tick and remembered, because three things read it now -- where to search,
+---whether a reach is worth setting off on, and how far ahead to aim -- and three arms
+---working off three measurements of the same walk would disagree about which way their
+---owner was going.
 ---
 ---Nought on the tick a wearer changes, since the step from a character's position to the
 ---car they have just climbed into is not a walk.
@@ -961,31 +962,22 @@ local function standing_clear(job, record, at)
   return nil
 end
 
----Where an arm's base will have got to by the time its hand can reach a spot.
+
+---How far out an arm's hand is, in tiles from its own base.
 ---
----Everything an arm reaches for is fixed in the world; the arm is not. It rides on somebody
----walking or on something being driven, so how far away a thing is at the moment of asking
----is not how far away it will be when the hand arrives. How long the hand needs is
----reach.swing_ticks, the same estimate that puts targets in order, and the current heading
----and speed are assumed to hold for that long -- nothing here knows where anybody is going,
----and the last step is the best guess at the next one.
----
----A folded arm has its hand at its own base, which is where its next swing starts from.
----This is read before an arm comes out as well as while one is out, and an arm that has not
----come out yet is exactly the one worth not sending.
----@param record table the arm
----@param from {x: number, y: number} where it reaches from now
----@param at {x: number, y: number} what it would reach for
----@return {x: number, y: number}
-local function arriving_at(record, from, at)
-  local drift = record and record.drift
-  if not (drift and (drift.x ~= 0 or drift.y ~= 0)) then return from end
-  local arm = record.entity
-  local hand = (arm and arm.valid) and arm.held_stack_position or from
-  local ticks = reach.swing_ticks(tier_of(record), from, hand, at)
-  if ticks <= 0 then return from end
-  return { x = from.x + drift.x * ticks, y = from.y + drift.y * ticks }
+---Where a freshly built one is born when there is no arm yet, because that is where the next
+---swing starts from, and an arm that has not come out yet is exactly the one being decided
+---about.
+---@param record table
+---@return number
+local function hand_out(record)
+  local arm = record and record.entity
+  if not (arm and arm.valid) then return reach.BORN end
+  return reach.distance(arm.position, arm.held_stack_position)
 end
+
+--- A course that is going nowhere, shared rather than made afresh every time it is wanted.
+local STILL = { x = 0, y = 0 }
 
 ---Whether a thing is out of reach, or will be by the time the hand gets to it.
 ---
@@ -1014,12 +1006,16 @@ end
 ---@param range number
 ---@return boolean
 local function out_of_reach(record, from, at, range)
-  if reach.out_of_range(from, at, range) then return true end
-  local drift = record and record.drift
-  if not (drift and (drift.x * (from.x - at.x) + drift.y * (from.y - at.y)) > 0) then
-    return false
+  local drift = (record and record.drift) or STILL
+  -- Somebody standing still reaches what is in reach and nothing else, which is the whole
+  -- of what this used to be and what every arm on a stationary wearer still does.
+  if drift.x == 0 and drift.y == 0 then
+    return reach.out_of_range(from, at, range)
   end
-  return reach.out_of_range(arriving_at(record, from, at), at, range)
+  local tier = tier_of(record)
+  return not reach.meets(
+    { range = range, extension = tier.extension, out = hand_out(record) },
+    drift, { x = at.x - from.x, y = at.y - from.y }, reach.full_swing(tier))
 end
 
 ---Where a claw is aimed for a ghost: the ghost, carried up into the frame the arm swings in.
@@ -1042,8 +1038,18 @@ end
 ---@return {x: number, y: number}
 local function aimed_at(job, record)
   local lift = record.lift or 0
-  local at = (lift == 0) and job.target
-    or { x = job.target.x, y = job.target.y - lift }
+  local target = job.target
+  -- Still out of reach, so the claw is sent where the ghost will be rather than where it
+  -- is: an offset from the arm's own base, which travels with its owner and which the ghost
+  -- falls exactly on at the moment the hand arrives. Dropped the tick the ghost is really in
+  -- reach, after which where it is beats any guess about where it will be -- and that
+  -- handover is the whole point of the lead, because the engine lets go against the aim it
+  -- was given a tick earlier rather than this tick's.
+  if job.lead and not job.met and record.from then
+    target = { x = record.from.x + job.lead.x, y = record.from.y + job.lead.y }
+  end
+  local at = (lift == 0) and target
+    or { x = target.x, y = target.y - lift }
   local shift = job.take and standing_clear(job, record, at) or nil
   if not shift then return at end
   return { x = at.x + shift.x, y = at.y + shift.y }
@@ -2293,9 +2299,13 @@ local POINTED = 0.3
 ---@param job table what it is about to reach for
 local function point(player, wearer, record, slot, count, job)
   local mount, lift = mounting(wearer, slot, count)
-  -- The target in the frame the arm swings in, the same lift aimed_at() applies, since
-  -- that is the bearing the hand will actually travel along.
-  local dx, dy = job.target.x - mount.x, (job.target.y - lift) - mount.y
+  -- The target in the frame the arm swings in, which is what aimed_at() answers: the same
+  -- lift, and the lead where there is one. An arm is built facing where it is going, and
+  -- where it is going is the lead rather than the ghost while the ghost is still out of
+  -- reach -- built facing the ghost it would spend the whole swing turning off it.
+  record.lift = lift
+  local towards = aimed_at(job, record)
+  local dx, dy = towards.x - mount.x, towards.y - mount.y
   if dx * dx + dy * dy < POINTED * POINTED then return end
   local wanted = pack.towards(dx, dy)
 
@@ -2433,6 +2443,63 @@ end
 --- defined after deliver. Without this the name is a global at that point, which is to say
 --- nil, and the call takes the whole run down with an error the log never shows.
 local redirect
+
+---Work out where an arm should hold its claw to meet what it is going for.
+---
+---A lead is only wanted while the ghost is out of reach. One already in reach is aimed at
+---directly, which is what the mod has always done and what every case on a wearer who is
+---standing still is.
+---@param record table
+---@param from {x: number, y: number} where the arm reaches from
+---@param range number
+---@return boolean whether there is still a reach worth making
+local function set_course(record, from, range)
+  local job = record.job
+  if not job then return false end
+  if not reach.out_of_range(from, job.target, range) then
+    job.met, job.lead, job.arrival = true, nil, nil
+    return true
+  end
+  job.met = false
+  local tier = tier_of(record)
+  local arrival, lead = reach.intercept(
+    { range = range, extension = tier.extension, out = hand_out(record) },
+    record.drift or STILL,
+    { x = job.target.x - from.x, y = job.target.y - from.y },
+    reach.full_swing(tier))
+  job.arrival = arrival and (game.tick + arrival) or nil
+  job.lead = lead
+  return arrival ~= nil
+end
+
+---Keep a reach aimed at something it can still get to, as its owner's course changes.
+---
+---Three things happen here and the order is the point of it. A ghost that has come inside
+---the reach is handed over to, and from then on the reach is judged on where the ghost is
+---rather than where it will be, because the engine can still finish a swing a prediction
+---would call hopeless. A ghost still outside it has its intercept worked out again.
+---
+---Worked out again every tick rather than only when the course changes, and that is
+---deliberate. A course that has not changed gives the same answer -- the owner has moved by
+---exactly the drift the last answer assumed, so the point the claw is held on is the same
+---point in the world -- so there is nothing to detect and nothing to cache. A course that
+---has changed simply gives a different answer, which is the one wanted. It costs a scan of
+---at most the tier's own swing, for one ghost, and buys not having to decide how much of a
+---wobble counts as a turn: measured, a spidertron's legs swing its body a degree a tick
+---while it walks dead straight, which is the same order as a tank turning as hard as it
+---will, so no threshold separates them.
+---
+---Turning is not a reason to go looking for something else. The ghost is still the ghost,
+---and only an intercept that comes back with nothing says it has really gone.
+---@param record table
+---@param from {x: number, y: number}
+---@param range number
+---@return boolean whether the reach is still worth finishing
+local function holding_course(record, from, range)
+  local job = record.job
+  if job.met then return not reach.out_of_range(from, job.target, range) end
+  return set_course(record, from, range)
+end
 
 ---Give up on a reach without building anything.
 ---
@@ -3270,6 +3337,10 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     job.target = ghost.position
     -- A new thing to stand over, so where its box goes is asked again.
     job.shift = nil
+    -- And a new thing to work out an intercept to. A claw crossing from one to the next is
+    -- an arm that is already out, so the course is worked out from where its hand actually
+    -- is rather than from where a fresh one would start.
+    set_course(record, from, range)
     -- Crossing to it, which takes aiming the drop at where it is going. An inserter will
     -- not carry a load past its drop position: measured, a claw holding one belt and sent to
     -- the next thing with its drop still at home put the belt down at home -- which for a
@@ -3333,6 +3404,8 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
   job.ghost = ghost
   job.target = ghost.position
   job.shift = nil
+  -- The same again: a new thing means a new intercept, from wherever the hand has got to.
+  set_course(record, from, range)
   -- Crossing to it, the way a fetch does. The claw is holding the rest of the round and
   -- the engine has just let go of what it delivered, so its next move is back to wherever
   -- it picks up from whatever its hand holds. Pointed home that is a wasted journey each
@@ -3417,8 +3490,11 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
 
   -- How far its owner went last tick, which is what out_of_reach() reads the future from.
   -- The wearer's own figure rather than one of this arm's own: see drift_of(), and the
-  -- search, which has to be drawn from the same walk.
+  -- search, which has to be drawn from the same walk the arms are aimed along.
   record.drift = drift_of(player, wearer)
+  -- Kept so that aimed_at() can put a lead down relative to it. It is the arm's own base
+  -- rather than its owner's middle, because that is what a reach is measured from.
+  record.from = from
 
   if job then
     record.busy = game.tick
@@ -3528,7 +3604,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
       abandon(record, job)
     elseif not still_wanted(job.ghost)
         or standing_in(job.ghost, wearer.position)
-        or reach.out_of_range(from, job.ghost.position, tier_of(record).range) then
+        or not holding_course(record, from, tier_of(record).range) then
       local tier = tier_of(record)
       if not redirect(player, wearer, from, record, job, claimed, tier.range, nearby) then
         abandon(record, job)
@@ -3642,6 +3718,16 @@ local function assign(player, wearer, list, tick, nearby)
           -- round of half a dozen is half a dozen legs and each gets its own clock.
           leg = tick,
         }
+        -- Where to hold the claw, which is not where the ghost is unless the ghost is
+        -- already in reach. choose() only offers what an intercept exists for, so this
+        -- finding none is a race rather than an ordinary answer, and the job goes back.
+        if not set_course(record, from, tier.range) then
+          record.job = nil
+          claimed[claim_of(ghost)] = nil
+          if partner then claimed[claim_of(partner)] = nil end
+        end
+      end
+      if record.job then
         -- Paid for on the way out, not on arrival. Filling the claw from nothing made
         -- every item in it a counterfeit, so any path where the engine put one somewhere
         -- the mod did not intend -- and there were several -- minted a real item out of
@@ -3932,6 +4018,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.taking",
     "test.ft.intercept",
     "test.ft.course",
+    "test.ft.leading",
   }, {
     load_luassert = true,
     game_speed = 100,

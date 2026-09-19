@@ -214,6 +214,65 @@ function reach.meets(arm, drift, offset, ticks)
   return dx * dx + dy * dy <= cap * cap
 end
 
+--- How much later than the first moment a target comes within reach the claw is aimed to
+--- arrive.
+---
+--- One tick, and the whole of why is the engine's drop lag: it lets go against the aim it
+--- was given on the tick before, so a claw aimed to land exactly on the moment its target
+--- becomes reachable lets go against the lead rather than against the target. A tick later
+--- and the aim it lets go against is the target itself, wherever the hand actually arrives.
+--- Measured both ways: aiming at the moment itself put the load a whole tick of walking
+--- short every time, and aiming a tick past it landed inside a four hundredth of a tile.
+reach.MARGIN = 1
+
+---When to aim to arrive, and where to hold the claw until it does.
+---
+---Everything an arm reaches for is fixed in the world and the arm is not, so a claw sent to
+---where its target is now arrives where its target no longer is. What it is sent to instead
+---is an offset from its own base -- a point that travels with its owner -- chosen so that
+---the target falls exactly on it at the moment the hand gets there.
+---
+---Which moment is the first one the target is inside the reach, plus the margin above, held
+---to the last moment it is still inside: a target only clipped by the corner of the reach
+---for a tick or two has not got a spare tick to give away, and for that one the margin is
+---whatever is left rather than a whole tick.
+---
+---A hand part way through a reach is the same question with a different starting radius, and
+---it may retract as readily as extend, which is what `out` is for. Nothing here knows about
+---turning: the bearing a claw would have to swing through is a separate constraint and a
+---separate refusal.
+---@param arm {range: number, extension: number, out: number?}
+---@param drift {x: number, y: number} how far its owner went last tick
+---@param offset {x: number, y: number} the target, seen from the arm's own base, now
+---@param ticks number how far ahead to look
+---@return number? which tick to arrive on, or nothing if it never comes within reach
+---@return {x: number, y: number}? the offset to hold until then
+function reach.intercept(arm, drift, offset, ticks)
+  local out = arm.out or reach.BORN
+  local first, last
+  for k = 0, ticks do
+    local dx, dy = offset.x - drift.x * k, offset.y - drift.y * k
+    local away = math.sqrt(dx * dx + dy * dy)
+    -- Inside the reach, and near enough to where the hand already is that it can be there
+    -- by then. The second is an absolute difference because a hand can come in as well as
+    -- go out, and it is given a tick's grace because the engine's last step is not bounded
+    -- by the extension speed: it covers whatever gap is left in one go rather than creeping
+    -- up on it. Measured on all four tiers, a hand arrives on the tick the arithmetic says
+    -- it will still be short. Without the grace, a target sitting at exactly the reach of
+    -- somebody standing still is refused, which is the plainest case there is.
+    if away <= arm.range and math.abs(away - out) <= arm.extension * (k + 1) then
+      if not first then first = k end
+      last = k
+    elseif first then
+      break
+    end
+  end
+  if not first then return nil end
+  local arrival = math.min(first + reach.MARGIN, last)
+  return arrival,
+    { x = offset.x - drift.x * arrival, y = offset.y - drift.y * arrival }
+end
+
 ---The circles to search a cone with, laid end to end along it.
 ---
 ---One circle round the whole cone is wasteful when the cone is long and thin, which is what

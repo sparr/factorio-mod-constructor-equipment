@@ -419,3 +419,86 @@ describe("the circles a cone is searched with", function()
       "chaining a car's cone should sweep well under two thirds of one circle round it")
   end)
 end)
+
+describe("when and where to aim to meet something", function()
+  local ARM = { range = 5, extension = 0.1 }
+  local HORIZON = reach.full_swing(ARM)
+  local WALKING = { x = 0.1484375, y = 0 }
+  local STILL = { x = 0, y = 0 }
+
+  local function length(of) return math.sqrt(of.x * of.x + of.y * of.y) end
+
+  describe("for somebody standing still", function()
+    it("aims at the thing itself, since it is not going anywhere", function()
+      local arrival, lead = reach.intercept(ARM, STILL, { x = 3, y = 0 }, HORIZON)
+      assert.is_not_nil(arrival)
+      assert.are.same({ x = 3, y = 0 }, lead)
+    end)
+
+    --- The plainest case there is, and the one that caught a boundary: a hand takes the
+    --- whole horizon to stretch the whole reach, so without a tick's grace for the engine's
+    --- last step this was refused.
+    it("reaches something at exactly the edge of the reach", function()
+      local arrival, lead = reach.intercept(ARM, STILL, { x = 5, y = 0 }, HORIZON)
+      assert.is_not_nil(arrival, "a target at exactly the reach was called unreachable")
+      assert.are.equal(5, length(lead))
+    end)
+
+    it("refuses something a hair past it", function()
+      assert.is_nil(reach.intercept(ARM, STILL, { x = 5.01, y = 0 }, HORIZON))
+    end)
+  end)
+
+  describe("for somebody walking", function()
+    --- Ten ahead and four and a half to the side is eleven tiles off, twice the reach, and
+    --- the claw is sent to where it will be rather than where it is.
+    it("aims ahead of something it will catch up with", function()
+      local arrival, lead = reach.intercept(ARM, WALKING, { x = 8.4, y = 4.5 }, HORIZON)
+      assert.is_not_nil(arrival, "a ghost the walk brings into reach was called unreachable")
+      assert.is_true(length(lead) <= ARM.range + 1e-9,
+        ("the lead is %.4f long, past a reach of %g"):format(length(lead), ARM.range))
+      -- and it is the target seen from where its owner will be standing by then
+      assert.is_true(math.abs(lead.x - (8.4 - WALKING.x * arrival)) < 1e-9)
+      assert.are.equal(4.5, lead.y)
+    end)
+
+    it("refuses what it will never catch, square abeam at the edge", function()
+      assert.is_nil(reach.intercept(ARM, WALKING, { x = 0, y = 5 }, HORIZON))
+    end)
+
+    it("refuses what its owner is walking away from", function()
+      assert.is_nil(reach.intercept(ARM, WALKING, { x = -4, y = 0 }, HORIZON))
+    end)
+
+    --- Something too far ahead has no intercept yet rather than none ever: an arm cannot set
+    --- off for what is more than a swing away, and the same ghost is answerable a few ticks
+    --- later once its owner has closed some of the gap.
+    it("says not yet to something further ahead than a swing", function()
+      assert.is_nil(reach.intercept(ARM, WALKING, { x = 10, y = 4.5 }, HORIZON))
+      assert.is_not_nil(reach.intercept(ARM, WALKING, { x = 8.4, y = 4.5 }, HORIZON))
+    end)
+  end)
+
+  --- A hand part way through a reach is the same question with a different starting radius,
+  --- and it may come in as readily as go out.
+  it("lets a hand already out retract to something nearer", function()
+    local out = { range = 5, extension = 0.1, out = 4 }
+    local arrival, lead = reach.intercept(out, WALKING, { x = -3, y = 1 }, HORIZON)
+    assert.is_not_nil(arrival, "a hand at four tiles could not come in to meet something")
+    assert.is_true(length(lead) < 4, "it should have had to retract, not stretch")
+  end)
+
+  --- The promise the lead rests on: whatever it hands back is inside the reach, so an arm is
+  --- never asked to stretch past what its tier sells.
+  it("never hands back a lead longer than the reach", function()
+    for x = -8, 14, 0.37 do
+      for y = -8, 8, 0.37 do
+        local _, lead = reach.intercept(ARM, WALKING, { x = x, y = y }, HORIZON)
+        if lead then
+          assert.is_true(length(lead) <= ARM.range + 1e-9,
+            ("%g,%g gave a lead %.4f long"):format(x, y, length(lead)))
+        end
+      end
+    end
+  end)
+end)
