@@ -6,6 +6,7 @@ Version: 2.1.6
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
   Bugfixes:
     - Fixed an arm running out of power partway home and hanging in the air with your item in its claw for five seconds before a backstop handed it back
+    - Fixed a player being moved somewhere else mid reach, by a teleport, a respawn or a script, being read as a course and sending the arms looking for work across a circle thousands of tiles wide
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.5
 Date: 2026-09-19

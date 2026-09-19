@@ -466,6 +466,22 @@ local function tier_of(record)
   return tiers.by_level[record.level] or tiers.list[1]
 end
 
+--- How far a wearer can move in a tick and still be said to have travelled, in tiles.
+---
+--- Anything further is not a course, it is a jump: a teleport, a respawn, a script putting
+--- somebody somewhere. The two positions either side of one say nothing whatever about where
+--- their owner is going, and taking them for a course is not merely useless but expensive,
+--- because everything downstream scales with it. The search is drawn a reach plus half the
+--- ground its owner will cover while a hand is out, so a hundred and twenty tile jump asks
+--- the engine for a circle two and a half thousand tiles across -- twenty one million tiles
+--- of ground, which does not come back inside a tick, or a minute.
+---
+--- Two tiles a tick is comfortably past anything that travels. The fastest wearer measured
+--- is a train at 0.4, and a locomotive flat out on straight rail does about 1.4. A wearer
+--- genuinely faster than this is only underestimated, which the intercept absorbs the same
+--- way it absorbs a vehicle accelerating: the course is worked out again next tick.
+local LEAP = 2
+
 ---How far a wearer went last tick.
 ---
 ---Measured rather than asked for: a character answers walking_state, a car answers speed and
@@ -479,7 +495,8 @@ end
 ---owner was going.
 ---
 ---Nought on the tick a wearer changes, since the step from a character's position to the
----car they have just climbed into is not a walk.
+---car they have just climbed into is not a walk. Nought as well when the step is further
+---than anything can travel in a tick: see LEAP.
 ---@param player LuaPlayer
 ---@param wearer LuaEntity
 ---@return {x: number, y: number}
@@ -489,7 +506,8 @@ local function drift_of(player, wearer)
   local at = wearer.position
   local drift = { x = 0, y = 0 }
   if seen and seen.wearer == wearer.unit_number then
-    drift = { x = at.x - seen.x, y = at.y - seen.y }
+    local dx, dy = at.x - seen.x, at.y - seen.y
+    if dx * dx + dy * dy <= LEAP * LEAP then drift = { x = dx, y = dy } end
   end
   storage.constructor_drift[player.index] = {
     tick = game.tick, x = at.x, y = at.y, wearer = wearer.unit_number, drift = drift,

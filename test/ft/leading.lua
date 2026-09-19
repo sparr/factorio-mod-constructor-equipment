@@ -657,3 +657,118 @@ describe("ground that speeds its owner up", function()
     end)
   end)
 end)
+
+--- Other things the game does to a character while an arm is out.
+---
+--- A lead is drawn from the difference between two positions, and plenty of mechanics move a
+--- character without walking them. Most turn out to be a speed change by another name, which
+--- the per-tick re-solve already absorbs. One is not.
+---
+--- Not here: dying. Killing a character inside a tick handler stops the harness dead -- a
+--- bare character with no equipment at all does it just the same -- so it cannot be driven
+--- from a fixture, and nothing here would be measuring the mod if it could.
+describe("other ways a character moves", function()
+  --- The one that mattered. A jump is not a course, and read as one it is ruinous rather
+  --- than merely wrong: the search is drawn a reach plus half the ground its owner will
+  --- cover while a hand is out, so a hundred and twenty tile teleport asked the engine for a
+  --- circle two and a half thousand tiles across. Twenty one million tiles of ground, which
+  --- does not come back -- the test that found this ran for four minutes and was killed.
+  ---
+  --- So this test passing quickly is half of what it checks. See LEAP in control.lua.
+  it("is not fooled into a vast search by a teleport", function()
+    rewear({ FOURTH.name, "battery-equipment" })
+    world.ghost(player, BELT, 10, 4)
+    local began, took, jumped = game.tick, nil, false
+    world.once(function()
+      if player.character then
+        player.walking_state = { walking = true, direction = defines.direction.east }
+      end
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not jumped and since == took + 8 then
+        player.teleport{ world.ORIGIN.x + 120, world.ORIGIN.y }
+        jumped = true
+      end
+      return since > 150
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_not_nil(took, "the arm never set off")
+      assert.is_true(jumped, "the character was never teleported")
+      assert.are.equal(5, belts_anywhere(), "a belt went missing across the teleport")
+      assert.are.equal(1, world.ghosts(player),
+        "a ghost a hundred tiles behind was somehow built")
+    end, "the walk never ended", 240)
+  end)
+
+  --- The grid the arm was mustered against going away underneath it.
+  it("keeps the belt when the armour comes off mid reach", function()
+    rewear({ FOURTH.name, "battery-equipment" })
+    world.ghost(player, BELT, 10, 4)
+    local began, took, stripped = game.tick, nil, false
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not stripped and since == took + 8 then
+        player.get_inventory(defines.inventory.character_armor).clear()
+        stripped = true
+      end
+      return since > 150
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_true(stripped, "the armour never came off")
+      assert.are.equal(5, belts_anywhere(), "a belt went missing when the armour came off")
+      assert.are.equal(1, world.ghosts(player), "the ghost was built by an arm with no grid")
+    end, "the walk never ended", 240)
+  end)
+
+  --- An exoskeleton is a speed change by another name, and so is a spitter's acid. Both are
+  --- the terrain case in different clothes, and both are absorbed the same way.
+  it("builds through an exoskeleton being fitted mid reach", function()
+    rewear({ FOURTH.name, "battery-equipment" }, "power-armor")
+    world.ghost(player, BELT, 10, 4)
+    local began, took, fitted = game.tick, nil, false
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not fitted and since == took + 8 then
+        local put = player.character.grid.put{ name = "exoskeleton-equipment" }
+        if put then put.energy = put.max_energy end
+        fitted = true
+      end
+      return world.ghosts(player) == 0 or since > 200
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_true(fitted, "the exoskeleton never went in")
+      assert.are.equal(0, world.ghosts(player), "the ghost was dropped when the pace changed")
+      assert.are.equal(5, belts_anywhere(), "a belt was made or lost")
+    end, "the walk never ended", 300)
+  end)
+
+  it("builds through a slowdown sticker landing mid reach", function()
+    rewear({ FOURTH.name, "battery-equipment" })
+    world.ghost(player, BELT, 10, 4)
+    local began, took, stuck = game.tick, nil, false
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not stuck and since == took + 8 then
+        player.surface.create_entity{ name = "slowdown-sticker",
+          position = player.position, target = player.character }
+        stuck = true
+      end
+      return world.ghosts(player) == 0 or since > 200
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_true(stuck, "the sticker never landed")
+      assert.are.equal(0, world.ghosts(player), "the ghost was dropped when the pace changed")
+      assert.are.equal(5, belts_anywhere(), "a belt was made or lost")
+    end, "the walk never ended", 300)
+  end)
+end)
