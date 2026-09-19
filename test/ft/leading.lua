@@ -32,8 +32,8 @@ local function clear_the_walk(at)
   for _, entity in ipairs(at.surface.find_entities_filtered{
         area = { { world.ORIGIN.x - half, world.ORIGIN.y - half },
                  { world.ORIGIN.x + half, world.ORIGIN.y + half } },
-        name = { BELT, "iron-chest", "item-on-ground", "constructor-equipment-catcher",
-                 "tank", "car" } }) do
+        name = { BELT, "fast-transport-belt", "iron-chest", "item-on-ground",
+                 "constructor-equipment-catcher", "tank", "car" } }) do
     if entity.valid then entity.destroy() end
   end
   for _, ghost in ipairs(at.surface.find_entities_filtered{
@@ -457,5 +457,114 @@ describe("wearers other than one character on foot", function()
       assert.is_not_nil(lifted, "a marked chest was walked past rather than taken up")
       assert.are.equal(1, player.get_item_count("iron-chest"), "it never reached the pocket")
     end, "the walk never ended", A_WALK + 200)
+  end)
+end)
+
+--- The other kinds of work, and the things that can interrupt one, on the way past.
+---
+--- A ghost is not the only thing an arm is sent for. An upgrade order is a swap, with
+--- something coming back; a marked cliff is a delivery of one explosive and an empty claw
+--- home. Both were only ever tested on a character standing still.
+describe("other work, led", function()
+  it("carries out an upgrade order it walks past", function()
+    rewear({ FOURTH.name, "battery-equipment" })
+    player.insert{ name = "fast-transport-belt", count = 5 }
+    local belt = player.surface.create_entity{ name = BELT,
+      position = { world.ORIGIN.x + 10, world.ORIGIN.y + 4 }, force = player.force }
+    belt.order_upgrade{ force = player.force,
+      target = prototypes.entity["fast-transport-belt"] }
+    -- Not walk_until_built: that watches for the ghosts running out, and an upgrade order
+    -- is not a ghost, so it would have come back satisfied on the first tick.
+    local began, swapped = game.tick, nil
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      if not swapped and world.count(player, "fast-transport-belt") > 0 then
+        swapped = game.tick
+      end
+      -- Kept walking past the swap, because what came off is in the claw until the claw is
+      -- home again.
+      return (swapped and game.tick - swapped > world.CYCLE) or game.tick - began > A_WALK
+    end, function()
+      player.walking_state = { walking = false }
+      assert.are.equal(1, world.count(player, "fast-transport-belt"),
+        "the belt was not swapped for a fast one")
+      assert.are.equal(4, player.get_item_count("fast-transport-belt"),
+        "the fast belt was not paid for")
+      -- Five were in the pocket to begin with, and the one that came off makes six.
+      assert.are.equal(6, player.get_item_count(BELT),
+        "the belt that came off did not come back")
+    end, "the walk never ended", A_WALK + 120)
+  end)
+
+  --- A cliff lies on a four tile grid, so where it lands is not quite where it is asked
+  --- for, and it cannot be marked at all until the force knows how to blow one up.
+  --- world.cliff does both.
+  it("blows up a cliff it walks past", function()
+    rewear({ FOURTH.name, "battery-equipment" }, "power-armor")
+    player.insert{ name = "cliff-explosives", count = 3 }
+    -- A cliff lands on its own four tile grid rather than where it is asked for, so where
+    -- it ends up has to be checked: asked for four tiles off the line it settles at six,
+    -- which is past a five tile reach and can never be got to from a walk along it.
+    local cliff = world.cliff(player, 12, 0)
+    if not cliff then return end
+    local aside = math.abs(cliff.position.y - world.ORIGIN.y)
+    assert.is_true(aside < FOURTH.range,
+      ("the cliff settled %.1f tiles off the line, past a %g tile reach")
+        :format(aside, FOURTH.range))
+    assert.is_true(reach.distance(player.position, cliff.position) > FOURTH.range,
+      "the cliff was in reach before the walk even began")
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      return player.surface.count_entities_filtered{ type = "cliff" } == 0
+        or game.tick - began > A_WALK
+    end, function()
+      player.walking_state = { walking = false }
+      assert.are.equal(0, player.surface.count_entities_filtered{ type = "cliff" },
+        "the cliff was walked past rather than blown up")
+      assert.are.equal(2, player.get_item_count("cliff-explosives"),
+        "it did not cost exactly one explosive")
+    end, "the walk never ended", A_WALK + 120)
+  end)
+
+  --- Interruptions. A reach that is under way when its target stops being work has to give
+  --- the load back rather than drop it, and the same when its owner puts the arms away or
+  --- climbs into something.
+  it("keeps the belt when the ghost is destroyed mid flight", function()
+    rewear({ FOURTH.name, "battery-equipment" })
+    local ghost = world.ghost(player, BELT, 10, 4)
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      if since == 20 and ghost.valid then ghost.destroy() end
+      return since > A_WALK
+    end, function()
+      player.walking_state = { walking = false }
+      assert.are.equal(5, belts_anywhere(), "a belt was lost when the ghost went away")
+      assert.are.equal(5, player.get_item_count(BELT), "it never came back to the pocket")
+    end, "the walk never ended", A_WALK + 120)
+  end)
+
+  it("keeps the belt when its owner climbs into a vehicle mid flight", function()
+    rewear({ FOURTH.name, "battery-equipment" })
+    world.ghost(player, BELT, 10, 4)
+    local car = player.surface.create_entity{ name = "car", position = world.ORIGIN,
+      force = player.force }
+    local began = game.tick
+    world.once(function()
+      local since = game.tick - began
+      if since < 20 then
+        player.walking_state = { walking = true, direction = defines.direction.east }
+      elseif since == 20 then
+        car.set_driver(player)
+      end
+      return since > A_WALK
+    end, function()
+      if player.vehicle then world.unseat(player) end
+      player.walking_state = { walking = false }
+      assert.are.equal(5, belts_anywhere(), "a belt was lost when its owner got in a car")
+      car.destroy()
+    end, "the walk never ended", A_WALK + 120)
   end)
 end)
