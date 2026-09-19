@@ -22,7 +22,8 @@
       ".gitignore",
       ".git/**",
       "*.zip",
-      "screenshots.jpg"
+      "screenshots.jpg",
+      "TODO.md"
     ]
   }
 }

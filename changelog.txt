@@ -1,5 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.5
+Date: 2026-09-19
   Features:
     - The arms now carry out upgrade planner orders, swapping the thing standing there for what it is marked to become and carrying the old one back to you in the claw
     - An arm making a swap carries one thing at a time, so its claw is free to bring the old one home even when your pockets are full
