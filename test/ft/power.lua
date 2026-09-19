@@ -243,3 +243,61 @@ describe("work in reach and no charge to go for it", function()
     end)
   end)
 end)
+
+--- An arm has nothing to plug into out in the open, and that is what the whole
+--- feed-it-from-script arrangement rests on. It is only true out in the open.
+---
+--- An electric entity joins whatever network covers the tile it stands on, and an arm rides
+--- on a character who can walk into a supply area. Pinned here rather than fixed: there is
+--- no flag for an electric energy source that refuses to join a network, and the ways round
+--- it cost more than the leak. What a test can do is notice if it ever changes.
+describe("what the arm plugs into", function()
+  local SUPPLY = "electric-energy-interface"
+
+  local function tidy()
+    for _, thing in ipairs(player.surface.find_entities_filtered{
+          name = { SUPPLY, "medium-electric-pole" },
+          position = world.ORIGIN, radius = 60 }) do
+      if thing.valid then thing.destroy() end
+    end
+  end
+
+  after_each(tidy)
+
+  it("is nothing at all, out in the open", function()
+    world.equipped(player)
+    player.insert{ name = BELT, count = 5 }
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(12, function()
+      local arm = world.arm(player)
+      assert.is_not_nil(arm, "no arm came out")
+      assert.is_nil(arm.electric_network_id,
+        "an arm standing in an empty field found a network to plug into")
+    end)
+  end)
+
+  --- Measured on 2.1.19 with a fourth tier arm: it joins the network and takes 2017 J from
+  --- it over sixty ticks, about 34 J a tick. charge() only makes up the shortfall, so that
+  --- is taken off what the armour pays rather than added to what the swing costs.
+  it("is the local network, when its owner stands in a supply area", function()
+    local supply = player.surface.create_entity{ name = SUPPLY,
+      position = { world.ORIGIN.x - 4, world.ORIGIN.y - 4 }, force = player.force }
+    if not supply then return end
+    supply.power_production = 1000000
+    supply.electric_buffer_size = 100000000
+    supply.energy = 100000000
+    player.surface.create_entity{ name = "medium-electric-pole",
+      position = { world.ORIGIN.x - 2, world.ORIGIN.y - 2 }, force = player.force }
+    world.equipped(player)
+    player.insert{ name = BELT, count = 5 }
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(60, function()
+      local arm = world.arm(player)
+      if not arm then return end
+      assert.is_not_nil(arm.electric_network_id,
+        "an arm inside a supply area did not join the network, which would be an improvement")
+      assert.is_true(supply.energy < 100000000,
+        "it joined the network without drawing anything from it")
+    end)
+  end)
+end)

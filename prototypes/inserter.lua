@@ -13,11 +13,34 @@
 --- exactly on a character rather than snapping to the tile they happen to be standing on.
 ---
 --- It does run on power, at the base game's own prices for the inserter it borrows from,
---- and it is on no network to get any: control.lua tops its buffer up out of the armour's
---- batteries every tick and takes back whatever is left when the arm is put away. That way
---- the engine works out the bill -- a swing costs what a swing costs, and a long reach
---- costs more than a short one -- and an armour with nothing left in it stops the arm
---- where it stands.
+--- and out in the open it is on no network to get any: control.lua tops its buffer up out
+--- of the armour's batteries every tick and takes back whatever is left when the arm is put
+--- away. That way the engine works out the bill -- a swing costs what a swing costs, and a
+--- long reach costs more than a short one -- and an armour with nothing left in it stops
+--- the arm where it stands.
+---
+--- Which is why the power goes through script at all, rather than the equipment feeding the
+--- arm the way a grid feeds equipment. There is no engine path from a grid to an entity: a
+--- grid powers equipment, and this is an inserter, because an inserter is the only thing in
+--- the game that knows how to swing a hand on an elbow at a given speed and move something
+--- at the end of it. The one precedent, a personal roboport powering robots, is a fixed
+--- relationship between two prototype types rather than anything a mod can aim at an
+--- inserter. Giving this a void energy source would do away with the script and with the
+--- billing together, which is the half worth keeping.
+---
+--- "On no network" is only true outdoors, and that is worth writing down. An electric entity
+--- joins whatever network covers the tile it stands on, and an arm rides on a character who
+--- can walk into a supply area. Measured on 2.1.19, with a fourth tier arm reaching for a
+--- ghost: standing in the open the arm reports no network at all, and standing inside a
+--- powered area it reports one and draws 2017 J from it over sixty ticks, about 34 J a tick.
+--- charge() only makes up the shortfall, so whatever the network gives is subtracted from
+--- what the armour pays: building inside your own factory is part paid for by the factory,
+--- to the tune of roughly one fiftieth of a reach.
+---
+--- Left alone rather than fixed. There is no flag for an electric energy source that refuses
+--- to join a network, and the alternatives cost more than the leak: a void source loses the
+--- billing, and emptying the buffer before refilling it each tick does not help, because the
+--- engine has already spent that tick's network draw by the time script runs.
 local tiers = require("lib.tiers")
 local art = require("prototypes.art")
 
