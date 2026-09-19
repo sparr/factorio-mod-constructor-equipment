@@ -44,10 +44,25 @@ local function clear_the_walk(at)
   end
 end
 
+---Turn the ground ahead into something, from a given offset onward.
+---@param name string
+---@param from_x number offset from the arena, in tiles
+local function retile(name, from_x)
+  local tiles = {}
+  for x = math.floor(from_x), 90 do
+    for y = -12, 12 do
+      tiles[#tiles + 1] = { name = name,
+        position = { world.ORIGIN.x + x, world.ORIGIN.y + y } }
+    end
+  end
+  player.surface.set_tiles(tiles)
+end
+
 before_each(function()
   player = world.player()
   world.clear(player)
   clear_the_walk(player)
+  retile("grass-1", -12)
   player.character_running_speed_modifier = 0
   world.equip(player, { FOURTH.name, "battery-equipment" }, true)
   player.insert{ name = BELT, count = 5 }
@@ -56,6 +71,7 @@ end)
 after_each(function()
   player.walking_state = { walking = false }
   if player.vehicle then world.unseat(player) end
+  retile("grass-1", -12)
   clear_the_walk(player)
   world.clear(player)
 end)
@@ -566,5 +582,78 @@ describe("other work, led", function()
       assert.are.equal(5, belts_anywhere(), "a belt was lost when its owner got in a car")
       car.destroy()
     end, "the walk never ended", A_WALK + 120)
+  end)
+end)
+
+--- Stepping onto ground that walks faster, with a reach already under way.
+---
+--- Terrain changes a wearer's speed in one step rather than over a ramp, which is the one
+--- disturbance a vehicle cannot produce. Refined concrete walks at one and a half times bare
+--- ground -- measured, 0.2227 of a tile a tick against 0.1484.
+---
+--- Which way that cuts is not obvious. Going faster towards something ahead brings it into
+--- reach sooner, so that is the safe direction and the claw simply arrives early. What it
+--- costs is width: the wedge an arm can reach into has half angle asin(extension over
+--- speed), so speeding up narrows it, and a ghost off to the side can fall out of the cone
+--- that was holding it.
+---
+--- The paving is laid from under the character's own feet at a chosen tick rather than put
+--- down in advance, because where it starts decides nothing and when they step on it decides
+--- everything.
+describe("ground that speeds its owner up", function()
+  ---@param tier table
+  ---@param gx integer
+  ---@param gy integer
+  ---@param after integer ticks after the arm sets off
+  ---@param done fun(built: boolean, gave_up: boolean)
+  local function pave_mid_reach(tier, gx, gy, after, done)
+    rewear({ tier.name, "battery-equipment" }, "power-armor")
+    world.ghost(player, BELT, gx, gy)
+    local began, took, paved, built, gave_up = game.tick, nil, false, false, false
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      if record and record.job and not took then took = since end
+      if took and not paved and since == took + after then
+        retile("refined-concrete", player.position.x - world.ORIGIN.x)
+        paved = true
+      end
+      if took and not built and world.ghosts(player) == 0 then built = true end
+      if took and paved and not built and not gave_up and not (record and record.job) then
+        gave_up = true
+      end
+      return built or since > 220
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_not_nil(took, "the arm never set off at all")
+      assert.is_true(paved, "the ground was never paved")
+      done(built, gave_up)
+    end, "the walk never ended", 300)
+  end
+
+  --- Still catchable. A fourth tier arm reaching twelve ahead and four off has the ghost
+  --- brought to it sooner by the extra speed, not taken away.
+  it("keeps a ghost the extra speed only brings nearer", function()
+    pave_mid_reach(FOURTH, 12, 4, 1, function(built)
+      assert.is_true(built, "a ghost that only came nearer was dropped")
+      assert.are.equal(1, world.count(player, BELT), "no belt was put down")
+      assert.are.equal(5, belts_anywhere(), "a belt was made or lost")
+    end)
+  end)
+
+  --- And one the extra speed takes away. A second tier arm reaches three tiles and extends
+  --- at a twentieth of a tile a tick, so its wedge is narrow to begin with -- 19.7 degrees
+  --- at a walk -- and refined concrete closes it to 13.0. A ghost five ahead and two off sits
+  --- between the two, so it is there to be had until the moment the ground changes and not
+  --- afterwards.
+  it("gives a ghost up, and keeps the belt, when the wedge closes past it", function()
+    pave_mid_reach(tiers.by_level[2], 5, 2, 1, function(built, gave_up)
+      assert.is_false(built, "a ghost outside the narrowed wedge was built anyway")
+      assert.is_true(gave_up, "the reach was neither finished nor given up")
+      assert.are.equal(1, world.ghosts(player), "the ghost is not standing where it was")
+      assert.are.equal(5, belts_anywhere(), "a belt went missing when the reach was dropped")
+      assert.are.equal(5, player.get_item_count(BELT), "the belt never came back to the pocket")
+    end)
   end)
 end)
