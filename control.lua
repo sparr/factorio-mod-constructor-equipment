@@ -158,6 +158,8 @@ local function setup()
   storage.constructor_off = storage.constructor_off or {}
   -- what each player's button was last told, so it is only set when it changes
   storage.constructor_button = storage.constructor_button or {}
+  -- where each player's wearer stood last tick, and how far they moved to get there
+  storage.constructor_drift = storage.constructor_drift or {}
 
   -- One arm per player, in four parallel tables, is what a save from before multiple
   -- equipment looks like. The arms themselves are entities in the world, so they are taken
@@ -464,15 +466,34 @@ local function tier_of(record)
   return tiers.by_level[record.level] or tiers.list[1]
 end
 
----The furthest any of these arms can reach.
----@param list table[]
----@return number
-local function furthest(list)
-  local range = 0
-  for _, record in pairs(list) do
-    range = math.max(range, tier_of(record).range)
+---How far a wearer went last tick.
+---
+---Measured rather than asked for: a character answers walking_state, a car answers speed and
+---orientation, a spidertron answers neither in the same units and a train answers for the
+---whole train, where the difference between two positions is the same answer for all of
+---them, needs no model of any of them, and is what happened rather than what was meant to.
+---
+---Asked once a tick and remembered, because more than one thing reads it -- where to search,
+---and whether a reach is worth setting off on -- and two arms working off two measurements
+---of the same walk would disagree about which way their owner was going.
+---
+---Nought on the tick a wearer changes, since the step from a character's position to the
+---car they have just climbed into is not a walk.
+---@param player LuaPlayer
+---@param wearer LuaEntity
+---@return {x: number, y: number}
+local function drift_of(player, wearer)
+  local seen = storage.constructor_drift[player.index]
+  if seen and seen.tick == game.tick then return seen.drift end
+  local at = wearer.position
+  local drift = { x = 0, y = 0 }
+  if seen and seen.wearer == wearer.unit_number then
+    drift = { x = at.x - seen.x, y = at.y - seen.y }
   end
-  return range
+  storage.constructor_drift[player.index] = {
+    tick = game.tick, x = at.x, y = at.y, wearer = wearer.unit_number, drift = drift,
+  }
+  return drift
 end
 
 ---Whether an arm can afford to set off, which is a question about its own equipment.
@@ -1349,20 +1370,35 @@ end
 ---the range each arm judges it by differs, and that is a comparison rather than a search.
 ---Widened by how far out an arm's base can sit, because each arm judges what it found
 ---from its own base rather than from the middle of what it is bolted to.
+---
+---And widened again by wherever its owner is going. A hand set off with now arrives a swing
+---from now, by which time its owner has walked on, so what is worth finding is everything
+---some arm could meet at any point between here and there rather than everything in reach
+---of where they stand this instant. lib/reach.lua draws that circle; what comes back from it
+---is a superset and nothing here prunes it, because every arm judges each candidate against
+---its own reach anyway -- see choose(), which turns away what it cannot get to.
 ---@param wearer LuaEntity the character or vehicle the arms are on
----@param range number the longest reach any of their arms has
+---@param list table[] the arms, whose tiers say how far and how long each reaches
+---@param drift {x: number, y: number} how far their owner went last tick
 ---@return LuaEntity[]
-local function work_near(wearer, range)
-  -- A radius, and the same radius the reach is judged against below. Two things went wrong
-  -- with the square this replaces. A square of side twice the range reaches 1.41 times as
-  -- far at its corners, and find_entities_filtered returns anything whose own box merely
-  -- overlaps the area, so a ghost whose centre was well over four tiles away came back as
-  -- a candidate. It was then abandoned as out of range on the very next tick, and found
-  -- again the tick after: the arm swung out and back for ever, and because a swing counted
-  -- as under way, no ghost that was actually in reach got a turn.
-  local radius = range + spread_of(wearer)
+local function work_near(wearer, list, drift)
+  local arms = {}
+  for _, record in pairs(list) do
+    local tier = tier_of(record)
+    arms[#arms + 1] = { range = tier.range, ticks = reach.full_swing(tier) }
+  end
+  -- A radius, and a radius rather than a square. Two things went wrong with the square this
+  -- replaces. A square of side twice the range reaches 1.41 times as far at its corners, and
+  -- find_entities_filtered returns anything whose own box merely overlaps the area, so a
+  -- ghost whose centre was well over four tiles away came back as a candidate. It was then
+  -- abandoned as out of range on the very next tick, and found again the tick after: the arm
+  -- swung out and back for ever, and because a swing counted as under way, no ghost that was
+  -- actually in reach got a turn.
+  local offset, radius = reach.search(arms, drift)
+  radius = radius + spread_of(wearer)
+  local at = { x = wearer.position.x + offset.x, y = wearer.position.y + offset.y }
   local found = wearer.surface.find_entities_filtered{
-    position = wearer.position,
+    position = at,
     radius = radius,
     type = "entity-ghost"
   }
@@ -1375,7 +1411,7 @@ local function work_near(wearer, range)
   -- entity of its own -- a deconstructible-tile-proxy standing on the tile -- so the same
   -- search finds both.
   for _, marked in pairs(wearer.surface.find_entities_filtered{
-        position = wearer.position,
+        position = at,
         radius = radius,
         to_be_deconstructed = true,
       }) do
@@ -1385,7 +1421,7 @@ local function work_near(wearer, range)
   end
 
   for _, cliff in pairs(wearer.surface.find_entities_filtered{
-        position = wearer.position,
+        position = at,
         radius = radius,
         type = "cliff",
         to_be_deconstructed = true,
@@ -1393,7 +1429,7 @@ local function work_near(wearer, range)
     found[#found + 1] = cliff
   end
   for _, marked in pairs(wearer.surface.find_entities_filtered{
-        position = wearer.position,
+        position = at,
         radius = radius,
         to_be_upgraded = true,
       }) do
@@ -3190,7 +3226,8 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     -- The tick's own search where there is one, which there is whenever this is reached
     -- from an arm being advanced. A claw turning to the next ghost is asking the same
     -- question the arms with no job are asking, of the same ground, on the same tick.
-    nearby and nearby() or work_near(wearer, range), claimed, range, record)
+    nearby and nearby() or work_near(wearer, { record }, drift_of(player, wearer)),
+    claimed, range, record)
   if not ghost then return false end
 
   -- A round of pickups: the claw goes on to the next thing rather than carrying one home
@@ -3374,15 +3411,9 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
   local from = reaching_from(wearer, slot, count)
 
   -- How far its owner went last tick, which is what out_of_reach() reads the future from.
-  -- Measured rather than asked for: a character answers walking_state, a car answers speed
-  -- and orientation, a spidertron answers neither in the same units and a train answers for
-  -- the whole train, where the difference between two positions is the same answer for all
-  -- of them, needs no model of any of them, and is what happened rather than what was meant
-  -- to.
-  local was = record.last_wearer
-  record.last_wearer = { x = wearer.position.x, y = wearer.position.y }
-  record.drift = was and { x = wearer.position.x - was.x, y = wearer.position.y - was.y }
-    or { x = 0, y = 0 }
+  -- The wearer's own figure rather than one of this arm's own: see drift_of(), and the
+  -- search, which has to be drawn from the same walk.
+  record.drift = drift_of(player, wearer)
 
   if job then
     record.busy = game.tick
@@ -3546,7 +3577,7 @@ end
 local function assign(player, wearer, list, tick, nearby)
   local claimed = claims(list)
   nearby = nearby or function()
-    return work_near(wearer, furthest(list))
+    return work_near(wearer, list, drift_of(player, wearer))
   end
   local working = false
   -- Shortest arm first. Every arm takes the soonest thing it can reach that nobody else has
@@ -3714,7 +3745,9 @@ local function on_tick(event)
       -- decide is four find_entities_filtered calls spent on an answer nothing reads.
       local searched
       local function nearby()
-        if not searched then searched = work_near(wearer, furthest(list)) end
+        if not searched then
+          searched = work_near(wearer, list, drift_of(player, wearer))
+        end
         return searched
       end
       -- Slowed for as long as an arm is working, not only at the moment one arrives.

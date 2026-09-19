@@ -77,6 +77,75 @@ function reach.within(tier, threshold, moved)
   return math.max(threshold, reach.step(tier), (moved or 0) * reach.OVERSHOOT)
 end
 
+--- Where a freshly built hand sits, in tiles out from the arm's own base along the way it
+--- was built facing.
+---
+--- Measured on every tier on 2.1.19 and the same on all four, which is what makes it a
+--- constant here rather than something read off a prototype: the first tier's hand is born
+--- 0.6939 out and so is the fourth's, though one of them reaches two tiles and the other
+--- five. See test/ft/intercept.lua, which reads it on the tick the arm is built, before the
+--- engine has moved it.
+---
+--- It matters because it is a head start. A five tile arm travels 4.31 tiles rather than
+--- five, which is seven ticks off a swing and a tile off how far its owner walks while the
+--- hand is out.
+reach.BORN = 0.6939
+
+---How long a hand takes to go all the way out, in ticks.
+---
+---The hand's whole journey is extension: an arm is built facing what it is about to reach
+---for, so there is next to nothing left to turn through, and the engine does both at once
+---in any case. What it travels is the tier's reach less wherever the hand began.
+---
+---Checked against the real thing on all four tiers: this says 37.3, 46.1, 33.1 and 43.1,
+---and the engine lets go on ticks 37, 46, 33 and 43. The tick it is over by is the engine's
+---last step, which covers whatever gap is left rather than creeping up on it.
+---@param tier table
+---@return number ticks
+function reach.full_swing(tier)
+  return (tier.range - reach.BORN) / tier.extension
+end
+
+---Where to look for work, for arms that may set off at any moment.
+---
+---Everything an arm reaches for is fixed in the world and the arm is not, so what is worth
+---finding is not what is in reach now but what will be in reach at any moment between now
+---and the furthest ahead a hand set off with now could arrive. Its owner walks on while the
+---hand is out, and a ghost that is two tiles too far away at the moment of asking is one
+---the claw meets halfway.
+---
+---Which is a circle swept along the way its owner is going. An arm that can reach `range`
+---and whose hand is out for `ticks` covers everything within `range` of anywhere its owner
+---stands between here and `speed * ticks` further on, and the smallest circle round that is
+---centred half the travel ahead with the travel's half added to the reach. Standing still
+---it is the reach itself, unchanged, which is what this used to be.
+---
+---Deliberately generous, and this is the only place that is. Every arm covered spends the
+---whole of its flight at less than its full stretch, so most of what comes back is out of
+---reach at every moment of the journey and will be turned away by whatever asks next. What
+---this owes is that nothing reachable is missed, not that nothing unreachable is offered.
+---
+---Several arms are covered by one circle rather than one apiece, because one search is
+---shared out between them. They point the same way -- it is the same owner walking -- so
+---the circles all lie on one line and the smallest circle round the lot is the span from
+---the furthest any of them reaches behind to the furthest any of them could meet ahead.
+---@param arms {range: number, ticks: number}[] each arm's reach and how long its hand is out
+---@param drift {x: number, y: number} how far their owner went last tick
+---@return {x: number, y: number} offset from the owner to the middle of the search
+---@return number radius
+function reach.search(arms, drift)
+  local speed = math.sqrt(drift.x * drift.x + drift.y * drift.y)
+  local behind, ahead = 0, 0
+  for _, arm in ipairs(arms) do
+    behind = math.max(behind, arm.range)
+    ahead = math.max(ahead, arm.range + speed * arm.ticks)
+  end
+  local along = (ahead - behind) / 2
+  if speed <= 0 then return { x = 0, y = 0 }, behind end
+  return { x = drift.x / speed * along, y = drift.y / speed * along },
+    (ahead + behind) / 2
+end
+
 ---How far round the arm has to turn to get from one bearing to another, in whole turns.
 ---
 ---Never more than half a turn, because an arm turns whichever way is shorter.
