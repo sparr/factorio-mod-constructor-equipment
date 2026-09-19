@@ -240,3 +240,86 @@ describe("a train", function()
     end, "the train never finished its run", 420)
   end)
 end)
+
+--- A wearer whose speed is changing under the lead.
+---
+--- An intercept is worked out from how far its owner went last tick, held constant for the
+--- whole flight. A wearer that is speeding up covers more ground than that, so the lead
+--- ought to land short; one that is slowing covers less, so it ought to overshoot. Neither
+--- happens, and it is worth writing down why, because the reason is not that the arithmetic
+--- is clever.
+---
+--- The intercept is worked out again every tick, so the error never has more than a tick to
+--- accumulate in. Watched on a tank: accelerating from a standing start the lead shortens
+--- from 4.76 to 4.58 and the arrival creeps two ticks earlier; braking hard it lengthens
+--- from 4.65 to 4.89 and the arrival slips five ticks later. The claw simply follows.
+---
+--- And behind that, the handover. Once the ghost is genuinely in reach the lead is dropped
+--- and the claw is aimed at the thing itself, so however wrong the lead was on the way, the
+--- last part of the journey is not a prediction at all.
+---
+--- What a hard enough brake can do is push the lead past the tier's reach, at which point
+--- the intercept comes back with nothing and the reach is given up -- which is the stopping
+--- case, and is already covered on a character.
+describe("a wearer whose speed is changing", function()
+  ---@param brake_after integer? ticks after the ghost is laid to start braking
+  ---@param settle integer
+  ---@param done fun(built: boolean, stock: integer)
+  local function drive_and(settle, brake_after, done)
+    local tank = world.vehicle(player, "tank")
+    tank.insert{ name = "nuclear-fuel", count = 5 }
+    world.fit(tank, { FOURTH.name, "battery-equipment" }, true)
+    tank.insert{ name = BELT, count = 5 }
+    local began, at = game.tick, nil
+    world.once(function()
+      local since = game.tick - began
+      local pedal = defines.riding.acceleration.accelerating
+      if brake_after and since > settle + brake_after then
+        pedal = defines.riding.acceleration.braking
+      end
+      tank.riding_state = { acceleration = pedal,
+        direction = defines.riding.direction.straight }
+      if since == settle then
+        local here = tank.position
+        local ghost = player.surface.create_entity{ name = "entity-ghost",
+          inner_name = BELT, position = { here.x + 12, here.y + 4 }, force = player.force }
+        at = ghost and { x = ghost.position.x, y = ghost.position.y } or nil
+      end
+      local gone = at and player.surface.count_entities_filtered{ type = "entity-ghost",
+        position = at, radius = 0.4 } == 0
+      return gone or since > settle + 200
+    end, function()
+      tank.riding_state = { acceleration = defines.riding.acceleration.nothing,
+        direction = defines.riding.direction.straight }
+      local built = at ~= nil and player.surface.count_entities_filtered{
+        type = "entity-ghost", position = at, radius = 0.4 } == 0
+      local standing = player.surface.count_entities_filtered{ name = BELT,
+        position = world.ORIGIN, radius = 260 }
+      local stock = tank.get_item_count(BELT) + standing
+      world.unseat(player)
+      tank.destroy()
+      done(built, stock)
+    end, "the drive never ended", settle + 300)
+  end
+
+  it("builds from a standing start, while it is still speeding up hard", function()
+    drive_and(10, nil, function(built, stock)
+      assert.is_true(built, "a tank accelerating from rest never built the ghost")
+      assert.are.equal(5, stock, "a belt was made or lost")
+    end)
+  end)
+
+  it("builds while braking after the arm has set off", function()
+    drive_and(200, 20, function(built, stock)
+      assert.is_true(built, "a tank braking mid reach never built the ghost")
+      assert.are.equal(5, stock, "a belt was made or lost")
+    end)
+  end)
+
+  it("builds while braking from the moment the arm sets off", function()
+    drive_and(200, 12, function(built, stock)
+      assert.is_true(built, "a tank braking from the off never built the ghost")
+      assert.are.equal(5, stock, "a belt was made or lost")
+    end)
+  end)
+end)
