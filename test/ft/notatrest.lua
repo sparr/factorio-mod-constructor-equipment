@@ -251,3 +251,87 @@ describe("a hand already out, over radii and angles", function()
     end)
   end
 end)
+
+--- And now the same thing through the mod, rather than beside it.
+---
+--- Everything above drives an arm the fixture built, because that is the only way to put a
+--- hand at a chosen radius and bearing. What it cannot show is control.lua doing it: an arm
+--- of its own, out on a reach with a load in its claw, handed a different ghost and expected
+--- to swing round to it while its owner walks on.
+---
+--- The way to make that happen without reaching into the mod is to take the ghost away. A
+--- reach whose ghost has stopped being work is redirected rather than abandoned, and the
+--- claw is holding the belt it set off with, so the arm that takes on the second ghost is an
+--- arm that is not at rest.
+describe("the mod turning a loaded claw to another ghost", function()
+  local BELTS = 5
+
+  local function walking()
+    player.walking_state = { walking = true, direction = defines.direction.east }
+  end
+
+  ---Every belt there is, wherever it has got to.
+  local function belts_anywhere()
+    local total = player.get_item_count(BELT)
+      + player.surface.count_entities_filtered{ name = BELT, position = world.ORIGIN,
+          radius = 120 }
+    for _, thing in ipairs(player.surface.find_entities_filtered{
+          name = { "item-on-ground", "constructor-equipment-catcher" },
+          position = world.ORIGIN, radius = 120 }) do
+      if thing.name == "item-on-ground" then
+        if thing.stack and thing.stack.valid_for_read and thing.stack.name == BELT then
+          total = total + thing.stack.count
+        end
+      else
+        total = total + thing.get_item_count(BELT)
+      end
+    end
+    local record = (storage.constructor_arms[player.index] or {})[1]
+    local arm = record and record.entity
+    if arm and arm.valid and arm.held_stack.valid_for_read then
+      total = total + arm.held_stack.count
+    end
+    return total
+  end
+
+  it("builds the second one, and keeps the belt, without jumping the claw", function()
+    world.equip(player, { TIER.name, "battery-equipment" }, true, "power-armor")
+    player.insert{ name = BELT, count = BELTS }
+    local first = world.ghost(player, BELT, 10, 4)
+    world.ghost(player, BELT, 14, 0)
+
+    local began, taken, loaded_out, worst, previous = game.tick, nil, false, 0, nil
+    world.once(function()
+      walking()
+      local since = game.tick - began
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      local arm = record and record.entity
+      if record and record.job and not taken then taken = since end
+      if arm and arm.valid then
+        local hand = arm.held_stack_position
+        if previous then worst = math.max(worst, reach.distance(previous, hand)) end
+        previous = { x = hand.x, y = hand.y }
+        -- Once the claw is a good way out with the belt in it, take its ghost away.
+        if not loaded_out and arm.held_stack.valid_for_read
+            and reach.distance(arm.position, hand) > 2.5 then
+          loaded_out = true
+          if first.valid then first.destroy() end
+        end
+      else
+        previous = nil
+      end
+      return (loaded_out and world.ghosts(player) == 0) or since > 300
+    end, function()
+      player.walking_state = { walking = false }
+      assert.is_not_nil(taken, "no arm ever set off")
+      assert.is_true(loaded_out, "the claw never got out far enough with a belt in it")
+      assert.are.equal(0, world.ghosts(player),
+        "the second ghost was never built after the first was taken away")
+      assert.are.equal(1, world.count(player, BELT), "no belt was put down")
+      assert.are.equal(BELTS, belts_anywhere(), "a belt was made or lost")
+      assert.is_true(worst < 1,
+        ("the claw moved %.2f tiles in one tick, which is a jump rather than a swing")
+          :format(worst))
+    end, "the walk never ended", 400)
+  end)
+end)
