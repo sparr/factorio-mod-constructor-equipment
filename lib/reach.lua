@@ -149,6 +149,11 @@ end
 ---Whether an arm could still put something down at a given spot, at any moment between now
 ---and a swing's time from now.
 ---
+---The same question reach.earliest answers, asked for a yes or no. It was its own piece of
+---arithmetic once, and having two of them was a mistake that showed: measured against each
+---other over forty thousand arrangements they disagreed on 273, by as much as thirty nine
+---ticks, and it was the cruder of the two that control.lua was using.
+---
 ---The exact question the search only answers roughly. A hand is not at full stretch the
 ---moment it sets off: it starts where it was born and reaches out at the tier's own speed,
 ---so what it can touch at tick k is whatever lies within `out + extension * k` of wherever
@@ -172,46 +177,7 @@ end
 ---@param ticks number how far ahead to look
 ---@return boolean
 function reach.meets(arm, drift, offset, ticks)
-  local out = arm.out or reach.BORN
-  local e, range = arm.extension, arm.range
-  local wx, wy = offset.x, offset.y
-  local speed2 = drift.x * drift.x + drift.y * drift.y
-
-  -- While the hand is still growing. The spot is met at tick k when the distance to it has
-  -- come down to what the hand has reached, and squaring both sides of that leaves a
-  -- quadratic whose dip below nought is the whole answer.
-  local growing = math.min(ticks, (range - out) / e)
-  if growing >= 0 then
-    local a = speed2 - e * e
-    local b = -2 * (wx * drift.x + wy * drift.y + out * e)
-    local c = wx * wx + wy * wy - out * out
-    local function dips(k) return a * k * k + b * k + c end
-    local least = math.min(dips(0), dips(growing))
-    -- Only where the quadratic opens upward is its turning point a minimum; where it opens
-    -- downward or is a straight line, the least over a stretch is at one of the ends.
-    if a > 0 then
-      local turn = -b / (2 * a)
-      if turn > 0 and turn < growing then least = math.min(least, dips(turn)) end
-    end
-    if least <= 0 then return true end
-  end
-
-  -- And once it is at full stretch, when the circle no longer grows and only slides. How
-  -- near the spot comes to the line its owner walks over what is left of the horizon.
-  --
-  -- Which is also the whole of the answer for somebody standing still: the line is a point,
-  -- and the question comes back to whether the spot is inside the reach. Written this way
-  -- round rather than as a case of its own so that the reach is compared against itself
-  -- rather than against a stretch worked out by dividing and multiplying it, which lands a
-  -- hair either side of it and made a ghost at exactly the reach a coin toss.
-  local along = growing
-  if speed2 > 0 then
-    along = (wx * drift.x + wy * drift.y) / speed2
-    if along < growing then along = growing elseif along > ticks then along = ticks end
-  end
-  local cap = math.min(range, out + e * along)
-  local dx, dy = wx - drift.x * along, wy - drift.y * along
-  return dx * dx + dy * dy <= cap * cap
+  return reach.earliest(arm, drift, offset, ticks) ~= nil
 end
 
 --- How much later than the first moment a target comes within reach the claw is aimed to
@@ -224,6 +190,181 @@ end
 --- Measured both ways: aiming at the moment itself put the load a whole tick of walking
 --- short every time, and aiming a tick past it landed inside a four hundredth of a tile.
 reach.MARGIN = 1
+
+---The real roots of a quadratic, in order, or nothing.
+---@return number?
+---@return number?
+local function roots(a, b, c)
+  if math.abs(a) < 1e-12 then
+    if math.abs(b) < 1e-12 then return nil end
+    local only = -c / b
+    return only, only
+  end
+  local under = b * b - 4 * a * c
+  if under < 0 then
+    -- A path that grazes a boundary rather than crossing it makes this nought, and rounding
+    -- can leave it a whisker under. Throwing those away loses a real answer: measured, a
+    -- target running tangent to the edge of the reach is met on exactly one tick, and that
+    -- tick is there to be had.
+    if under < -1e-9 * math.max(1, math.abs(b * b)) then return nil end
+    under = 0
+  end
+  local root = math.sqrt(under)
+  local one, other = (-b - root) / (2 * a), (-b + root) / (2 * a)
+  if one > other then one, other = other, one end
+  return one, other
+end
+
+---Whether the hand can be exactly on a spot at a given moment.
+---
+---A hand is not free to be anywhere. At tick k it can be anywhere between what it can pull
+---in to and what it can push out to, and no further either way: retracting takes as long as
+---extending. So meeting something is the distance to it falling inside that band, which is
+---two inequalities rather than one.
+---And it has to be pointing the right way. A hand out on one bearing and wanted on another
+---swings round at its tier's own rate and no faster, which for the fourth tier is 2.88
+---degrees a tick -- so half a turn is sixty three ticks against nothing at all for the
+---stretch, and the turn is very often the whole of the journey. Measured against the engine
+---at five angles: 1, 16, 32, 47 and 63 ticks for 0, 45, 90, 135 and 180 degrees, which is
+---the rotation speed to the tick.
+---
+---A hand with no bearing yet is not held to this. That is a fresh arm, which is built facing
+---whatever it is about to reach for, so there is nothing to turn through -- see point() in
+---control.lua, and the eleven ways an existing hand was found not to be turnable.
+---
+---Radius and bearing are separate speeds the engine runs at once, not one after the other,
+---so the two conditions are independent rather than added together.
+---@param arm {range: number, extension: number, out: number?, rotation: number?,
+---           facing: {x: number, y: number}?}
+---@param drift {x: number, y: number}
+---@param offset {x: number, y: number} the spot, from the arm's base, now
+---@param k number
+---@return boolean
+function reach.on_it(arm, drift, offset, k)
+  if k < -1e-9 then return false end
+  local out = arm.out or reach.BORN
+  local dx, dy = offset.x - drift.x * k, offset.y - drift.y * k
+  local away = math.sqrt(dx * dx + dy * dy)
+  -- A tick's grace on how far the hand has got, because the engine's last step is not
+  -- bounded by the extension speed: it covers whatever gap is left in one go rather than
+  -- creeping up on it. Measured on all four tiers, a hand is at full stretch on the tick the
+  -- nominal speed says it will still be short -- 37, 46, 33 and 43 against 37.3, 46.1, 33.1
+  -- and 43.1. Without it, something sitting at exactly the reach of somebody standing still
+  -- is refused, which is the plainest case there is.
+  local travelled = arm.extension * (k + 1)
+  local nearest = math.max(0, out - travelled)
+  local furthest = math.min(arm.range, out + travelled)
+  if away < nearest - 1e-9 or away > furthest + 1e-9 then return false end
+  if not (arm.facing and arm.rotation) then return true end
+  if away < 1e-9 then return true end
+  local now = atan2(arm.facing.y, arm.facing.x)
+  local wanted = atan2(dy, dx)
+  local apart = math.abs(wanted - now) % (2 * math.pi)
+  if apart > math.pi then apart = 2 * math.pi - apart end
+  return apart <= arm.rotation * 2 * math.pi * k + 1e-9
+end
+
+---How long a hand takes to be able to face any way at all, in ticks.
+---
+---Half a turn at its own rate, since a hand turns whichever way is shorter and nothing is
+---further off than that. Past this the bearing has stopped mattering and only the reach and
+---the stretch are left, which is what lets the exact arithmetic take over.
+---@param arm {rotation: number?}
+---@return number
+function reach.any_way(arm)
+  if not arm.rotation or arm.rotation <= 0 then return 0 end
+  return 0.5 / arm.rotation
+end
+
+---The first moment a hand could be exactly on a spot, or nothing if it never can.
+---
+---Everything an arm reaches for tracks a straight line across the reach, seen from the arm,
+---so the obvious cheap test is to look at where that line enters and leaves. It does not
+---work, and it is worth saying why, because the reason is not subtle once seen: the two ends
+---of that line are exactly where the thing is furthest away -- a whole reach away, by
+---definition of the boundary -- which is the hardest place for a hand to get to rather than
+---a representative one. Swept over four hundred thousand arrangements, the ends say no and
+---the middle says yes in one case in thirteen.
+---
+---What is true is the same shape with better points. Three things bound a meeting: the thing
+---has to be inside the reach, the hand has to stretch far enough, and the hand has to not be
+---further in than it can pull to. Each boundary is where a quadratic in k crosses zero, so
+---between consecutive roots nothing changes -- a stretch is feasible all through or not at
+---all. Test the roots and one point in each gap between them and the whole answer is there,
+---in a fixed handful of sums rather than a walk.
+---@param arm {range: number, extension: number, out: number?}
+---@param drift {x: number, y: number} how far its owner went last tick
+---@param offset {x: number, y: number} the spot, from the arm's own base, now
+---@param ticks number how far ahead to look
+---A whole tick, because that is all there is. The exact answer can be a sliver narrower
+---than a tick -- measured, one three thousandth of one, where a thing crosses into the reach
+---a moment before the hand has pulled back out of its way -- and a window no tick lands in
+---is a window nothing can use.
+---@return number? the first whole tick it could be met on
+function reach.earliest(arm, drift, offset, ticks)
+  local out = arm.out or reach.BORN
+  local e, range = arm.extension, arm.range
+  local vx, vy = drift.x, drift.y
+  local v2 = vx * vx + vy * vy
+  local wu = offset.x * vx + offset.y * vy
+  local w2 = offset.x * offset.x + offset.y * offset.y
+
+  -- Every boundary there is, as the roots of one quadratic apiece: the edge of the reach,
+  -- the furthest the hand could have got, and the nearest it could have pulled to.
+  local marks = { 0, ticks }
+  local function note(one, other)
+    if one then
+      if one >= 0 and one <= ticks then marks[#marks + 1] = one end
+      if other and other >= 0 and other <= ticks then marks[#marks + 1] = other end
+    end
+  end
+  -- The same tick of grace on_it gives the hand, folded into where it started: reaching
+  -- out + e * (k + 1) is reaching (out + e) + e * k. Derived from anything else, these
+  -- boundaries would not be the boundaries of the thing they are supposed to bound.
+  local far, near = out + e, out - e
+  note(roots(v2, -2 * wu, w2 - range * range))
+  note(roots(v2 - e * e, -2 * (wu + far * e), w2 - far * far))
+  note(roots(v2 - e * e, -2 * (wu - near * e), w2 - near * near))
+  table.sort(marks)
+
+  -- While a hand could still be pointing the wrong way, the answer is not a matter of roots
+  -- any more: where a bearing gets to is an arctangent rather than a quadratic, and nothing
+  -- says feasibility holds all through a gap. So that stretch is looked at a tick at a time,
+  -- which is exact and is bounded -- by half a turn at the tier's own rate, sixty three
+  -- ticks at worst and fewer on the quicker tiers. Past it the bearing cannot refuse
+  -- anything and the roots are the whole answer again.
+  -- Rounded up, and the whole tick that half a turn falls inside counts as still turning:
+  -- half a turn is 62.5 ticks on the fourth tier, and leaving tick 63 to the roots dropped
+  -- it between the two halves of this.
+  local scanned = -1
+  if arm.facing and arm.rotation then
+    scanned = math.min(ticks, math.ceil(math.min(ticks, reach.any_way(arm)) - 1e-9))
+    for k = 0, scanned do
+      if reach.on_it(arm, drift, offset, k) then return k end
+    end
+  end
+
+  for index = 1, #marks do
+    local from, to = marks[index], marks[index + 1]
+    -- Nothing changes between two boundaries, so one look decides a whole stretch: at the
+    -- boundary itself, and at the middle of the gap that follows it.
+    local open = reach.on_it(arm, drift, offset, from)
+    if not open and to and to - from > 1e-9 then
+      open = reach.on_it(arm, drift, offset, (from + to) / 2)
+    end
+    if open then
+      local whole = math.ceil(from - 1e-9)
+      if whole < 0 then whole = 0 end
+      -- Anything inside the turning stretch has been looked at already.
+      if whole <= scanned then whole = scanned + 1 end
+      if whole <= (to or ticks) + 1e-9 and whole <= ticks
+          and reach.on_it(arm, drift, offset, whole) then
+        return whole
+      end
+    end
+  end
+  return nil
+end
 
 ---When to aim to arrive, and where to hold the claw until it does.
 ---
@@ -248,27 +389,14 @@ reach.MARGIN = 1
 ---@return number? which tick to arrive on, or nothing if it never comes within reach
 ---@return {x: number, y: number}? the offset to hold until then
 function reach.intercept(arm, drift, offset, ticks)
-  local out = arm.out or reach.BORN
-  local first, last
-  for k = 0, ticks do
-    local dx, dy = offset.x - drift.x * k, offset.y - drift.y * k
-    local away = math.sqrt(dx * dx + dy * dy)
-    -- Inside the reach, and near enough to where the hand already is that it can be there
-    -- by then. The second is an absolute difference because a hand can come in as well as
-    -- go out, and it is given a tick's grace because the engine's last step is not bounded
-    -- by the extension speed: it covers whatever gap is left in one go rather than creeping
-    -- up on it. Measured on all four tiers, a hand arrives on the tick the arithmetic says
-    -- it will still be short. Without the grace, a target sitting at exactly the reach of
-    -- somebody standing still is refused, which is the plainest case there is.
-    if away <= arm.range and math.abs(away - out) <= arm.extension * (k + 1) then
-      if not first then first = k end
-      last = k
-    elseif first then
-      break
-    end
-  end
+  local first = reach.earliest(arm, drift, offset, ticks)
   if not first then return nil end
-  local arrival = math.min(first + reach.MARGIN, last)
+  -- The margin, if there is a tick to spare for it. A thing only clipped by the corner of
+  -- the reach has not got one, and for that one the margin is whatever is left rather than
+  -- a whole tick.
+  local arrival = first
+  local later = first + reach.MARGIN
+  if later <= ticks and reach.on_it(arm, drift, offset, later) then arrival = later end
   return arrival,
     { x = offset.x - drift.x * arrival, y = offset.y - drift.y * arrival }
 end
@@ -302,8 +430,10 @@ function reach.chain(arm, drift, ticks, pieces)
   local made = {}
   for piece = 0, pieces - 1 do
     local from, to = ticks * piece / pieces, ticks * (piece + 1) / pieces
-    local near = math.min(arm.range, out + arm.extension * from)
-    local far = math.min(arm.range, out + arm.extension * to)
+    -- The same tick of grace the rest of this gives a hand, so that what the circles hold
+    -- is what reach.meets says is there.
+    local near = math.min(arm.range, out + arm.extension * (from + 1))
+    local far = math.min(arm.range, out + arm.extension * (to + 1))
     local apart = math.sqrt(drift.x * drift.x + drift.y * drift.y) * (to - from)
     local along, radius
     if apart + near <= far then

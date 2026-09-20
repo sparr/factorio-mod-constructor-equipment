@@ -246,8 +246,9 @@ describe("whether an arm could ever meet a spot", function()
     --- off for and written off without a delivery on nine passes of two dozen. See
     --- out_of_reach() in control.lua.
     it("meets almost nothing square abeam, however near", function()
-      assert.is_true(reach.meets(ARM, WALKING, { x = 0, y = 0.9 }, HORIZON))
-      assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 1 }, HORIZON))
+      -- 1.07 of a tile, counting the tick of grace the engine's last step is worth.
+      assert.is_true(reach.meets(ARM, WALKING, { x = 0, y = 1 }, HORIZON))
+      assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 1.1 }, HORIZON))
       assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 2 }, HORIZON))
     end)
 
@@ -286,17 +287,13 @@ describe("whether an arm could ever meet a spot", function()
       { x = 0.1484375, y = 0 }, { x = 0, y = -0.1484375 },
       { x = 0.105, y = 0.105 }, { x = 0, y = 0 }, { x = 0.3, y = 0 },
     }
-    ---How near the hand ever comes to a spot, swept rather than solved.
-    local function closest(arm, drift, at, ticks)
-      local out = arm.out or reach.BORN
-      local least = math.huge
-      for step = 0, 240 do
-        local k = ticks * step / 240
-        local radius = math.min(arm.range, out + arm.extension * k)
-        local dx, dy = at.x - drift.x * k, at.y - drift.y * k
-        least = math.min(least, math.sqrt(dx * dx + dy * dy) - radius)
+    ---Whether any whole tick works, by looking at all of them. reach.meets answers in whole
+    ---ticks because a hand only ever is anywhere on one, so this has to ask the same way.
+    local function by_hand(arm, drift, at, ticks)
+      for k = 0, math.floor(ticks) do
+        if reach.on_it(arm, drift, at, k) then return true end
       end
-      return least
+      return false
     end
 
     local checked = 0
@@ -308,13 +305,11 @@ describe("whether an arm could ever meet a spot", function()
           for x = -8, 14, 1.1 do
             for y = -8, 8, 1.1 do
               local at = { x = x, y = y }
-              local slack = closest(arm, drift, at, horizon)
-              if math.abs(slack) >= 0.01 then
-                checked = checked + 1
-                assert.are.equal(slack <= 0, reach.meets(arm, drift, at, horizon),
-                  ("%g tile arm, hand %g out, drift %g,%g, spot %g,%g: %g from the hand")
-                    :format(tier.range, out, drift.x, drift.y, x, y, slack))
-              end
+              checked = checked + 1
+              assert.are.equal(by_hand(arm, drift, at, horizon),
+                reach.meets(arm, drift, at, horizon),
+                ("%g tile arm, hand %g out, drift %g,%g, spot %g,%g")
+                  :format(tier.range, out, drift.x, drift.y, x, y))
             end
           end
         end
@@ -336,7 +331,9 @@ describe("the circles a cone is searched with", function()
     local ring = reach.chain(ARM, WALKING, HORIZON, 1)
     assert.are.equal(1, #ring)
     local travel = WALKING.x * HORIZON
-    assert.is_true(math.abs(ring[1].radius - (travel + reach.BORN + ARM.range) / 2) < 1e-9,
+    -- The near disc is where a hand can be after one tick, grace and all, not where it sits.
+    assert.is_true(math.abs(ring[1].radius
+        - (travel + reach.BORN + ARM.extension + ARM.range) / 2) < 1e-9,
       "one piece should be the smallest circle round the two end discs")
   end)
 
@@ -500,5 +497,175 @@ describe("when and where to aim to meet something", function()
         end
       end
     end
+  end)
+end)
+
+describe("the first moment a hand could be on something", function()
+  local ARM = { range = 5, extension = 0.1 }
+  local WALKING = { x = 0.1484375, y = 0 }
+  local STILL = { x = 0, y = 0 }
+  local HORIZON = 300
+
+  ---Every whole tick, which is what reach.earliest is meant to agree with.
+  local function by_hand(arm, drift, offset)
+    for k = 0, HORIZON do
+      if reach.on_it(arm, drift, offset, k) then return k end
+    end
+    return nil
+  end
+
+  it("is now, for something a resting hand is already touching", function()
+    -- a hand is born 0.6939 out, so that is exactly what it is touching
+    assert.are.equal(0, reach.earliest(ARM, STILL, { x = reach.BORN, y = 0 }, HORIZON))
+  end)
+
+  it("waits for the hand to stretch, for something further off", function()
+    -- One tick fewer than the nominal speed alone would say, since the engine's last step
+    -- covers whatever gap is left rather than creeping up on it.
+    local at = reach.earliest(ARM, STILL, { x = 4, y = 0 }, HORIZON)
+    assert.are.equal(math.ceil((4 - reach.BORN) / 0.1) - 1, at)
+  end)
+
+  it("waits for the hand to pull in, for something nearer than it is", function()
+    local out = { range = 5, extension = 0.1, out = 5 }
+    -- two tiles away with the hand at five: it has to come in three tiles, which is thirty
+    -- ticks at the nominal speed and twenty nine once the last step is counted
+    local at = reach.earliest(out, STILL, { x = 2, y = 0 }, HORIZON)
+    assert.are.equal(29, at)
+    assert.is_false(reach.on_it(out, STILL, { x = 2, y = 0 }, 28))
+  end)
+
+  it("says nothing for what a walk carries away faster than the hand goes", function()
+    assert.is_nil(reach.earliest(ARM, WALKING, { x = -4, y = 0 }, HORIZON))
+  end)
+
+  --- The reason this is not simply a matter of looking at where a target enters and leaves
+  --- the reach. Those two points are where it is furthest away -- a whole reach away, by
+  --- definition of the boundary -- which is the hardest place for a hand to get to rather
+  --- than a representative one. Here is one arrangement of many: the thing is met in the
+  --- middle of its crossing and at neither end of it.
+  it("finds a meeting that both ends of the crossing miss", function()
+    local arm = { range = 5, extension = 0.1, out = 1 }
+    local drift = { x = 0.4051, y = 0.3497 }
+    local offset = { x = 6.52, y = 8.55 }
+    -- it is inside the reach from tick 11.3 to tick 28.0
+    assert.is_false(reach.on_it(arm, drift, offset, 12))
+    assert.is_false(reach.on_it(arm, drift, offset, 28))
+    local at = reach.earliest(arm, drift, offset, HORIZON)
+    assert.is_not_nil(at, "a meeting in the middle of the crossing was missed")
+    assert.is_true(at > 12 and at < 28,
+      ("met at %s, which is not inside the crossing"):format(tostring(at)))
+  end)
+
+  --- The whole of it, against the slow way round: every whole tick, over a spread of
+  --- speeds, headings, hand positions and places to reach for.
+  it("agrees with looking at every tick, over a wide spread", function()
+    local drifts = {}
+    for _, speed in ipairs{ 0.05, 0.1484375, 0.2227, 0.5351563 } do
+      for eighth = 0, 7 do
+        local angle = eighth * math.pi / 4
+        drifts[#drifts + 1] = { x = speed * math.cos(angle), y = speed * math.sin(angle) }
+      end
+    end
+    local checked, met = 0, 0
+    for _, out in ipairs{ reach.BORN, 1, 2.5, 4, 5 } do
+      local arm = { range = 5, extension = 0.1, out = out }
+      for _, drift in ipairs(drifts) do
+        for x = -11, 11, 2.5 do
+          for y = -11, 11, 2.5 do
+            local offset = { x = x, y = y }
+            checked = checked + 1
+            local said = reach.earliest(arm, drift, offset, HORIZON)
+            if said then met = met + 1 end
+            assert.are.equal(by_hand(arm, drift, offset), said,
+              ("hand %g out, drift %.3f,%.3f, spot %g,%g"):format(out, drift.x, drift.y, x, y))
+          end
+        end
+      end
+    end
+    assert.is_true(met > 1000, "the spread found only " .. met .. " meetings to check")
+    assert.is_true(checked > 10000, "the spread was too small at " .. checked)
+  end)
+end)
+
+describe("a hand that has to turn as well as stretch", function()
+  --- The fourth tier's own figures: five tiles at a tenth a tick, and 0.008 of a turn a
+  --- tick, which is 2.88 degrees.
+  local FACING_EAST = { x = 1, y = 0 }
+  local TURNING = { range = 5, extension = 0.1, rotation = 0.008, out = 3,
+                    facing = FACING_EAST }
+  local STILL = { x = 0, y = 0 }
+  local HORIZON = 300
+
+  ---Something three tiles out at a given angle, which is the same distance the hand is
+  ---already at, so nothing needs stretching and the turn is the whole journey.
+  local function round_by(degrees)
+    local angle = math.rad(degrees)
+    return { x = math.cos(angle) * 3, y = math.sin(angle) * 3 }
+  end
+
+  --- Measured against the engine at every one of these: 1, 16, 32, 47 and 63 ticks. The
+  --- arithmetic is allowed to be the tick early that the engine's own last step covers.
+  it("charges a turn at the tier's own rate", function()
+    assert.are.equal(0, reach.earliest(TURNING, STILL, round_by(0), HORIZON))
+    assert.are.equal(16, reach.earliest(TURNING, STILL, round_by(45), HORIZON))
+    assert.are.equal(32, reach.earliest(TURNING, STILL, round_by(90), HORIZON))
+    assert.are.equal(47, reach.earliest(TURNING, STILL, round_by(135), HORIZON))
+    assert.are.equal(63, reach.earliest(TURNING, STILL, round_by(180), HORIZON))
+  end)
+
+  it("takes the shorter way round", function()
+    assert.are.equal(reach.earliest(TURNING, STILL, round_by(90), HORIZON),
+      reach.earliest(TURNING, STILL, round_by(-90), HORIZON))
+  end)
+
+  --- A hand with no bearing is a fresh one, and a fresh one is built facing whatever it is
+  --- about to reach for, so it has nothing to turn through.
+  it("charges nothing to a hand that has no bearing yet", function()
+    local fresh = { range = 5, extension = 0.1, out = 3 }
+    assert.are.equal(reach.earliest(fresh, STILL, round_by(0), HORIZON),
+      reach.earliest(fresh, STILL, round_by(180), HORIZON))
+  end)
+
+  it("stops mattering once the hand has had time to face anywhere", function()
+    assert.are.equal(62.5, reach.any_way{ rotation = 0.008 })
+    -- past half a turn the bearing can be anything, so the only thing left is the stretch
+    local far = { x = -4.9, y = 0 }
+    local turning = reach.earliest(TURNING, STILL, far, HORIZON)
+    local fresh = reach.earliest({ range = 5, extension = 0.1, out = 3 }, STILL, far, HORIZON)
+    assert.is_true(turning >= fresh, "turning should never be the quicker of the two")
+    assert.is_true(turning <= 63, "a half turn is all it can ever cost")
+  end)
+
+  --- The whole of it against the slow way round, with a bearing in play.
+  it("agrees with looking at every tick, over a wide spread", function()
+    local checked, met = 0, 0
+    for _, out in ipairs{ reach.BORN, 1, 2.5, 4, 5 } do
+      for eighth = 0, 7 do
+        local face = eighth * math.pi / 4
+        local arm = { range = 5, extension = 0.1, rotation = 0.008, out = out,
+                      facing = { x = math.cos(face), y = math.sin(face) } }
+        for _, speed in ipairs{ 0, 0.1484375, 0.3 } do
+          local drift = { x = speed, y = 0 }
+          for x = -9, 9, 3 do
+            for y = -9, 9, 3 do
+              local offset = { x = x, y = y }
+              local said = reach.earliest(arm, drift, offset, 300)
+              local truth
+              for k = 0, 300 do
+                if reach.on_it(arm, drift, offset, k) then truth = k break end
+              end
+              checked = checked + 1
+              if said then met = met + 1 end
+              assert.are.equal(truth, said,
+                ("hand %g out facing %d/8, drift %g, spot %g,%g")
+                  :format(out, eighth, speed, x, y))
+            end
+          end
+        end
+      end
+    end
+    assert.is_true(met > 300, "only " .. met .. " meetings were found to check")
+    assert.is_true(checked > 5000, "the spread was too small at " .. checked)
   end)
 end)
