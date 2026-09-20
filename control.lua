@@ -59,14 +59,28 @@ local CHECK_TICK = CHECK_INTERVAL / 2
 --- at a tenth, 0.02 at two tenths, and 0.42 at six tenths.
 local REST = 0.2
 
---- How close the hand has to get to the character to count as home again, and how close to
---- the ghost to count as having arrived.
+--- How close the hand has to get to the character to count as home again.
 ---
---- Floors rather than answers: lib/reach.lua widens both to cover however fast the hand in
+--- A floor rather than an answer: lib/reach.lua widens it to cover however fast the hand in
 --- question is actually moving, because a window narrower than a tick of travel is one the
 --- hand steps over, and the engine then finishes the swing by dropping the load.
 local HOME = 0.4
-local ARRIVED = 0.3
+
+--- How far from its rest point a hand still is once it has come as far in as it can.
+---
+--- A hand cannot come closer to its own base than where a fresh one is born, and the rest
+--- point is deliberately nearer than that: close enough that the engine can never reach it,
+--- and so can never let go of a load there and put it on the ground. What that costs is
+--- that a claw which has arrived is still this far from the point its arrival is measured
+--- against, so the homecoming window has to be at least this wide.
+---
+--- It was not, and a claw that never had to travel was never seen to arrive at all. A fetch
+--- from under its owner's own feet picked the item up, came in to its birth radius, and sat
+--- there holding it until the swing limit gave up on it -- once per item, so a block of
+--- nine laid round somebody's feet gave up one and left the other eight on the ground. A
+--- claw with a journey behind it got home only because the window widens by what the hand
+--- was last seen covering, and a claw that has not moved has covered nothing.
+local RETRACTED = reach.BORN - REST
 
 --- How little a hand has to move in a tick to count as having stopped.
 ---
@@ -3856,7 +3870,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
       deliver(player, wearer, from, record, job, claimed, nearby)
     end
   elseif reach.distance(arm.held_stack_position, record.rest or mounting(wearer, slot, count))
-        < within(tier_of(record), HOME, moved)
+        < within(tier_of(record), math.max(HOME, RETRACTED + SETTLED), moved)
       or game.tick - (job.leg or job.started or game.tick) > SWING_LIMIT then
     -- Home is the mounting point, which is not where the character's feet are. Anything
     -- still in the claw was paid for on the way out, so it is handed back rather than

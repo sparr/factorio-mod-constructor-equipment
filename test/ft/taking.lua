@@ -5,6 +5,7 @@
 --- robot does with it: measured on 2.1.17, fifty of them took a full steel chest away in
 --- hundred plate mouthfuls over a minute and the chest itself went last.
 local world = require("test.ft.world")
+local reach = require("lib.reach")
 
 local A_BUILD = world.BUILD_INTERVAL * 2
 local BELT = "transport-belt"
@@ -539,6 +540,27 @@ describe("several things marked side by side", function()
       assert.are.equal(0, world.count(player, BELT),
         world.count(player, BELT) .. " of the five are still standing")
       assert.are.equal(5, player.get_item_count(BELT), "they did not all come home")
+    end)
+  end)
+
+  --- A fetch from under its owner's own feet used to hang. The claw picked the thing up,
+  --- came in as far as a hand can come in, and sat there holding it until the swing limit
+  --- gave up on it five seconds later, because the point a homecoming is measured against
+  --- is nearer the base than a hand can ever get and the window was narrower than the gap.
+  --- A claw with a journey behind it got home anyway -- the window widens by whatever the
+  --- hand was last seen covering -- and one that never had to travel covered nothing.
+  ---
+  --- Not the whole of that bay: the claw goes on to stall on the next of them without
+  --- reaching for it, which is its own fault and written down as one. This is only that it
+  --- comes home rather than hanging.
+  it("comes home from a fetch it never had to travel for", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true,
+      "power-armor")
+    player.get_inventory(defines.inventory.character_main).clear()
+    doomed_at{ { 0, 0 } }
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, player.get_item_count(BELT),
+        "the claw was still holding it, waiting out the swing limit")
     end)
   end)
 
