@@ -1,4 +1,4 @@
-# Outstanding, from the walk round of 2026-09-19
+# Outstanding, from the walks round of 2026-09-19 and 2026-09-20
 
 ## 9. An arm stops when its owner stands on what it was reaching for
 
@@ -52,3 +52,71 @@ committed.
 **The walking penalty is switched off.** tiers.SLOWS, with thirty tests skipped behind it.
 It is not only a cost: a slower wearer has a wider cone, so putting it back makes the low
 tiers reach further to the side than they do now.
+
+## 13. The showroom assumes you arrive at rest, and you arrive walking
+
+Leading turned every bay that is laid out east of its mark into a bay that starts before you
+get to it. The mark is the only place a bay is measured from and it is no longer the place
+the arm first sees the exhibit.
+
+- **A ghost under your feet** is built before you can reach it to stand on it. Wants a
+  teleport pad.
+- **Four arms, four reaches** starts reaching before you arrive; its pad wants to be farther
+  off.
+- **A small arm leads too** deploys the fourth tier arm you are still wearing before you
+  reach the pad that swaps it for a first tier one.
+- **In reach, but not in time** delivers anyway. Walking in from the west leaves the ghost
+  ahead and to the side for a long way, which is plenty of room to lead it; it only holds if
+  you start level with it. It still delivers from the north half of the path, more than four
+  tiles abeam.
+
+## 14. Two showroom bays want a different kit
+
+- **Take the reactor** should be a pad that equips it rather than a chest to rummage in.
+- **What a swing costs** wants a fourth tier arm and more belts, so the battery visibly
+  drains, and a pad before it that takes the reactor off.
+
+## 15. No arm sets off while the item is on the cursor
+
+Holding the stack on the cursor stops every arm. Likely that a single stack held there is
+not in the inventory count the arms ask for.
+
+## 16. The toolbar button loses a load and confuses a fresh arm
+
+- Switched off mid delivery, the arm comes home and puts the item on the ground rather than
+  back in the inventory.
+- Switched on beside a ghost, the arm is made with the item already in its claw and then
+  sends the claw back to its owner before setting out, as though fetching what it holds.
+
+## 17. Items are dropped on the ground during ordinary work
+
+- A tank dropped a belt about four tiles northeast after passing the end of its row.
+- A spidertron dropped items while being moved about near its belts.
+- **Met on the way** dropped a second belt at the player's feet a few tiles after a
+  delivery that had already succeeded.
+
+## 18. Arms get stuck out holding nothing
+
+A claw sits at a ghost, tracking it as its owner moves, doing nothing. Seen on a spidertron
+after movements in every direction, on a car once, and most often on the train, which is
+probably where to reproduce it.
+
+## 19. A delivery lands without the claw getting there
+
+**A row in one trip** builds its third and fourth ghosts without the claw travelling to
+them, finishing over a tile short of the fourth.
+
+## 20. Deconstruction leaves items behind and will not take up what is underfoot
+
+- About one in twenty items picked up from around three and a half tiles away is left on the
+  ground, without even its deconstruct marker.
+- The nine items the player is standing on are never picked up at all.
+
+## 21. The claw's box shows what is in it
+
+**A chest downgraded**: with alt mode on, the box the claw picks up into is visible and
+shows its contents.
+
+## 22. An arm turns too fast
+
+Take a third off the rotation speed.
