@@ -625,7 +625,21 @@ end)
 --- Sized so the whole thing is a second or so. It asserts nothing about the clock -- a
 --- timing that fails the suite on a busy machine is worse than no timing -- and writes what
 --- it saw to script-output for reading.
-describe("what each shape of search costs", function()
+--- Whether to run the benchmarks in this file.
+---
+--- Off by default. The two describes they gate lay a field of several thousand ghosts and
+--- then make the same search fifteen hundred times over, which is several seconds on every
+--- run of the whole suite, and they assert nothing about the clock -- deliberately, since a
+--- timing that fails on a busy machine is worse than no timing at all. What they are for is
+--- a number to read, and a number is only worth reading when somebody is looking.
+---
+--- Flip this to true and run them by name. Wait for the machine to be quiet first: the
+--- shapes are timed one after another in a single run, so load moves all of them together,
+--- but the ratios are only worth quoting off an idle machine.
+local BENCHMARKS = false
+local benchmark = BENCHMARKS and describe or describe.skip
+
+benchmark("what each shape of search costs", function()
   local TIER = tiers.by_level[4]
   local WALKING = { x = 0.1484375, y = 0 }
   local HORIZON = reach.full_swing(TIER)
@@ -798,7 +812,7 @@ end)
 --- circle round it, whether the array spelling of a position is cheaper to hand the engine
 --- than the keyed one, and whether the cone test is worth what it costs once it stops
 --- allocating a table for every candidate it is asked about.
-describe("searching a long thin cone", function()
+benchmark("searching a long thin cone", function()
   local TIER = tiers.by_level[4]
   local HORIZON = reach.full_swing(TIER)
   local ARM = { range = TIER.range, extension = TIER.extension }
