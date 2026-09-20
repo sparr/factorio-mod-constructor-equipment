@@ -24,16 +24,16 @@ now. Every tier leads; the first one meets things three times its own reach away
 bearing a claw has to swing through is part of the sum, so a lead it cannot rotate onto in
 time is not offered. All three ways a claw changes its mind mid flight -- the ghost being
 taken away, a round moving on to its next, and a turn leaving the course unflyable -- are
-exercised against a moving owner.
+exercised against a moving owner. A round is shopped for over its own life rather than over
+the one swing the tick's search covers, since a claw refills at home and nowhere else, so
+what it sets off carrying is all it will put down that journey.
+
+What an arm cannot do is reach something square abeam of a walk, because the hand extends
+slower than its owner walks: about 1.07 tiles at walking pace. Three ghosts crammed inside
+that at full speed get two of them, and the same three at half speed get all three. That is
+the shape of the cone rather than anything to fix.
 
 What is left.
-
-**A round is sized when it sets off and cannot grow.** The claw fills its hand against the
-ghosts it could still meet on that one flight, so anything that only comes into range later
-is not in the round, and a walking owner can carry it back out of reach before the claw is
-free again. A row two tiles out to the side gets two of four built for this reason: walking
-reaches about 1.07 tiles abeam, so those are only ever reachable ahead. Nothing is lost when
-it happens, and it may simply be the honest answer rather than something to fix.
 
 **The search is wider than it needs to be.** It draws the circle round a capsule that
 assumes full stretch from the first tick. What an arm can really meet is a cone, and
