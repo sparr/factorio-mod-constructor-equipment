@@ -101,6 +101,9 @@ What is ruled out, all measured on that reproduction:
   and a transport belt is a perfectly good inserter source. Destroying the neighbour mid
   stall does not free the claw, and on a second run nothing contained the pickup point at
   all.
+- **The box itself.** A bare inserter told to pick up from the mod's own catcher, empty,
+  reaches it as readily as it reaches an iron chest, and goes on doing so with four marked
+  belts crowded round it.
 
 So the engine is willing and the arm is not wedged, and what the mod does every tick is not
 what stops it. What is left is something about the state the mod leaves a fetch in after a
