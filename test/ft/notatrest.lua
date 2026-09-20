@@ -335,3 +335,124 @@ describe("the mod turning a loaded claw to another ghost", function()
     end, "the walk never ended", 400)
   end)
 end)
+
+--- A bulk claw working a round while its owner walks.
+---
+--- This is the case all of the above was groundwork for. A round is a claw that goes out
+--- carrying several and crosses from one ghost to the next rather than coming home between
+--- them, so every ghost after the first is reached for by an arm that is already out, with a
+--- load in its claw, on whatever bearing the last one left it. Add a walking owner and the
+--- lead and the turn are both in play at once.
+---
+--- A claw only carries more than one once the capacity research is done -- without it every
+--- tier makes single trips, which is why the rest of the suite never crosses at all.
+local ROUND_RESEARCH = { "bulk-inserter", "inserter-capacity-bonus-1",
+                         "inserter-capacity-bonus-2" }
+
+describe("a bulk claw crossing while its owner walks", function()
+  local STOCK = 10
+
+  local function research(on)
+    for _, name in ipairs(ROUND_RESEARCH) do
+      local technology = player.force.technologies[name]
+      if technology then technology.researched = on end
+    end
+  end
+
+  after_each(function()
+    research(false)
+    player.get_inventory(defines.inventory.character_armor).clear()
+    for _, thing in ipairs(player.surface.find_entities_filtered{
+          name = { BELT, "item-on-ground", "constructor-equipment-catcher" },
+          position = world.ORIGIN, radius = 140 }) do
+      if thing.valid then thing.destroy() end
+    end
+    for _, ghost in ipairs(player.surface.find_entities_filtered{ type = "entity-ghost",
+          position = world.ORIGIN, radius = 140 }) do
+      if ghost.valid then ghost.destroy() end
+    end
+  end)
+
+  it("crosses between them, builds them all, and keeps every belt", function()
+    research(true)
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { TIER.name, "fission-reactor-equipment", "battery-equipment" },
+      true, "power-armor")
+    player.insert{ name = BELT, count = STOCK }
+    -- A cluster ahead, close enough together that crossing is worth more than coming
+    -- home, and near enough the line of travel that all four are inside the cone the
+    -- claw can still reach when it sets off. Further out to the side they fall off the
+    -- end of the round instead, which is what the abeam test below pins.
+    local WHERE = { { 9, 1 }, { 10, 1 }, { 11, 0 }, { 11, 1 } }
+    for _, at in ipairs(WHERE) do world.ghost(player, BELT, at[1], at[2]) end
+
+    local began, crossed, worst, previous = game.tick, false, 0, nil
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      local job = record and record.job
+      if job and job.crossing then crossed = true end
+      local arm = record and record.entity
+      if arm and arm.valid then
+        local hand = arm.held_stack_position
+        if previous then worst = math.max(worst, reach.distance(previous, hand)) end
+        previous = { x = hand.x, y = hand.y }
+      else
+        previous = nil
+      end
+      return world.ghosts(player) == 0 or game.tick - began > 400
+    end, function()
+      player.walking_state = { walking = false }
+      note(("crossing while walking: %d of %d built, crossed %s, worst step %.3f")
+        :format(#WHERE - world.ghosts(player), #WHERE, tostring(crossed), worst))
+      assert.is_true(crossed, "the claw never crossed; it made single trips instead")
+      assert.are.equal(0, world.ghosts(player),
+        ("%d of %d were walked past"):format(world.ghosts(player), #WHERE))
+      assert.are.equal(#WHERE, world.count(player, BELT), "not every belt was put down")
+      assert.are.equal(STOCK, player.get_item_count(BELT) + world.count(player, BELT),
+        "a belt was made or lost")
+      assert.is_true(worst < 1,
+        ("the claw moved %.2f tiles in one tick, which is a jump"):format(worst))
+    end, "the walk never ended", 500)
+  end)
+
+  --- A round is shopped for over its own life, not over the one swing the tick's search
+  --- covers. A walking owner reaches about 1.07 tiles abeam, so a row two tiles out to the
+  --- side is only ever reachable ahead -- and by the time a claw that took only the near
+  --- couple of them was free again, the walk had carried the rest square abeam, where
+  --- nothing walking can reach them. Taking the whole row at the outset is the only way to
+  --- get it, because a claw refills at home and nowhere else.
+  it("sets off carrying the whole row rather than the near end of it", function()
+    research(true)
+    player.get_inventory(defines.inventory.character_armor).clear()
+    world.equip(player, { TIER.name, "fission-reactor-equipment", "battery-equipment" },
+      true, "power-armor")
+    player.insert{ name = BELT, count = STOCK }
+    -- Ten to thirteen tiles ahead: past what one swing can reach or even see, and well
+    -- inside what the round as a whole will cover.
+    local WHERE = { { 10, 2 }, { 11, 2 }, { 12, 2 }, { 13, 2 } }
+    for _, at in ipairs(WHERE) do world.ghost(player, BELT, at[1], at[2]) end
+
+    local began, sized = game.tick, nil
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      -- what the round set out to do, before any of it was done
+      if not sized and record and record.job and record.job.left then
+        sized = record.job.left
+      end
+      return world.ghosts(player) == 0 or game.tick - began > 300
+    end, function()
+      player.walking_state = { walking = false }
+      note(("a row two tiles abeam: set out for %s, built %d of %d")
+        :format(tostring(sized), #WHERE - world.ghosts(player), #WHERE))
+      assert.are.equal(#WHERE, sized,
+        "the claw set off for less than the row, so the rest will be walked past")
+      assert.are.equal(0, world.ghosts(player),
+        ("%d of %d were walked past"):format(world.ghosts(player), #WHERE))
+      assert.are.equal(#WHERE, world.count(player, BELT), "not every belt was put down")
+      assert.are.equal(STOCK, player.get_item_count(BELT) + world.count(player, BELT),
+        "a belt was made or lost")
+    end, "the walk never ended", 400)
+  end)
+end)

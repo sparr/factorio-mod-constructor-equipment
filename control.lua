@@ -1088,8 +1088,11 @@ local STILL = { x = 0, y = 0 }
 ---@param from {x: number, y: number} where it reaches from now
 ---@param at {x: number, y: number} what it would reach for
 ---@param range number
+---@param ticks number? how long the arm has to get there, defaulting to one full swing.
+---  Longer for a round being sized, because the claw stays out for the whole of it and its
+---  owner carries it further on with every ghost it works.
 ---@return boolean
-local function out_of_reach(record, from, at, range)
+local function out_of_reach(record, from, at, range, ticks)
   local drift = (record and record.drift) or STILL
   -- Somebody standing still reaches what is in reach and nothing else, which is the whole
   -- of what this used to be and what every arm on a stationary wearer still does.
@@ -1104,7 +1107,7 @@ local function out_of_reach(record, from, at, range)
   -- it lets through set_course looks at properly, bearing and all.
   return not reach.meets(
     { range = range, extension = tier.extension, out = hand_out(record) },
-    drift, { x = at.x - from.x, y = at.y - from.y }, reach.full_swing(tier))
+    drift, { x = at.x - from.x, y = at.y - from.y }, ticks or reach.full_swing(tier))
 end
 
 ---Where a claw is aimed for a ghost: the ghost, carried up into the frame the arm swings in.
@@ -1481,11 +1484,16 @@ end
 ---is where that circle meets the engine.
 ---@param drift {x: number, y: number} how far their owner went last tick
 ---@return LuaEntity[]
-function work_near(wearer, list, drift)
+---@param rounds number? how many swings' worth of ground to cover, defaulting to one.
+---  More than one is for sizing a round: a claw that carries several stays out for all of
+---  them, so the ground it will cover before it comes home is that much further on than
+---  the ground it can reach this instant. Only worth paying for where a round is actually
+---  being sized, which is once a journey rather than once a tick.
+function work_near(wearer, list, drift, rounds)
   local arms = {}
   for _, record in pairs(list) do
     local tier = tier_of(record)
-    arms[#arms + 1] = { range = tier.range, ticks = reach.full_swing(tier) }
+    arms[#arms + 1] = { range = tier.range, ticks = reach.full_swing(tier) * (rounds or 1) }
   end
   -- A radius, and a radius rather than a square. Two things went wrong with the square this
   -- replaces. A square of side twice the range reaches 1.41 times as far at its corners, and
@@ -1738,15 +1746,32 @@ end
 ---@param carried integer how many the character has
 ---@param capacity integer how many loads the claw holds
 ---@return integer
-local function loads_for(nearby, claimed, standing, from, range, item, quality, count,
-                         carried, capacity)
+local function loads_for(record, nearby, claimed, standing, from, range, item, quality,
+                         count, carried, capacity)
   if capacity <= 1 then return 1 end
+  -- What the claw is shopping for is the whole round, and a round is not one swing long.
+  -- The claw stays out from the first ghost to the last, and its owner walks on the whole
+  -- time, so the second thing on the list is met from a good deal further along than the
+  -- first. Sized against one swing apiece the list stopped at whatever was already close
+  -- enough to reach immediately, which on anything that moves is the near end of the work
+  -- and no more: four ghosts ten to thirteen tiles ahead of a walk came out as a round of
+  -- two, the claw went home with the round spent, and the walk had carried the other two
+  -- square abeam by the time it was free again -- where nothing walking can ever reach
+  -- them. A swing apiece is the budget instead, so the nth thing on the list has n of them
+  -- to be met in.
+  local swing = reach.full_swing(tier_of(record))
   local wanted = 1
   for _, ghost in pairs(nearby) do
     if wanted >= capacity then break end
     if still_wanted(ghost) and not (claimed and claimed[claim_of(ghost)])
         and not standing_in(ghost, standing)
-        and not reach.out_of_range(from, ghost.position, range) then
+        -- The same question choose() asks, which is whether the arm could meet it at any
+        -- point in the flight rather than whether it happens to be in reach this instant.
+        -- Asked the old way, a round set off for by an arm that is leading its first ghost
+        -- counted nothing at all -- the whole round is ahead of its owner at that moment --
+        -- so the claw carried one and crossed to nothing. Measured on four ghosts ten to
+        -- thirteen tiles ahead of a walk: one built, no crossing.
+        and not out_of_reach(record, from, ghost.position, range, swing * (wanted + 1)) then
       local outcome, outcome_quality = outcome_of(ghost)
       local other, needed
       if outcome then
@@ -3895,10 +3920,34 @@ local function assign(player, wearer, list, tick, nearby)
           -- charge, because the blast may take the next cliff on the list with it.
           record.job.left = 1
         else
-          record.job.left = loads_for(nearby(), claimed, wearer.position, from, tier.range,
-            item, quality, count,
+          local capacity = trips_for(player.force, tier)
+          -- A round is shopped for over its own life rather than over the one swing the
+          -- tick's search covers. That search is drawn for what an arm can reach now,
+          -- because every arm asks it every tick and it has to be cheap; a claw that
+          -- carries several is out for all of them and its owner walks the whole time, so
+          -- what the round can take in is a good deal further ahead than what the search
+          -- brings back. Sized off the tick's own search the list stopped at whatever was
+          -- already close enough -- four ghosts ten to thirteen tiles ahead of a walk came
+          -- back as three, because the fourth was outside the search altogether -- and the
+          -- walk carried the rest square abeam, where nothing walking can reach them,
+          -- before the claw was free again.
+          --
+          -- A second search rather than a wider one for everybody: this is paid once when
+          -- a claw sets off, where the tick's search is paid by every arm on every tick.
+          local shopping = nearby()
+          if capacity > 1 then
+            shopping = work_near(wearer, { record }, drift_of(player, wearer), capacity)
+            -- In the order the claw will work them, which is what the growing horizon in
+            -- loads_for assumes. A fresh search comes back in the map's own index order.
+            table.sort(shopping, function(one, other)
+              if not (one.valid and other.valid) then return false end
+              return reach.distance(from, one.position) < reach.distance(from, other.position)
+            end)
+          end
+          record.job.left = loads_for(record, shopping, claimed, wearer.position, from,
+            tier.range, item, quality, count,
             inventory and inventory.get_item_count{ name = item, quality = quality } or count,
-            trips_for(player.force, tier))
+            capacity)
         end
         -- Pointed before it is aimed, and before anything is put in its hand: pointing an
         -- arm is building it again, and a claw loaded first would be loaded into the arm
