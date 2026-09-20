@@ -349,6 +349,72 @@ end)
 local ROUND_RESEARCH = { "bulk-inserter", "inserter-capacity-bonus-1",
                          "inserter-capacity-bonus-2" }
 
+--- The third way into redirect, after a ghost being taken away and a round moving on: a
+--- reach that was on course and no longer is. Leading only works while the owner keeps
+--- going the way they were, so a turn mid flight can put the ghost somewhere the claw can
+--- never now meet. That is not a reason to come home empty if there is something the arm
+--- can reach along the new heading.
+describe("an owner turning away from what the claw is reaching for", function()
+  local BELTS = 5
+
+  it("turns the claw to something on the new heading instead of coming home", function()
+    world.equip(player, { TIER.name, "battery-equipment" }, true, "power-armor")
+    player.insert{ name = BELT, count = BELTS }
+    -- Ahead on the old heading, out to the side: only ever reachable by leading east.
+    local ahead = world.ghost(player, BELT, 10, 4)
+    -- Ahead on the new heading, and well outside the eastward cone.
+    local aside = world.ghost(player, BELT, 4, 10)
+
+    local began, turned, chased, switched, worst, previous = game.tick, false, nil, nil, 0, nil
+    -- A redirect keeps the job and swaps its ghost. Coming home empty and setting off
+    -- again would reach the same ghost in the end, so the job going away in between is
+    -- what tells the two apart.
+    local let_go = false
+    world.once(function()
+      player.walking_state = { walking = true,
+        direction = turned and defines.direction.south or defines.direction.east }
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      local job = record and record.job
+      local arm = record and record.entity
+      if chased and not switched and not job then let_go = true end
+      if job and job.ghost and job.ghost.valid then
+        if not chased then chased = job.ghost end
+        if chased == ahead and job.ghost == aside and not switched then
+          switched = game.tick - began
+        end
+      end
+      if arm and arm.valid then
+        local hand = arm.held_stack_position
+        if previous then worst = math.max(worst, reach.distance(previous, hand)) end
+        previous = { x = hand.x, y = hand.y }
+        -- Turn once the claw is committed: out past two tiles with the belt in hand.
+        if not turned and arm.held_stack.valid_for_read
+            and reach.distance(arm.position, hand) > 2 then
+          turned = true
+        end
+      else
+        previous = nil
+      end
+      return (turned and not aside.valid) or game.tick - began > 300
+    end, function()
+      player.walking_state = { walking = false }
+      note(("turned away: chased %s first, switched %s, let go %s, aside built %s")
+        :format(chased == ahead and "ahead" or tostring(chased),
+          tostring(switched), tostring(let_go), tostring(not aside.valid)))
+      assert.is_true(turned, "the claw never set off, so the turn never happened")
+      assert.is_not_nil(switched, "the claw never took up the ghost on the new heading")
+      assert.is_false(let_go,
+        "the claw came home empty and set off again rather than turning where it was")
+      assert.is_false(aside.valid, "the ghost on the new heading was never built")
+      assert.is_true(worst < 1,
+        ("the claw moved %.2f tiles in one tick, which is a jump"):format(worst))
+      assert.are.equal(BELTS, player.get_item_count(BELT)
+        + player.surface.count_entities_filtered{ name = BELT, position = world.ORIGIN,
+            radius = 120 }, "a belt was made or lost")
+    end, "the turn never finished", 400)
+  end)
+end)
+
 describe("a bulk claw crossing while its owner walks", function()
   local STOCK = 10
 
