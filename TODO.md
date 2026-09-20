@@ -71,37 +71,87 @@ happened with.
 
 ## 18. Arms get stuck out holding nothing
 
-The moving one no longer sticks: a round whose counter and whose claw had come apart now
-ends instead of waiting for a load that is never coming. What causes them to come apart is
-known and is not fixed.
+Two faults wear the same face. The moving one is understood and no longer sticks; the
+standing-still one is neither.
 
-**One arm's box catches another arm's load.** The engine empties a hand into whatever
-container stands at its drop position and does not ask whose it is. Every arm keeps its own
-box, and on a wearer with more than one arm those boxes can end up a third of a tile apart,
-because two arms working neighbouring ghosts are aimed at neighbouring points.
+### The moving one: one arm's box catches another arm's load
 
-Traced tick by tick on a train with two arms. At tick 2619 both hold a belt, boxes at
+**What it looks like.** A claw out at the ghost it crossed to, turning and stretching to
+stay exactly on it as its owner drives away, holding nothing and doing nothing, until the
+swing limit gives up five seconds later.
+
+**What is fixed.** A round whose counter and whose claw have come apart now ends rather than
+waiting for a load that is never coming. That is the symptom only; the cause below still
+happens, and costs a journey each time it does.
+
+**To reproduce.** A locomotive with eight second tier arms, ghosts two tiles either side of
+the rail and a tile apart, driven up and down rather than set going -- run, ease off, stop,
+back up, run again. It needs two arms: one never does it, two, four and eight all do.
+`test/ft/steering.lua` has the layout.
+
+**The cause, traced tick by tick on two arms.** At tick 2619 both hold a belt, boxes at
 9.9,1.7 and 10.3,2.0. At 2620 the first arm's hand is empty, its own box is still empty, and
 the second arm has revived its ghost -- while still holding its own belt, untouched. The
-first arm's belt went into the second arm's box and was spent on the second arm's ghost.
+engine empties a hand into whatever container stands at its drop position and does not ask
+whose it is, so the first arm's belt went into the second arm's box and was spent on the
+second arm's ghost. They were not working the same ghost; this is not a claim going astray.
 
-Nothing is lost by it: a ghost is built, the thief carries its own load home, and the arm it
-was taken from ends its round. What it costs is a journey, and it is why arms on a train
-were the worst of it -- eight of them working the same line of ghosts.
+Nothing is lost by it. A ghost goes up, the thief carries its own load home, and the arm it
+was taken from ends its round. What it costs is a journey, and it is why a train was the
+worst of it, with eight arms working one line.
 
-It needs two arms. One never does it; two, four and eight all do.
+**Why two boxes are ever that close.** Not because the ghosts are. A box does not stand on
+the ghost: it stands where the claw is aimed, and while a claw is leading that is the lead,
+the guess at where the ghost will be by the time the hand arrives. A ghost is on the tile
+grid and two of them are never nearer than a tile; a lead is a continuous point that depends
+on the arm's own base, on the length of its flight and on the drift, so two arms leading from
+two mounts on one hull can put their leads on top of each other however far apart their
+ghosts are. Measured with two arms: 0.30 to 0.32 of a tile between the boxes while the
+targets were one tile apart, and four tiles apart, with both claws still on their leads. With
+eight arms two boxes reached nothing at all between them.
 
-A fix was tried and taken back out: refusing a box's contents unless this claw was what
+**Why the box is out there for the whole flight.** It only has to be where the engine will
+let go, and the engine is supposed to let go at the ghost, because holding_course() drops the
+guess the tick before the hand arrives. The box at the lead is insurance against that not
+happening in time.
+
+Not, as it first looked, because the handover rarely happens. It happens about two and a half
+ticks per delivery, which is the design: a tick is all it needs. What is true is that ninety
+two of every hundred ticks of a delivery are flown on a guess, so that is almost the whole of
+the time a box is standing out there to be dropped into.
+
+**Three ways of taking the insurance away, all measured**, on the eight arm train against a
+baseline of 151 belts down, none on the ground.
+
+- **Open the box later.** The window is two and a half tiles of approach; at six tenths it is
+  155 built and none on the ground, and two boxes still come within seven hundredths of each
+  other. Tightening it does not separate them, because it is the leads that coincide rather
+  than the approach being long.
+- **No box until the aim is the ghost.** 89 built and six on the ground. The engine does let
+  go on a lead often enough to matter, so the insurance is load bearing.
+- **That, and the load held in the hand while the aim is a guess** -- pickup and drop set to
+  the same point, which is the trick a crossing already runs on. 87 built and two on the
+  ground. Waiting for the handover and only then setting out for the ghost loses the ghost.
+
+**So a fix has to change where the release lands, not when the box appears.** A box has to be
+wherever the engine may let go, and that is anywhere along a lead.
+
+**One fix tried and taken back out.** Refusing a box's contents unless this claw was what
 emptied into it. It works, and it strands the foreign belt in a box that is then taken away
-with it still inside -- seven belts destroyed over a run, where before nothing was. Anything
-along those lines has to settle what to do with a load that has landed in the wrong box
+with it still inside -- seven belts destroyed over a run where before nothing was. Anything
+along those lines has to settle what becomes of a load that has landed in the wrong box
 before it refuses to spend it.
 
-**The standing-still one is a different fault and is not fixed.** It reproduces every run,
-headless, in seconds: eight things marked in a ring round a character. Three are taken up,
-then a claw takes a job on a fourth, reports itself working, and never extends towards it.
-The same eight offset two tiles away go in a couple of seconds, and none of the above makes
-any difference to it.
+### The standing-still one
+
+A different fault, not fixed, and nothing above makes any difference to it.
+
+**To reproduce.** Eight things marked for deconstruction in a ring round a character
+standing still, a fourth tier arm, headless, every run, in seconds. Three are taken up, and
+then a claw takes a job on a fourth, reports itself working, and never extends towards it --
+a target a tile and a half off, well inside the reach, with the hand sitting at its birth
+radius. The same eight offset two tiles away go in a couple of seconds.
+`test/ft/taking.lua` has the layout.
 
 What is ruled out, all measured on that reproduction:
 
