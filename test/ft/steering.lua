@@ -337,3 +337,35 @@ describe("a wearer whose speed is changing", function()
     end)
   end)
 end)
+
+--- Nothing on the floor. The existing tests count what went in against what came out, and
+--- a belt lying on the ground passes that: it is still there to be counted. What it is not
+--- is delivered, and a vehicle that sheds one belt a field is a vehicle leaving a trail.
+---
+--- A hand can finish a job still holding something -- a round that took more than its last
+--- ghost wanted, work that went away with the claw loaded -- and with the job gone there was
+--- nothing left to point the drop home, so it stayed on the last thing aimed at, out in the
+--- world with its box taken away, and the engine let go over bare ground.
+describe("what a vehicle leaves behind", function()
+  for _, case in ipairs({
+      { name = "car straight", vehicle = "car", turning = false },
+      { name = "car turning", vehicle = "car", turning = true },
+      { name = "tank straight", vehicle = "tank", turning = false },
+      { name = "spidertron turning", vehicle = "spidertron", turning = true },
+  }) do
+    it(case.name, function()
+      drive_through(case.vehicle, case.turning, function(built, lag, all_told)
+        local loose = 0
+        for _, item in pairs(player.surface.find_entities_filtered{
+              position = world.ORIGIN, radius = 200, type = "item-entity" }) do
+          if item.stack.valid_for_read and item.stack.name == BELT then
+            loose = loose + item.stack.count
+          end
+        end
+        assert.are.equal(0, loose,
+          ("%s: %d belts were left lying on the ground"):format(case.name, loose))
+        assert.is_true(built > 0, case.name .. ": nothing was built at all")
+      end)
+    end)
+  end
+end)

@@ -69,13 +69,6 @@ sampled every tick from birth at six positions round its owner, including behind
 and never once went inward before delivering. Wants the save, or the arm and the ghost it
 happened with.
 
-## 17. Items are dropped on the ground during ordinary work
-
-- A tank dropped a belt about four tiles northeast after passing the end of its row.
-- A spidertron dropped items while being moved about near its belts.
-- **Met on the way** dropped a second belt at the player's feet a few tiles after a
-  delivery that had already succeeded.
-
 ## 18. Arms get stuck out holding nothing
 
 A claw sits at a ghost, tracking it as its owner moves, doing nothing. Seen on a spidertron
@@ -112,27 +105,6 @@ What is ruled out, all measured on that reproduction:
 So the engine is willing and the arm is not wedged, and what the mod does every tick is not
 what stops it. What is left is something about the state the mod leaves a fetch in after a
 few of them have been done nearby.
-
-## 19. A delivery lands without the claw getting there
-
-**A row in one trip** builds its third and fourth ghosts without the claw travelling to
-them, finishing over a tile short of the fourth.
-
-Reproduced and measured. Walking past four ghosts two tiles abeam, the claw was 0.72, 1.11,
-1.70 and 1.85 tiles from each as it went up. The first is right -- 0.72 is the lift the arm
-is drawn up by, and the claw is meant to stop that far short -- and everything past it is
-the fault, growing with each crossing of the round.
-
-The guess is the suspect: a claw holds a lead rather than the ghost until the tick before
-it arrives, and the box it delivers into stands wherever it is aimed, so handing over on
-the lead builds the thing from wherever it was going to be. Gating the crossing handover on
-the ghost being in reach did not change any of the four numbers, so that is not it, or not
-all of it.
-
-Note for whoever picks this up: the job cannot be read from outside at the moment of a
-delivery. deliver() revives the ghost and redirects the same job to the next of the round
-inside one tick, so a fixture watching for the ghost to go reads met and crossing for the
-leg after the one it is asking about. It wants a trace from inside deliver().
 
 ## 20. Deconstruction leaves items behind and will not take up what is underfoot
 

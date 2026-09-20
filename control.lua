@@ -2686,6 +2686,20 @@ local function aim(player, wearer, record, slot, count, job)
     -- swept out east at full stretch before coming home, which on a fast tier reads as the
     -- arm being flung sideways.
   end
+
+  -- A hand still holding something with no job at all, which the branch above cannot help
+  -- with because it lives inside the job. It happens whenever a job ends while the claw is
+  -- still carrying: a round that took more than its last ghost wanted, or work that went
+  -- away with the claw already loaded.
+  --
+  -- Left alone, the drop goes on pointing wherever it last did -- out in the world, with
+  -- the box already taken away from under it -- and the engine finishes the swing on its
+  -- own schedule and lets go over bare ground. Measured on a car driven straight through a
+  -- field of ghosts: the arm carried a belt with no job for twelve ticks and put it on the
+  -- floor on the thirteenth, at the same tick every run.
+  if not job and arm.held_stack.valid_for_read then
+    arm.drop_position = { rest.x, rest.y }
+  end
   return arm
 end
 
@@ -3567,6 +3581,17 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
 
   job.going = "back"
   job.ghost = nil
+  -- Re-aimed now rather than left to the next tick's aim(), which is what abandon() has
+  -- always done and this path never did. A round that ends with something still in the
+  -- claw -- a hand that holds more than the last ghost wanted -- leaves the drop standing
+  -- on the ghost it has just built, and the box is about to be taken away from under it.
+  -- The engine finishes swings on its own schedule: given that tick of grace it lets go
+  -- over bare ground and the load is on the floor. Measured on a car driven straight
+  -- through a field of ghosts, one belt on the ground at tick 193, every run.
+  local carrying = record.entity
+  if carrying and carrying.valid and carrying.held_stack.valid_for_read and record.rest then
+    carrying.drop_position = { record.rest.x, record.rest.y }
+  end
   catcher_away(record)
 end
 
@@ -3873,7 +3898,27 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     -- A fetch is not this case; take_up() does its own crossing, the other way round.
     if job.crossing and not job.take
         and reach.distance(hand, target) <= within(tier_of(record), HOME, moved) then
-      hand_over(record, job)
+      -- The claw has reached what it was aimed at, which on a crossing is not always the
+      -- ghost. A crossing works out a fresh lead, and the claw can be standing on that
+      -- guess with the ghost still a tile and more away.
+      --
+      -- Handed over there, the box is wherever the ghost was going to be and the thing is
+      -- built from that distance. Measured on a round of four two tiles abeam of a walk,
+      -- the second, third and fourth went up on three consecutive ticks with the hand not
+      -- travelling between them at all, 1.11, 1.70 and 1.85 tiles from each.
+      --
+      -- So reaching the guess drops the guess: the aim and the box move on to the ghost
+      -- itself, and nothing is handed over on that tick. The claw covers the rest the way
+      -- it covered the first one, and hands over when it truly arrives.
+      if job.met then
+        hand_over(record, job)
+      elseif not reach.out_of_range(from, job.target, tier_of(record).range) then
+        job.met, job.lead, job.arrival = true, nil, nil
+        target = aimed_at(job, record)
+        arm.drop_position = { target.x, target.y }
+        arm.pickup_position = { target.x, target.y }
+        catcher_at(record, arm.surface, target, true)
+      end
     end
 
     -- the character can walk off mid swing, or the vehicle drive off, and an arm that

@@ -12,6 +12,7 @@
 --- cannot show for itself.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
+local reach = require("lib.reach")
 
 local BELT = "transport-belt"
 local ROUND_RESEARCH = { "bulk-inserter", "inserter-capacity-bonus-1",
@@ -90,6 +91,17 @@ describe("row 11, leading", function()
     kitted(4, "power-armor", { "fission-reactor-equipment", "battery-equipment" })
     walked_past({ { 10, 0 } }, function(built)
       assert.are.equal(1, built, "the belt ten tiles ahead was walked past")
+      -- and nothing shed on the way. A second belt on the ground a few tiles past a
+      -- delivery that had already succeeded is what the walk round turned up.
+      local loose = 0
+      for _, item in pairs(player.surface.find_entities_filtered{
+            position = world.ORIGIN, radius = 120, type = "item-entity" }) do
+        if item.stack.valid_for_read and item.stack.name == BELT then
+          loose = loose + item.stack.count
+        end
+      end
+      assert.are.equal(0, loose,
+        ("%d belts were left on the ground by a delivery that worked"):format(loose))
     end)
   end)
 
@@ -135,6 +147,48 @@ describe("row 12, rounds on the move", function()
       assert.are.equal(1, journeys,
         "the claw came home part way through, so this is not one trip")
     end)
+  end)
+
+  --- Every one of them built with the claw at it, rather than from wherever the guess was
+  --- standing. A crossing works out a fresh lead and the claw can reach that guess with the
+  --- ghost still a tile and more off; handing over there builds the thing from that
+  --- distance. It showed as the later ghosts of a round going up on consecutive ticks with
+  --- the hand not travelling between them -- 0.72, 1.11, 1.70 and 1.85 tiles from each of
+  --- the four, where 0.72 is the lift the arm is drawn up by and is as near as a claw gets.
+  ---
+  --- The allowance is that lift plus one arrival window, which is what the mod calls being
+  --- there. Measured after: 0.72, 0.94, 1.16 and 0.97.
+  it("bay 1: gets to each of the row before it builds it", function()
+    kitted(4, "power-armor", { "fission-reactor-equipment", "battery-equipment" }, true)
+    local WHERE = { { 10, 2 }, { 11, 2 }, { 12, 2 }, { 13, 2 } }
+    local ghosts, worst, built = {}, 0, 0
+    for _, at in ipairs(WHERE) do
+      ghosts[#ghosts + 1] = { entity = world.ghost(player, BELT, at[1], at[2]) }
+    end
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      local record = (storage.constructor_arms[player.index] or {})[1]
+      local arm = record and record.entity
+      for _, g in ipairs(ghosts) do
+        if g.spot and not g.gone and not g.entity.valid then
+          g.gone = true
+          built = built + 1
+          if arm and arm.valid then
+            worst = math.max(worst, reach.distance(arm.held_stack_position, g.spot))
+          end
+        end
+        if g.entity.valid then
+          g.spot = { x = g.entity.position.x, y = g.entity.position.y }
+        end
+      end
+      return world.ghosts(player) == 0 or game.tick - began > 300
+    end, function()
+      player.walking_state = { walking = false }
+      assert.are.equal(#WHERE, built, "the row was not finished")
+      assert.is_true(worst < 1.4,
+        ("one of the row went up with the claw %.2f tiles off it"):format(worst))
+    end, "the walk never ended", 400)
   end)
 
   --- "Two of these go up and one does not: a walking arm has only about a tile to the
