@@ -91,6 +91,22 @@ working, hand at its birth radius, never extending.
 **A row in one trip** builds its third and fourth ghosts without the claw travelling to
 them, finishing over a tile short of the fourth.
 
+Reproduced and measured. Walking past four ghosts two tiles abeam, the claw was 0.72, 1.11,
+1.70 and 1.85 tiles from each as it went up. The first is right -- 0.72 is the lift the arm
+is drawn up by, and the claw is meant to stop that far short -- and everything past it is
+the fault, growing with each crossing of the round.
+
+The guess is the suspect: a claw holds a lead rather than the ghost until the tick before
+it arrives, and the box it delivers into stands wherever it is aimed, so handing over on
+the lead builds the thing from wherever it was going to be. Gating the crossing handover on
+the ghost being in reach did not change any of the four numbers, so that is not it, or not
+all of it.
+
+Note for whoever picks this up: the job cannot be read from outside at the moment of a
+delivery. deliver() revives the ghost and redirects the same job to the next of the round
+inside one tick, so a fixture watching for the ghost to go reads met and crossing for the
+leg after the one it is asking about. It wants a trace from inside deliver().
+
 ## 20. Deconstruction leaves items behind and will not take up what is underfoot
 
 - About one in twenty items picked up from around three and a half tiles away is left on the
