@@ -401,6 +401,24 @@ function reach.intercept(arm, drift, offset, ticks)
     { x = offset.x - drift.x * arrival, y = offset.y - drift.y * arrival }
 end
 
+---The longest a hand could ever need to get anywhere it can get to, in ticks.
+---
+---Not the same question as full_swing, and the difference is the whole of why both exist.
+---full_swing is how far ahead an arm is willing to look before it sets off: one flight, from
+---where a fresh hand is born out to full stretch. This is how long a reach already under way
+---is allowed to take, which is longer, because a hand part way through one can be anywhere.
+---A hand back at its own base reaching the full five tiles wants fifty ticks against a
+---swing's forty three, and it may have half a turn to make on top.
+---
+---Measured the hard way: with a swing's worth as the limit for both, an arm coming home and
+---offered something on the far side gave the reach up and took it again on every tick, and
+---the ghost took 153 ticks to build against 46 for the one before it.
+---@param arm {range: number, extension: number, rotation: number?}
+---@return number ticks
+function reach.longest(arm)
+  return arm.range / arm.extension + reach.any_way(arm)
+end
+
 ---The circles to search a cone with, laid end to end along it.
 ---
 ---One circle round the whole cone is wasteful when the cone is long and thin, which is what

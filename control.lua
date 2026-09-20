@@ -1000,6 +1000,46 @@ local function hand_out(record)
   return reach.distance(arm.position, arm.held_stack_position)
 end
 
+---Which way an arm's hand is pointing, or nothing if it has no bearing yet.
+---
+---Nothing is the honest answer for a hand that is about to be built again facing wherever
+---it is going, because then there is nothing to turn through. That is any hand with an empty
+---claw: point() takes an arm away and builds it afresh on the new bearing, and refuses only
+---when the claw is holding something, since there is a load in the air. So a bearing is a
+---constraint exactly when the claw is full, and charging for one otherwise is charging for a
+---turn that is about to be done away with.
+---
+---Nothing as well for a hand sitting on its own base, which is no direction at all: the
+---engine picks one, and picking the same one here would be guessing.
+---@param record table
+---@return {x: number, y: number}?
+local function hand_facing(record)
+  local arm = record and record.entity
+  if not (arm and arm.valid) then return nil end
+  if not arm.held_stack.valid_for_read then return nil end
+  local base, hand = arm.position, arm.held_stack_position
+  local dx, dy = hand.x - base.x, hand.y - base.y
+  local length = math.sqrt(dx * dx + dy * dy)
+  if length < 0.2 then return nil end
+  return { x = dx / length, y = dy / length }
+end
+
+---An arm as lib/reach.lua wants to hear about it: what it can do, where its hand is, and
+---which way that hand points.
+---@param record table
+---@param range number
+---@return table
+local function arm_state(record, range)
+  local tier = tier_of(record)
+  return {
+    range = range,
+    extension = tier.extension,
+    rotation = tier.rotation,
+    out = hand_out(record),
+    facing = hand_facing(record),
+  }
+end
+
 --- A course that is going nowhere, shared rather than made afresh every time it is wanted.
 local STILL = { x = 0, y = 0 }
 
@@ -1037,6 +1077,11 @@ local function out_of_reach(record, from, at, range)
     return reach.out_of_range(from, at, range)
   end
   local tier = tier_of(record)
+  -- Where the hand is, but deliberately not which way it points. This is asked of every
+  -- candidate the search brings back, and a bearing costs a walk of up to half a turn's
+  -- worth of ticks apiece where the rest is a handful of sums. Left out it is generous,
+  -- which is what a filter is allowed to be: what it turns away is gone for good, and what
+  -- it lets through set_course looks at properly, bearing and all.
   return not reach.meets(
     { range = range, extension = tier.extension, out = hand_out(record) },
     drift, { x = at.x - from.x, y = at.y - from.y }, reach.full_swing(tier))
@@ -2491,20 +2536,38 @@ local redirect
 ---@param from {x: number, y: number} where the arm reaches from
 ---@param range number
 ---@return boolean whether there is still a reach worth making
-local function set_course(record, from, range)
+---@param setting_off boolean? whether this is an arm deciding to go, rather than one going
+local function set_course(record, from, range, setting_off)
   local job = record.job
   if not job then return false end
-  if not reach.out_of_range(from, job.target, range) then
+  job.met = false
+  local arm = arm_state(record, range)
+  -- How far ahead to look, and the two cases want different answers. An arm deciding whether
+  -- to set off looks one flight ahead, which is the same distance the search covers, so that
+  -- it never takes on what it was never offered. An arm already out is not deciding anything
+  -- -- it has a ghost and it is going -- so what it wants to know is whether the thing can
+  -- still be got to at all, and a hand part way through a reach can want longer than a
+  -- flight: one back at its own base reaching five tiles wants fifty ticks against a swing's
+  -- forty three.
+  -- A hand with no bearing and a ghost already in reach wants no lead at all: aim at the
+  -- thing and be done. An empty claw is rebuilt facing wherever it is going, so there is
+  -- nothing for it to turn through and the engine's own chase is the short way round.
+  --
+  -- A hand with a load in it is the case a lead exists for. It cannot be turned -- see
+  -- point(), which refuses -- so it has to swing round at its own rate, and aimed at
+  -- something that moves it chases the bearing instead of cutting to where the bearing is
+  -- going. Measured on a hand four and a half tiles out: aimed at the ghost it never
+  -- arrived at all, and held on a lead it arrived on the tick the arithmetic named.
+  if not arm.facing and not reach.out_of_range(from, job.target, range) then
     job.met, job.lead, job.arrival = true, nil, nil
     return true
   end
-  job.met = false
-  local tier = tier_of(record)
+  local horizon = setting_off and reach.full_swing(tier_of(record)) or reach.longest(arm)
   local arrival, lead = reach.intercept(
-    { range = range, extension = tier.extension, out = hand_out(record) },
+    arm,
     record.drift or STILL,
     { x = job.target.x - from.x, y = job.target.y - from.y },
-    reach.full_swing(tier))
+    horizon)
   job.arrival = arrival and (game.tick + arrival) or nil
   job.lead = lead
   return arrival ~= nil
@@ -2536,7 +2599,29 @@ end
 local function holding_course(record, from, range)
   local job = record.job
   if job.met then return not reach.out_of_range(from, job.target, range) end
-  return set_course(record, from, range)
+  if not set_course(record, from, range) then return false end
+  -- Handed over when the arrival is upon us rather than the moment the ghost is in range,
+  -- and the difference only shows on an arm that is already out.
+  --
+  -- A lead is a fixed point, so the bearing to it does not move, so the claw turns straight
+  -- onto it. The ghost itself is not fixed -- it is its owner who moves, but from the arm it
+  -- comes to the same thing -- so a claw aimed at the ghost chases the bearing round instead
+  -- of cutting to where the bearing is going, and arrives later or not at all. Measured on a
+  -- hand four and a half tiles out: aimed at the ghost it never arrived, and held on a lead
+  -- it arrived on the tick the arithmetic named.
+  --
+  -- Handing over is still wanted, and for the reason it always was: the engine lets go
+  -- against the aim it was given a tick earlier, so the last tick before the drop has to be
+  -- the ghost itself or the load lands where the ghost was going to be. A tick is all it
+  -- needs, and a tick is what it gets.
+  --
+  -- A wearer standing still is not affected either way. With no drift the lead is the ghost,
+  -- so holding one and aiming at the other are the same thing.
+  if job.arrival and game.tick + 1 >= job.arrival
+      and not reach.out_of_range(from, job.target, range) then
+    job.met, job.lead, job.arrival = true, nil, nil
+  end
+  return true
 end
 
 ---Give up on a reach without building anything.
@@ -3759,7 +3844,7 @@ local function assign(player, wearer, list, tick, nearby)
         -- Where to hold the claw, which is not where the ghost is unless the ghost is
         -- already in reach. choose() only offers what an intercept exists for, so this
         -- finding none is a race rather than an ordinary answer, and the job goes back.
-        if not set_course(record, from, tier.range) then
+        if not set_course(record, from, tier.range, true) then
           record.job = nil
           claimed[claim_of(ghost)] = nil
           if partner then claimed[claim_of(partner)] = nil end
