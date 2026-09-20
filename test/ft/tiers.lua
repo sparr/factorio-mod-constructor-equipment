@@ -1043,9 +1043,14 @@ describe("which way an arm is pointed", function()
     end, "the ghost beside the character was never built")
   end)
 
-  --- The thing pointing an arm was for: a ghost behind its owner used to cost three times
-  --- one in front, because every arm was built facing north whatever it was about to do.
-  --- Built facing its ghost, the two sides come out the same.
+  --- The thing pointing an arm was for. Every arm used to be built facing north whatever it
+  --- was about to do, so a ghost due north was delivered on tick 32 and one due south on 97
+  --- -- the same five tiles, three times the wait, for the half turn the hand had to make
+  --- before it could start. Built facing its own ghost, the two come out the same.
+  ---
+  --- Two ghosts both five tiles out, one due north and one due south. Neither is nearer than
+  --- the other and neither is in front of anything: the character stands still throughout and
+  --- never faces anywhere. What is opposite what is the arm's bearing, not its owner's.
   ---
   --- From a fresh arm, which is the case that matters and nearly the only one there is: an
   --- idle arm is put away, so a reach almost always begins with no arm at all. The second
@@ -1063,25 +1068,30 @@ describe("which way an arm is pointed", function()
         world.once(function() return world.ghosts(player) == 0 end, function()
           local southward = game.tick - began
           assert.is_true(southward < northward * 1.5,
-            ("north took %d ticks and south %d from a fresh arm, which is a turn being paid")
+            ("north took %d ticks and south %d from a fresh arm, which is a half turn being paid")
               :format(northward, southward))
-        end, "the ghost on the far side was never built", world.CYCLE * 4)
+        end, "the ghost due south was never built", world.CYCLE * 4)
       end, "the arm was never put away", world.CYCLE * 4)
-    end, "the ghost in front was never built", world.CYCLE * 4)
+    end, "the ghost due north was never built", world.CYCLE * 4)
   end)
 
   --- And what it costs when the arm is still out. Pointing an arm means building it again,
   --- and an arm whose hand is away from home cannot be built again without the claw jumping
   --- from wherever it had got to across to wherever a fresh hand starts. That is not an arm
   --- turning round, so it does not happen: the arm swings round at its own rate instead and
-  --- is charged for it. Measured, the far side costs 93 ticks against 45 for the near one,
-  --- where jumping the claw made it 45 either way.
+  --- is charged for it.
+  ---
+  --- The same two ghosts, five tiles out due north and due south, except that the southward
+  --- one is laid down while the claw is still out northward -- so the arm has half a turn to
+  --- make and cannot dodge it by being built again. Measured at 93 ticks against 45 for the
+  --- northward one, where jumping the claw made it 45 either way.
   it("swings round rather than jumping the claw, when the hand is still out", function()
     world.equip(player, { tiers.list[4].name, "battery-equipment" }, true)
     player.insert{ name = BELT, count = 10 }
     world.ghost(player, BELT, 0, -5)
     world.once(function() return world.ghosts(player) == 0 end, function()
-      -- Straight away, while the claw is still out on a northward bearing.
+      -- Straight away, while the claw is still out northward: half a turn from where it has
+      -- to end up.
       world.ghost(player, BELT, 0, 5)
       local worst, previous = 0, nil
       world.once(function()
@@ -1098,7 +1108,7 @@ describe("which way an arm is pointed", function()
         assert.is_true(worst < 1,
           ("the claw moved %.2f tiles in one tick, which is a jump rather than a swing")
             :format(worst))
-      end, "the ghost on the far side was never built", world.CYCLE * 6)
-    end, "the ghost in front was never built", world.CYCLE * 4)
+      end, "the ghost due south was never built", world.CYCLE * 6)
+    end, "the ghost due north was never built", world.CYCLE * 4)
   end)
 end)
