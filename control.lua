@@ -1002,12 +1002,32 @@ end
 
 ---Which way an arm's hand is pointing, or nothing if it has no bearing yet.
 ---
----Nothing is the honest answer for a hand that is about to be built again facing wherever
----it is going, because then there is nothing to turn through. That is any hand with an empty
----claw: point() takes an arm away and builds it afresh on the new bearing, and refuses only
----when the claw is holding something, since there is a load in the air. So a bearing is a
----constraint exactly when the claw is full, and charging for one otherwise is charging for a
----turn that is about to be done away with.
+---Whether an arm can be turned by building it again rather than by swinging round.
+---
+---Turning a hand is not a thing the engine offers: a hand's rotation is its own state and
+---nothing but building the entity again resets it, which was established the hard way in
+---eleven different ways -- see point(). So the mod turns an arm by taking it away and making
+---a new one facing the right way, and the new one's hand starts where a fresh hand starts.
+---
+---Which is only honest for an arm whose hand is home. A hand with a load in it cannot be
+---taken away without the load going with it. And a hand still out cannot be taken away
+---without the claw jumping from wherever it was to wherever a fresh one is born: that is not
+---an arm turning round, it is an arm teleporting, and it is a turn that never got made.
+---@param record table
+---@return boolean
+local function rebuildable(record)
+  local arm = record and record.entity
+  if not (arm and arm.valid) then return true end
+  if arm.held_stack.valid_for_read then return false end
+  return hand_out(record) < within(tier_of(record), HOME)
+end
+
+---Which way an arm's hand is pointing, or nothing if it has no bearing worth honouring.
+---
+---Nothing for any arm that can be built again, because then the bearing is about to be
+---whatever it needs to be and charging for a turn would be charging for one that will not
+---happen. The two questions are the same question, so they are asked of the same predicate:
+---an arm is held to its bearing exactly when it cannot be pointed.
 ---
 ---Nothing as well for a hand sitting on its own base, which is no direction at all: the
 ---engine picks one, and picking the same one here would be guessing.
@@ -1016,7 +1036,7 @@ end
 local function hand_facing(record)
   local arm = record and record.entity
   if not (arm and arm.valid) then return nil end
-  if not arm.held_stack.valid_for_read then return nil end
+  if rebuildable(record) then return nil end
   local base, hand = arm.position, arm.held_stack_position
   local dx, dy = hand.x - base.x, hand.y - base.y
   local length = math.sqrt(dx * dx + dy * dy)
@@ -2401,9 +2421,14 @@ local function point(player, wearer, record, slot, count, job)
     return
   end
   if arm.direction == wanted then return end
-  -- A hand with something in it is a hand part way through a journey, whatever the list
-  -- says. Nothing here is worth taking a load out of the air for.
-  if arm.held_stack.valid_for_read then return end
+  -- Only an arm whose hand is home and empty. A hand with something in it is part way
+  -- through a journey, whatever the list says, and nothing here is worth taking a load out
+  -- of the air for. A hand still out is the same refusal for a different reason: building
+  -- the arm again would jump the claw from wherever it had got to across to wherever a
+  -- fresh hand starts, which is not turning round. Anything else swings round at its own
+  -- rate, and lib/reach.lua charges it for exactly that -- see hand_facing(), which is the
+  -- same question asked of the same predicate.
+  if not rebuildable(record) then return end
 
   -- The charge goes back where putting the arm away would put it and the new one draws it
   -- out again on the same tick, so pointing an arm is not a way of burning a buffer. No

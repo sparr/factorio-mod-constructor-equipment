@@ -1043,6 +1043,13 @@ describe("which way an arm is pointed", function()
     end, "the ghost beside the character was never built")
   end)
 
+  --- The thing pointing an arm was for: a ghost behind its owner used to cost three times
+  --- one in front, because every arm was built facing north whatever it was about to do.
+  --- Built facing its ghost, the two sides come out the same.
+  ---
+  --- From a fresh arm, which is the case that matters and nearly the only one there is: an
+  --- idle arm is put away, so a reach almost always begins with no arm at all. The second
+  --- ghost here waits for that to have happened.
   it("costs much the same to reach either side of its owner", function()
     world.equip(player, { tiers.list[4].name, "battery-equipment" }, true)
     player.insert{ name = BELT, count = 10 }
@@ -1050,16 +1057,48 @@ describe("which way an arm is pointed", function()
     world.ghost(player, BELT, 0, -5)
     world.once(function() return world.ghosts(player) == 0 end, function()
       northward = game.tick - began
-      -- The second one goes to the far side, from an arm already out and resting on a
-      -- northward bearing, which is the reach that used to cost three times the first.
-      began = game.tick
+      world.once(function() return world.arm(player) == nil end, function()
+        began = game.tick
+        world.ghost(player, BELT, 0, 5)
+        world.once(function() return world.ghosts(player) == 0 end, function()
+          local southward = game.tick - began
+          assert.is_true(southward < northward * 1.5,
+            ("north took %d ticks and south %d from a fresh arm, which is a turn being paid")
+              :format(northward, southward))
+        end, "the ghost on the far side was never built", world.CYCLE * 4)
+      end, "the arm was never put away", world.CYCLE * 4)
+    end, "the ghost in front was never built", world.CYCLE * 4)
+  end)
+
+  --- And what it costs when the arm is still out. Pointing an arm means building it again,
+  --- and an arm whose hand is away from home cannot be built again without the claw jumping
+  --- from wherever it had got to across to wherever a fresh hand starts. That is not an arm
+  --- turning round, so it does not happen: the arm swings round at its own rate instead and
+  --- is charged for it. Measured, the far side costs 93 ticks against 45 for the near one,
+  --- where jumping the claw made it 45 either way.
+  it("swings round rather than jumping the claw, when the hand is still out", function()
+    world.equip(player, { tiers.list[4].name, "battery-equipment" }, true)
+    player.insert{ name = BELT, count = 10 }
+    world.ghost(player, BELT, 0, -5)
+    world.once(function() return world.ghosts(player) == 0 end, function()
+      -- Straight away, while the claw is still out on a northward bearing.
       world.ghost(player, BELT, 0, 5)
-      world.once(function() return world.ghosts(player) == 0 end, function()
-        local southward = game.tick - began
-        assert.is_true(southward < northward * 2,
-          ("north took %d ticks and south %d, which is the turn being paid for")
-            :format(northward, southward))
-      end, "the ghost on the far side was never built", world.CYCLE * 4)
+      local worst, previous = 0, nil
+      world.once(function()
+        local arm = world.arm(player)
+        if arm and arm.valid then
+          local hand = arm.held_stack_position
+          if previous then worst = math.max(worst, reach.distance(previous, hand)) end
+          previous = { x = hand.x, y = hand.y }
+        else
+          previous = nil
+        end
+        return world.ghosts(player) == 0
+      end, function()
+        assert.is_true(worst < 1,
+          ("the claw moved %.2f tiles in one tick, which is a jump rather than a swing")
+            :format(worst))
+      end, "the ghost on the far side was never built", world.CYCLE * 6)
     end, "the ghost in front was never built", world.CYCLE * 4)
   end)
 end)
