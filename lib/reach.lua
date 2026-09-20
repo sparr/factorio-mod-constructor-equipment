@@ -82,14 +82,35 @@ end
 ---
 --- Measured on every tier on 2.1.19 and the same on all four, which is what makes it a
 --- constant here rather than something read off a prototype: the first tier's hand is born
---- 0.6939 out and so is the fourth's, though one of them reaches two tiles and the other
---- five. See test/ft/intercept.lua, which reads it on the tick the arm is built, before the
---- engine has moved it.
+--- as far out as the fourth's, though one of them reaches two tiles and the other five.
+--- 179/256 of a tile, exactly, which is one step of the grid the engine keeps positions on.
 ---
---- It matters because it is a head start. A five tile arm travels 4.31 tiles rather than
+--- Along the bearing the arm was built facing, and nothing else decides it. Measured: an arm
+--- built facing east starts its hand due east whether its pickup is set three tiles west,
+--- three north, or not set at all, and setting either end on the same tick does not move it.
+--- It only moves on the ticks after, as the engine animates it.
+---
+--- Nor does the prototype have any say. Six copies of a fourth tier arm with their
+--- pickup_position and insert_position moved about -- a drop three tiles out, a pickup three
+--- tiles out, both, a pair pointing across the arm's own facing, and a drop a fifth of a tile
+--- long -- all start their hands in exactly the same place. See test/ft/intercept.lua and
+--- the variants test/ft/ce-tests builds for it.
+---
+--- Off the four cardinals it reads a hair short -- 0.6961 on the diagonals, 0.6971 on the
+--- half steps -- because each axis is snapped to its own 256th rather than the radius being.
+--- Three thousandths of a tile, against a model that already carries a whole tick of grace,
+--- which is a tenth of a tile on the fourth tier.
+---
+--- It was 0.6939 here for a while, which was this same figure measured badly. The arm was
+--- put at a mount 0.7 north of the middle of a tile -- not a whole 256th, so not a position
+--- the engine will hold -- and the distance was taken from where it had been asked to go
+--- rather than from where it went. Measured from the arm's own position it is 179/256 every
+--- time.
+---
+--- It matters because it is a head start. A five tile arm travels 4.30 tiles rather than
 --- five, which is seven ticks off a swing and a tile off how far its owner walks while the
 --- hand is out.
-reach.BORN = 0.6939
+reach.BORN = 179 / 256
 
 ---How long a hand takes to go all the way out, in ticks.
 ---

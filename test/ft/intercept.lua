@@ -144,6 +144,64 @@ after_each(function()
   world.clear(player)
 end)
 
+--- What decides where a freshly built hand sits, which is worth pinning rather than
+--- assuming, because reach.BORN is a number the whole of the lead arithmetic rests on.
+---
+--- The answer is the bearing the arm was built facing, and nothing else at all. Not the
+--- pickup or the drop set from script, and not the pickup_position or insert_position
+--- written into the prototype either -- test/ft/ce-tests carries six copies of a fourth tier
+--- arm with those vectors moved about, including one pointing sideways to the arm's own
+--- facing and one a fifth of a tile long, and every one of them starts its hand in exactly
+--- the same place.
+---
+--- If a future version of the game ever ties the two together, this is what says so.
+describe("what decides where a fresh hand starts", function()
+  local VARIANTS = { "ce-tests-arm-plain", "ce-tests-arm-far-insert",
+                     "ce-tests-arm-far-pickup", "ce-tests-arm-both-far",
+                     "ce-tests-arm-sideways", "ce-tests-arm-tiny" }
+
+  after_each(function()
+    for _, name in ipairs(VARIANTS) do
+      for _, arm in ipairs(player.surface.find_entities_filtered{ name = name,
+            position = world.ORIGIN, radius = 50 }) do
+        if arm.valid then arm.destroy() end
+      end
+    end
+  end)
+
+  it("is the bearing it was built facing, and not the prototype's own ends", function()
+    local WAYS = { defines.direction.north, defines.direction.east,
+                   defines.direction.south, defines.direction.west }
+    local WANTED = {
+      [defines.direction.north] = { x = 0, y = -reach.BORN },
+      [defines.direction.east]  = { x = reach.BORN, y = 0 },
+      [defines.direction.south] = { x = 0, y = reach.BORN },
+      [defines.direction.west]  = { x = -reach.BORN, y = 0 },
+    }
+    local checked = 0
+    for _, name in ipairs(VARIANTS) do
+      if prototypes.entity[name] then
+        for _, facing in ipairs(WAYS) do
+          local arm = player.surface.create_entity{ name = name, position = world.ORIGIN,
+            force = player.force, direction = facing }
+          assert.is_not_nil(arm, "no " .. name .. " could be placed")
+          local hand = arm.held_stack_position
+          local want = WANTED[facing]
+          assert.is_true(math.abs(hand.x - arm.position.x - want.x) < 1e-6
+              and math.abs(hand.y - arm.position.y - want.y) < 1e-6,
+            ("%s facing %d started its hand at %+.4f,%+.4f rather than %+.4f,%+.4f")
+              :format(name, facing, hand.x - arm.position.x, hand.y - arm.position.y,
+                want.x, want.y))
+          arm.destroy()
+          checked = checked + 1
+        end
+      end
+    end
+    assert.is_true(checked >= 24,
+      "only " .. checked .. " arms were checked; the variants may not have loaded")
+  end)
+end)
+
 --- Where a freshly built hand starts, and how long it then takes to go all the way out.
 ---
 --- Both are wanted for every tier rather than the fourth alone, because the search a moving

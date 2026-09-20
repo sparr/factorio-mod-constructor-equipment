@@ -127,9 +127,11 @@ for _, tier in ipairs(tiers.list) do
       -- a short one; sixteen leaves a thirty-second, which is nothing anywhere.
       --
       -- Measured on 2.1.19: with this flag all sixteen stick and the hand starts exactly on
-      -- its bearing, seven tenths of a tile out, at every one of them. It is a flag about
-      -- how a player builds a thing, and nobody builds these: they are hidden, not
-      -- blueprintable, and made only by script.
+      -- its bearing, 179/256 of a tile out, at every one of them. On its bearing and nothing
+      -- else -- an arm built facing east starts its hand due east whether its pickup is set
+      -- three tiles west, three north, or never set at all, and setting either end on the
+      -- same tick does not move it. It is a flag about how a player builds a thing, and
+      -- nobody builds these: they are hidden, not blueprintable, and made only by script.
       "building-direction-16-way",
       "not-on-map",
       "not-blueprintable",

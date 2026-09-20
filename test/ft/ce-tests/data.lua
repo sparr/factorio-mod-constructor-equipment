@@ -22,3 +22,33 @@ for kind, name in pairs{ car = "car", locomotive = "locomotive" } do
   local vehicle = data.raw[kind] and data.raw[kind][name]
   if vehicle then vehicle.equipment_grid = grid.name end
 end
+
+--- Copies of a fourth tier arm with different pickup and insert positions written into the
+--- prototype, so that a test can ask whether where a freshly built hand sits depends on
+--- them. Setting either end from script does not move it; the question left is whether the
+--- prototype's own vectors do.
+---
+--- Test only, and safe here for the same reason the grids above are: ce-tests is never
+--- published.
+local util = require("util")
+
+local ORIGINAL = data.raw.inserter["constructor-equipment-4-inserter"]
+if ORIGINAL then
+  local VARIANTS = {
+    { name = "ce-tests-arm-plain",      pickup = { 0, 0 },  insert = { 0, 1 } },
+    { name = "ce-tests-arm-far-insert", pickup = { 0, 0 },  insert = { 0, 3 } },
+    { name = "ce-tests-arm-far-pickup", pickup = { 0, -3 }, insert = { 0, 1 } },
+    { name = "ce-tests-arm-both-far",   pickup = { 0, -2 }, insert = { 0, 2 } },
+    { name = "ce-tests-arm-sideways",   pickup = { 1, 0 },  insert = { -1, 0 } },
+    { name = "ce-tests-arm-tiny",       pickup = { 0, 0 },  insert = { 0, 0.2 } },
+  }
+  local made = {}
+  for _, variant in ipairs(VARIANTS) do
+    local copy = util.table.deepcopy(ORIGINAL)
+    copy.name = variant.name
+    copy.pickup_position = variant.pickup
+    copy.insert_position = variant.insert
+    made[#made + 1] = copy
+  end
+  data:extend(made)
+end
