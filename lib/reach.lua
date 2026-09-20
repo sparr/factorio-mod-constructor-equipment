@@ -282,6 +282,11 @@ function reach.on_it(arm, drift, offset, k)
   local wanted = atan2(dy, dx)
   local apart = math.abs(wanted - now) % (2 * math.pi)
   if apart > math.pi then apart = 2 * math.pi - apart end
+  -- No grace here, unlike the radius above. The engine's last extension step covers
+  -- whatever gap is left; its last turn step does not. Measured directly at a fixed radius
+  -- of three tiles, where the width of an arrival window is worth little angle: 45, 90, 135
+  -- and 180 degrees took 16, 32, 47 and 63 ticks against nominals of 15.625, 31.25, 46.875
+  -- and 62.5, which is ceil of the nominal every time and never a tick under it.
   return apart <= arm.rotation * 2 * math.pi * k + 1e-9
 end
 

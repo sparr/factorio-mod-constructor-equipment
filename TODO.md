@@ -107,11 +107,14 @@ them, finishing over a tile short of the fourth.
   ground, without even its deconstruct marker.
 - The nine items the player is standing on are never picked up at all.
 
-## 21. The claw's box shows what is in it
-
-**A chest downgraded**: with alt mode on, the box the claw picks up into is visible and
-shows its contents.
-
 ## 22. An arm turns too fast
 
-Take a third off the rotation speed.
+Take a third off the rotation speed. Not done: measured, a third is more than the swing can
+carry. A claw that carries several stops crossing altogether at walking pace -- a row of
+four two tiles abeam went from four built on one journey to two over two, and no layout
+tried still crossed -- and a block of nine marked for deconstruction went from wanting six
+of the harness's cycles to wanting thirty, because a claw that cannot make the next bearing
+in time comes home rather than crossing and the turn is paid for twice. A walk past three
+scattered ghosts lost the last of the three. Wants a smaller reduction, or the crossing
+horizon opened up to match, and the numbers above are at the edge of the noise in those
+fixtures either way.

@@ -39,7 +39,13 @@ catcher.picture = { filename = "__core__/graphics/empty.png", size = 1, priority
 -- Alt mode draws what a container is holding above it, which for an invisible box standing
 -- on a ghost is a belt icon hanging in the air over a bare tile for as long as the claw
 -- takes to arrive. The box is the mod's plumbing and a player has no use for seeing into it.
-catcher.draw_inventory_content = false
+--
+-- draw_inventory_content is what used to say so and is not a container property any more:
+-- 2.0 moved it to ProxyContainerPrototype and left plain containers with icons_positioning,
+-- a list of which inventories to draw. Setting the old one went on looking right in the
+-- source and did nothing at all, so the box has been showing its belt in alt mode ever
+-- since. An empty list is none of them.
+catcher.icons_positioning = {}
 catcher.icon = "__base__/graphics/icons/wooden-chest.png"
 catcher.icon_size = 64
 catcher.next_upgrade = nil
