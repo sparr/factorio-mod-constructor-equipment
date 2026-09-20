@@ -15,23 +15,25 @@ to fix.
 
 ## 12. An arm should aim where its target will be, not where it is
 
-Done for one delivery from rest. An arm works out where its target will be by the time its
-hand could get there, holds the claw on that point as its owner carries it along, and drops
-the guess for the thing itself the moment it is really in reach. A ghost that is in reach for
+Done for one delivery from rest, for an arm that is already out, and for a claw working
+several ghosts in a round. An arm works out where its target will be by the time its hand
+could get there, holds the claw on that point as its owner carries it along, and drops the
+guess for the thing itself the moment it is really in reach. A ghost that is in reach for
 forty ticks against a forty three tick reach could not be built at all before and is built
-now. Every tier leads; the first one meets things three times its own reach away.
+now. Every tier leads; the first one meets things three times its own reach away. The
+bearing a claw has to swing through is part of the sum, so a lead it cannot rotate onto in
+time is not offered. All three ways a claw changes its mind mid flight -- the ghost being
+taken away, a round moving on to its next, and a turn leaving the course unflyable -- are
+exercised against a moving owner.
 
 What is left.
 
-**A claw crossing from one ghost to the next.** A round that works through several without
-coming home is untested on anything that moves. Every crossing test there is has its wearer
-standing still, and a crossing claw is an arm that is not at rest, so this wants the next
-item first. Note that crossing starts at one item per trip and only begins once inserter
-capacity has been researched, so the whole suite runs single trips today.
-
-**An arm that is not at rest.** reach.intercept already takes where the hand is, and
-redirect works out a fresh course from it, but nothing exercises either while its owner is
-moving.
+**A round is sized when it sets off and cannot grow.** The claw fills its hand against the
+ghosts it could still meet on that one flight, so anything that only comes into range later
+is not in the round, and a walking owner can carry it back out of reach before the claw is
+free again. A row two tiles out to the side gets two of four built for this reason: walking
+reaches about 1.07 tiles abeam, so those are only ever reachable ahead. Nothing is lost when
+it happens, and it may simply be the honest answer rather than something to fix.
 
 **The search is wider than it needs to be.** It draws the circle round a capsule that
 assumes full stretch from the first tick. What an arm can really meet is a cone, and
@@ -41,13 +43,6 @@ a candidate rather than for finding one. Measured on a fourth tier arm: 211 cand
 orientation, which is worth more than a chain of circles once a cone is long and thin -- a
 car's cone returns 330 candidates in one call against 435 in four. Wants a quiet machine to
 measure properly.
-
-**Turning is not modelled.** reach.intercept knows nothing about the bearing a claw would
-have to swing through, so it can hand back a lead the claw cannot rotate onto in time. It
-costs nothing that has been measured -- a circling car leaves its claw 178 degrees behind
-its aim and still builds more than one driving straight -- because an arm is already coming
-and going as fast as it can. Worth knowing rather than worth fixing, until something says
-otherwise.
 
 **Two players can reach for the same ghost.** claims() is built from one wearer's own arms,
 so nothing stops a second player's arm setting off for something already spoken for. It
