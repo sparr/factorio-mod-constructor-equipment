@@ -46,6 +46,26 @@ describe("a character wearing the equipment", function()
     end)
   end)
 
+  --- Holding the stack is what a player about to place one by hand does, and it takes the
+  --- items out of the inventory for as long as it is held. Their only stack held that way
+  --- left every arm looking at a player carrying nothing, and the whole set went quiet at
+  --- the moment they were most obviously working.
+  it("pays out of the stack on the cursor when that is the only one", function()
+    local main = player.get_inventory(defines.inventory.character_main)
+    local all = main.get_item_count(BELT)
+    main.remove{ name = BELT, count = all }
+    player.cursor_stack.set_stack{ name = BELT, count = all }
+    assert.are.equal(0, main.get_item_count(BELT), "the stack is still in the inventory")
+    assert.are.equal(all, player.cursor_stack.count, "the cursor is not holding it")
+    world.ghost(player, BELT, 2, 0)
+    after_ticks(A_BUILD, function()
+      assert.are.equal(1, world.count(player, BELT), "nothing was built off the cursor")
+      local held = player.cursor_stack.valid_for_read and player.cursor_stack.count or 0
+      assert.are.equal(4, held + main.get_item_count(BELT),
+        "one belt should have gone, out of five")
+    end)
+  end)
+
   it("pays for it out of the batteries", function()
     local grid = player.character.grid
     local before = grid.available_in_batteries

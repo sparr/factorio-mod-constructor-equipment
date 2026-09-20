@@ -76,11 +76,6 @@ the arm first sees the exhibit.
 - **What a swing costs** wants a fourth tier arm and more belts, so the battery visibly
   drains, and a pad before it that takes the reactor off.
 
-## 15. No arm sets off while the item is on the cursor
-
-Holding the stack on the cursor stops every arm. Likely that a single stack held there is
-not in the inventory count the arms ask for.
-
 ## 16. The toolbar button loses a load and confuses a fresh arm
 
 - Switched off mid delivery, the arm comes home and puts the item on the ground rather than

@@ -98,6 +98,12 @@ function world.clear(player)
   if main then main.clear() end
   local armour = player.get_inventory(defines.inventory.character_armor)
   if armour then armour.clear() end
+  -- The cursor too, which is a pocket as far as the arms are concerned: a stack held there
+  -- is out of the inventory and still gets spent. A test that left one there handed the
+  -- next a character who looked empty-handed and was not, so every test about an arm with
+  -- nothing to pay with quietly built something.
+  local cursor = player.cursor_stack
+  if cursor and cursor.valid and cursor.valid_for_read then cursor.clear() end
   -- All of it. A test that left an arm out handed the next one a character who was still
   -- counted as busy, so the next test began by putting an arm on someone who had asked
   -- for nothing -- and paying for the swing it took to settle.

@@ -277,6 +277,71 @@ local function pockets(player, wearer)
   return player.get_inventory(defines.inventory.character_main)
 end
 
+---The stack on the cursor, when it is the thing being asked about and its owner's own.
+---
+---A stack picked up on to the cursor is out of the inventory while it is held there. So a
+---player holding their only belts, which is what holding them to place one by hand means,
+---looked to every arm like a player carrying no belts at all, and the whole set went quiet
+---at the moment they were most obviously working. It is still theirs and still in reach of
+---their own equipment, so it is counted and spent like any other pocket.
+---
+---Theirs only: a vehicle pays out of its own hold, and whatever its driver happens to be
+---holding is not in it.
+---@return LuaItemStack?
+local function on_cursor(player, wearer, name, quality)
+  if wearer and wearer.valid and wearer.type ~= "character" then return nil end
+  local stack = player and player.cursor_stack
+  if not (stack and stack.valid and stack.valid_for_read) then return nil end
+  if stack.name ~= name then return nil end
+  if (stack.quality and stack.quality.name or "normal") ~= (quality or "normal") then
+    return nil
+  end
+  return stack
+end
+
+---How many of something its owner has, pockets and cursor together.
+---@return integer
+local function stock_of(player, wearer, inventory, name, quality)
+  local total = inventory and inventory.get_item_count{ name = name, quality = quality } or 0
+  local stack = on_cursor(player, wearer, name, quality)
+  return total + (stack and stack.count or 0)
+end
+
+---Take some, out of the pockets first and off the cursor for the rest.
+---@return integer how many were actually taken
+local function spend(player, wearer, inventory, name, quality, count)
+  local taken = inventory
+    and inventory.remove{ name = name, quality = quality, count = count } or 0
+  if taken >= count then return taken end
+  local stack = on_cursor(player, wearer, name, quality)
+  if not stack then return taken end
+  local more = math.min(count - taken, stack.count)
+  if more <= 0 then return taken end
+  -- A cursor stack taken down to nothing has to be cleared rather than set to zero, which
+  -- is what putting it down means.
+  if more >= stack.count then stack.clear() else stack.count = stack.count - more end
+  return taken + more
+end
+
+---Hand back what spend() took and the journey turned out not to want.
+---
+---The pockets first, and the cursor for anything they will not take: the reason the stack
+---was on the cursor at all may well be that there is no room for it anywhere else.
+local function refund(player, wearer, inventory, name, quality, count)
+  if count <= 0 then return end
+  local back = inventory
+    and inventory.insert{ name = name, quality = quality, count = count } or 0
+  local over = count - back
+  if over <= 0 then return end
+  local stack = player and player.cursor_stack
+  if not (stack and stack.valid) then return end
+  if stack.valid_for_read then
+    if on_cursor(player, wearer, name, quality) then stack.count = stack.count + over end
+  else
+    stack.set_stack{ name = name, quality = quality, count = over }
+  end
+end
+
 ---One of this mod's stickers on a wearer, if it is there.
 ---@param wearer LuaEntity
 ---@param name string
@@ -1596,7 +1661,7 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
   ---belt out of the pocket would be minting the difference.
   local function carried_at(quality)
     return function(name)
-      return inventory.get_item_count{ name = name, quality = quality }
+      return stock_of(player, wearer, inventory, name, quality)
     end
   end
 
@@ -3946,7 +4011,7 @@ local function assign(player, wearer, list, tick, nearby)
           end
           record.job.left = loads_for(record, shopping, claimed, wearer.position, from,
             tier.range, item, quality, count,
-            inventory and inventory.get_item_count{ name = item, quality = quality } or count,
+            stock_of(player, wearer, inventory, item, quality),
             capacity)
         end
         -- Pointed before it is aimed, and before anything is put in its hand: pointing an
@@ -3967,12 +4032,11 @@ local function assign(player, wearer, list, tick, nearby)
           -- other means: the items are spent when the arm sets off and given back if it
           -- comes home without building anything.
           local want = count * record.job.left
-          local taken =
-            inventory and inventory.remove{ name = item, quality = quality, count = want } or 0
+          local taken = spend(player, wearer, inventory, item, quality, want)
           if taken < count then
             -- not even one ghost's worth left in the pockets
             if taken > 0 then
-              inventory.insert{ name = item, quality = quality, count = taken }
+              refund(player, wearer, inventory, item, quality, taken)
             end
             arm.held_stack.clear()
             record.job = nil
