@@ -4218,6 +4218,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.leading",
     "test.ft.steering",
     "test.ft.notatrest",
+    "test.ft.showroom",
   }, {
     load_luassert = true,
     game_speed = 100,

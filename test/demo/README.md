@@ -24,6 +24,13 @@ difference between the showroom and the replica, and the only way to find it is 
 showroom itself. It found three: a curved rail that had snapped two and a half tiles from a
 two tile mark, a cliff that was never marked at all, and a bay whose kit had no charge in it.
 
+It teleports on to each mark and stands there, and a teleport is deliberately not read as a
+course, so every mark is probed from a standstill. That makes it blind to rows 11 and 12,
+where standing still is the thing that does not work: it reports those bays as almost
+nothing built, which is right for a player who never moves and says nothing about the bays.
+Those two rows are covered by walking them, or by `test/ft/showroom.lua`, which walks the
+same layouts headless.
+
 ## Getting about
 
 Rows are kitted rather than cumulative. Two pads on each row:
@@ -52,9 +59,10 @@ a time, nearest first, and there is no way to arrive all at once on foot. Then f
 side, and the bulk claw carrying several and turning from ghost to ghost rather than coming
 home between each.
 
-**3. Power.** An arm in a grid with no charge, which never sets off; a chest with a reactor
-in it to put in your armour, after which it does; and a long run to watch the batteries
-against, since a reach is billed by the tile.
+**3. Power.** An arm in a grid with no charge, which never sets off; a mark that puts a
+reactor and a battery in your armour, after which the same arm builds; and a fourth tier arm
+on one small battery in the middle of a ring of forty, which is enough work to watch the
+charge go down rather than flicker.
 
 **4. Switching off, and full pockets.** The toolbar button, pressed mid reach. Then a chest
 of stone to fill your pockets with before marking a few belts, which is where the claw's
@@ -91,12 +99,33 @@ train's wagons instead. Their titles say
 so in orange. Without it, a car is the case where a driver's own armour goes quiet and
 nothing takes over.
 
+**11. Leading.** The bays that have to be walked rather than stood on, because an arm aims
+where its target will be by the time the claw gets there and standing still there is nowhere
+else for it to be. A belt ten tiles off a five tile arm, which goes up as you pass. One four
+tiles square to the side, which does not, and says why: a hand stretches out more slowly than
+its owner walks, so about a tile to the side is all a walk has, and the arm knows it and
+never sets off -- stop beside that one and it goes up at once. And a two tile arm meeting
+something six tiles off, since leading is not only for the big ones.
+
+**12. Rounds on the move.** The same arm with the capacity research, so its claw carries
+several. Four belts ten to thirteen tiles ahead, which are past what one swing can reach or
+even see when the claw leaves and go up in a single trip anyway, because the round is shopped
+for over its whole life. Then three crammed inside that tile of side reach, where two go up
+and one does not, and which two is not fixed.
+
 ## What the smoke run should say
 
 ```
-ce-demo: built 10 rows, 26 bays, 375 ghosts, 4 vehicles
+ce-demo: built 12 rows, 31 bays, 358 ghosts, 4 vehicles
 everything placed
 ```
 
 A bay that quietly failed to build looks exactly like a bay demonstrating that nothing
 happens, which is why the smoke run counts rather than eyeballs.
+
+The count is what stands on the ground at the end of a build, so it does not include the
+exhibits that wait for their mark to be stood on. Several bays lay their ghosts on arrival
+rather than leaving them out: an arm aims where its target will be by the time the claw
+could get there, so walking up to a bay is walking towards it with a cone of reach in front
+of you, and a fourth tier arm meets things eleven tiles ahead of a walk. There is no
+distance inside a bay that is past that, so the exhibit waits instead.

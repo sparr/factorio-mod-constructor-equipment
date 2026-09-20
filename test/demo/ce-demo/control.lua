@@ -153,6 +153,45 @@ local function bay_kit(x, y, kit, note)
   storage.bay_kits[#storage.bay_kits + 1] = { x = x + 0.5, y = y + 0.5, kit = kit }
 end
 
+---Ghosts that are not there until you are.
+---
+---Leading undid every bay that lays its exhibit east of its mark. An arm aims where its
+---target will be by the time the claw could get there, so walking up to a bay is walking
+---towards its exhibit with a cone of reach in front of you, and the bay is half built
+---before you arrive. Moving the mark does not help: the cone is wider than any bay, and a
+---fourth tier arm meets things eleven tiles ahead of a walk.
+---
+---So the exhibit waits. Nothing stands on the ground until its mark is stood on, which is
+---also what these bays are about -- arriving rather than walking up.
+---
+---The ghosts are written down rather than the function that makes them, because storage
+---keeps data across a save and cannot keep a closure.
+---@param x number the mark, in tiles
+---@param y number
+---@param ghosts table[] each { name, dx, dy }, offset from the mark
+local function lay_on(x, y, ghosts)
+  storage.lays = storage.lays or {}
+  storage.lays[#storage.lays + 1] = { at = { x = x + 0.5, y = y + 0.5 }, x = x, y = y,
+                                      ghosts = ghosts }
+end
+
+---Put down whatever a mark was given to lay, for anything not already standing there.
+---@param lay table
+local function lay_out(lay)
+  local surface = ground()
+  if not surface then return end
+  for _, what in pairs(lay.ghosts) do
+    local at = { lay.x + what[2] + 0.5, lay.y + what[3] + 0.5 }
+    -- Nothing is laid twice. A ghost already waiting, or the thing itself already built,
+    -- both mean this mark has been stood on and not yet cleared, and a bay that piled a
+    -- fresh ghost on every tick somebody stood still would be no bay at all.
+    if not (surface.find_entity("entity-ghost", at) or surface.find_entity(what[1], at)) then
+      surface.create_entity{ name = "entity-ghost", inner_name = what[1], position = at,
+        force = "player" }
+    end
+  end
+end
+
 ---A mark that puts you somewhere else on the same row, and the mark it puts you on.
 ---
 ---Walking up to a line of ghosts offers them one at a time, nearest first, so the shortest
@@ -205,10 +244,13 @@ local ROWS = {
           ghost("transport-belt", x + 9, y + 6)
         end },
       { "A ghost under your feet",
-        "Stand on the mark, which is the ghost. An arm will not reach under its own base.",
+        "Stand on the mark. The belt appears under your feet, and an arm will not reach beneath its own base.",
         function(x, y)
           pad(x + 4, y + 6, "refined-hazard-concrete-left")
-          ghost("transport-belt", x + 4, y + 6)
+          -- Laid when the mark is stood on rather than waiting there. Walking up to a belt
+          -- is walking towards it, which is all leading needs: it was built a few tiles
+          -- short of the mark every time, and the bay you arrived at was an empty tile.
+          lay_on(x + 4, y + 6, { { "transport-belt", 0, 0 } })
         end },
       { "Nothing to pay with",
         "Stand on the mark. You are carrying no steel chest, so it stays a ghost.",
@@ -275,7 +317,14 @@ local ROWS = {
           -- one rather than about the longest arm being caught short.
           hop(x + 1, y + 6, x + 5, y + 6,
             "to be put down among four ghosts at one, two, three and four tiles")
-          for step = 1, 4 do ghost("transport-belt", x + 5 + step, y + 6) end
+          -- Laid on arrival. Six tiles of clear ground in front of the mark used to be
+          -- enough to keep every arm off them while you walked up; leading put the fourth
+          -- tier's reach eleven tiles ahead of a walk, and there is no distance inside a
+          -- bay that is past that. So they are not there to be reached for until the
+          -- player is standing among them, which is the bay's whole point anyway.
+          local laid = {}
+          for step = 1, 4 do laid[#laid + 1] = { "transport-belt", step, 0 } end
+          lay_on(x + 5, y + 6, laid)
         end },
       { "One arm for every copy",
         "Stand on the mark. Four arms work at once, and none of them reaches for the same thing.",
@@ -326,37 +375,51 @@ local ROWS = {
           for i = 0, 3 do ghost("transport-belt", x + 5, y + 5 + i) end
         end },
       { "Take the reactor",
-        "Put the reactor and the battery from this chest into your armour. Now it builds.",
+        "Stand on the mark. It puts a reactor and a battery in your armour, and now the same arm builds.",
         function(x, y)
-          pad(x + 3, y + 6, "refined-hazard-concrete-left")
-          local chest = place("iron-chest", x + 3, y + 6)
-          if chest then
-            chest.insert{ name = "fission-reactor-equipment", count = 1 }
+          -- The mark hands them over rather than a chest offering them. Rummaging in a
+          -- chest is a thing to work out rather than a thing to watch, and the bay is about
+          -- what the arm does once the grid has charge in it.
+          bay_kit(x + 3, y + 6, {
+            armour = "power-armor",
             -- The small battery, not the mark two. A mark two holds so much that a swing
             -- takes an invisible bite out of it, and the next bay is about watching it go
             -- down.
-            chest.insert{ name = "battery-equipment", count = 1 }
-          end
-          for i = 0, 3 do ghost("transport-belt", x + 6, y + 5 + i) end
+            equipment = { "constructor-equipment", "fission-reactor-equipment",
+                          "battery-equipment" },
+            items = { ["transport-belt"] = 100 },
+          }, "to be handed a reactor and a battery")
+          -- Two tiles from the mark, not three. A first tier arm reaches two, so a column
+          -- three out needed a step towards it before anything happened, and a mark whose
+          -- whole promise is that the same arm builds now should not want a step first.
+          for i = 0, 3 do ghost("transport-belt", x + 5, y + 5 + i) end
         end },
       { "What a swing costs",
         "Open your armour. No reactor, so a swing takes a bite; the jump back up is the claw handing its buffer back.",
         function(x, y)
-          bay_kit(x + 5, y + 6, {
+          -- The fourth tier and a ring of forty, where this used to be the first tier and a
+          -- ring of eight. A small arm on a small battery takes a bite you have to look for;
+          -- the big arm reaches five tiles for every one of them and there are enough of
+          -- them to watch the bar go down rather than flicker.
+          bay_kit(x + 6, y + 6, {
             armour = "power-armor",
-            equipment = { "constructor-equipment", "battery-equipment" },
-            items = { ["transport-belt"] = 100 },
-          }, "for one arm, one small battery and no reactor")
-          -- A ring round the mark rather than a line beside it: a first tier arm reaches
-          -- two tiles, and a column of eight meant walking the length of it to get the
-          -- far ones, which is a poor way to watch a battery.
-          for dx = -2, 2 do
-            for dy = -2, 2 do
-              if not (dx == 0 and dy == 0) and (dx * dx + dy * dy) <= 5 then
-                ghost("transport-belt", x + 5 + dx, y + 6 + dy)
+            equipment = { "constructor-equipment-4", "battery-equipment" },
+            items = { ["transport-belt"] = 200 },
+          }, "for one fourth tier arm, one small battery and no reactor")
+          -- The mark is the middle of the ring, and the ring is laid when the mark is stood
+          -- on. That is what takes the reactor off before anything is there to build: walk
+          -- in wearing the one from the bay before and a ring standing on the ground is
+          -- half up before the mark has had a word about it.
+          local ring = {}
+          for dx = -4, 4 do
+            for dy = -4, 4 do
+              local away = dx * dx + dy * dy
+              if away >= 4 and away <= 16 then
+                ring[#ring + 1] = { "transport-belt", dx, dy }
               end
             end
           end
+          lay_on(x + 6, y + 6, ring)
         end },
     },
   },
@@ -647,6 +710,93 @@ local ROWS = {
                 -- so the train needs one.
                 wagon = "cargo-wagon" },
   },
+
+  {
+    title = "11. Leading",
+    note = "Power armour, one fourth tier arm, a reactor and a pocketful of belts.",
+    -- Wider bays than the rest of the showroom. Every bay here is walked rather than stood
+    -- on, and a walk long enough to meet something ten tiles off runs into the next bay at
+    -- the usual spacing.
+    spread = 24,
+    kit = {
+      armour = "power-armor",
+      equipment = { TIERS[4], "fission-reactor-equipment", "battery-equipment" },
+      items = { ["transport-belt"] = 100 },
+    },
+    bays = {
+      { "Met on the way",
+        "Keep walking east. The arm reaches five tiles and this belt is ten off: the claw goes to where the belt will be.",
+        function(x, y)
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          ghost("transport-belt", x + 11, y + 6)
+        end },
+      { "In reach, but not in time",
+        "Keep walking east and this stays a ghost, though you pass within four tiles. Stop beside it and it goes up at once.",
+        function(x, y)
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- Square to the side of the mark rather than ahead of it. A hand stretches out
+          -- more slowly than its owner walks -- about a tile to the side is all a walk has
+          -- -- so this one is never ahead of you long enough to be met, and the arm knows
+          -- it and does not set off. Standing still it is four tiles away and well in
+          -- reach, which is what makes the pair of them worth walking twice.
+          --
+          -- Laid when the mark is stood on, or walking up to it does the very thing the bay
+          -- says cannot be done: from back down the row it is ahead and to the side rather
+          -- than square abeam, which is plenty of room to lead it, and it went up every
+          -- time. Square abeam is a thing you have to start at, not walk into.
+          lay_on(x + 1, y + 6, { { "transport-belt", 0, 4 } })
+        end },
+      { "A small arm leads too",
+        "Keep walking east. A two tile arm and a belt six tiles off, and it still gets there.",
+        function(x, y)
+          bay_kit(x + 1, y + 6, {
+            armour = "modular-armor",
+            equipment = { TIERS[1], "battery-equipment" },
+            items = { ["transport-belt"] = 100 },
+          }, "for one first tier arm and nothing else")
+          -- Laid once the mark has swapped the arm. Left standing, the fourth tier arm the
+          -- player is still wearing from the bay before meets it eleven tiles out and
+          -- builds it on the way over, and the bay about a small arm never gets to use one.
+          lay_on(x + 1, y + 6, { { "transport-belt", 6, 0 } })
+        end },
+    },
+  },
+
+  {
+    title = "12. Rounds on the move",
+    note = "The same arm with the capacity research done, so its claw carries several.",
+    spread = 24,
+    kit = {
+      armour = "power-armor",
+      equipment = { TIERS[4], "fission-reactor-equipment", "battery-equipment" },
+      items = { ["transport-belt"] = 100 },
+      research = { "bulk-inserter", "inserter-capacity-bonus-1",
+                   "inserter-capacity-bonus-2", "inserter-capacity-bonus-3" },
+    },
+    bays = {
+      { "A row in one trip",
+        "Keep walking east. The claw sets off holding all four and puts them down one after another without coming home.",
+        function(x, y)
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- Ten to thirteen tiles ahead and two to the side: past what one swing can reach
+          -- or even see when the claw leaves, and inside what the round as a whole covers.
+          -- The claw is shopping for the whole round rather than for its first ghost.
+          for i = 0, 3 do ghost("transport-belt", x + 11 + i, y + 8) end
+        end },
+      { "Too close to the line",
+        "Keep walking east. Two of these go up and one does not: a walking arm has only about a tile to the side.",
+        function(x, y)
+          pad(x + 1, y + 6, "refined-hazard-concrete-left")
+          -- Three crammed inside the tile of side reach a walk has. Two is all that can be
+          -- got at walking pace, and which two is not fixed. Walk it again at half speed --
+          -- a slowed character, or the same ghosts read while riding -- and all three go up,
+          -- which is the cone being wider rather than the arm trying harder.
+          ghost("transport-belt", x + 10, y + 7)
+          ghost("transport-belt", x + 11, y + 6)
+          ghost("transport-belt", x + 11, y + 7)
+        end },
+    },
+  },
 }
 
 -- --------------------------------------------------------------------------- kitting
@@ -694,7 +844,10 @@ local function clear_and_build()
   made.always_day = true
 
   local width = 0
-  for _, row in pairs(ROWS) do width = math.max(width, #row.bays * BAY + BAY) end
+  for _, row in pairs(ROWS) do
+    local wide = row.spread or BAY
+    width = math.max(width, #row.bays * wide + wide)
+  end
   local tall = #ROWS * ROW + ROW
 
   made.request_to_generate_chunks({ width / 2, tall / 2 },
@@ -727,6 +880,7 @@ local function clear_and_build()
 
   storage.pads = {}
   storage.hops = {}
+  storage.lays = {}
   storage.marks = {}
   storage.bay_kits = {}
   for index, row in ipairs(ROWS) do
@@ -740,9 +894,14 @@ local function clear_and_build()
       "for what this row wants", { 0.55, 0.9, 0.6 })
     storage.pads[index] = { west = { x = rx + 1.5, y = ry + 6.5 } }
 
+    -- A row may ask for wider bays than the rest. Leading is the one thing here that needs
+    -- room to happen in: an arm sets off for something ten tiles off and the walk that
+    -- meets it is longer still, so a bay that fits a standing demonstration puts the next
+    -- one's ghosts inside the walk.
+    local wide = row.spread or BAY
     eastmost = rx
     for bay, what in ipairs(row.bays) do
-      local x = rx + bay * BAY
+      local x = rx + bay * wide
       -- A tile and a half down rather than three, so that three lines of note end above
       -- the marks at six rather than across them. Three lines is what every bay's note is
       -- held to for the same reason: there is no more room than that between a title and
@@ -756,7 +915,7 @@ local function clear_and_build()
     -- Past the end of the row rather than one bay along from the last one. Two tiles of
     -- clear ground either side, so that walking the last exhibit does not end with being
     -- carried off it, and so the pad is never touching the thing it stands beyond.
-    local east = math.max(rx + (#row.bays + 1) * BAY, math.ceil(eastmost) + 2)
+    local east = math.max(rx + (#row.bays + 1) * wide, math.ceil(eastmost) + 2)
     if index < #ROWS then
       pad(east, ry + 6, "refined-hazard-concrete-right")
       label(east - 2, ry + 7.6, "STAND HERE",
@@ -949,6 +1108,13 @@ script.on_event(defines.events.on_tick, function()
             break
           end
         end
+      end
+
+      -- Laid once the kit is settled rather than before it. A bay that swaps your arm for
+      -- a smaller one wants the smaller one looking at its ghosts: laid first, the arm the
+      -- player walked in wearing gets a look at them, and the bay is about the other one.
+      for _, lay in pairs(storage.lays or {}) do
+        if on_pad(player, lay.at) then lay_out(lay) end
       end
 
       for index, pads in pairs(storage.pads) do
