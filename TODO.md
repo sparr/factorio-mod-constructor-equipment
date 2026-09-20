@@ -79,12 +79,39 @@ happened with.
 ## 18. Arms get stuck out holding nothing
 
 A claw sits at a ghost, tracking it as its owner moves, doing nothing. Seen on a spidertron
-after movements in every direction, on a car once, and most often on the train, which is
-probably where to reproduce it.
+after movements in every direction, on a car once, and most often on the train.
 
-There is a standing-still version of this in 20, which may be the same fault and is much
-easier to get at: a claw with a fetch job on something a tile and a half away, status
-working, hand at its birth radius, never extending.
+There is a standing-still version in 20 that reproduces every run, headless, in seconds:
+eight things marked in a ring round a character. Three are taken up, then a claw takes a job
+on a fourth, reports itself working, and never extends towards it. The same eight offset two
+tiles away go in a couple of seconds.
+
+What is ruled out, all measured on that reproduction:
+
+- **Distance.** Every one of the eight is taken when it is the only thing marked, including
+  the one underfoot and the ones behind.
+- **The thing underfoot.** Eight round with the middle left out stalls the same way, and the
+  middle on its own is taken.
+- **Power.** The arm sits on a full buffer with ninety nine megajoules in the grid beside it.
+- **A box with something left in it**, which take_up() waits on for ever. It is empty.
+- **The box being remade under the claw.** catcher_at() teleports an existing box rather
+  than making a new one.
+- **A wedged inserter.** Take the arm away mid stall and the fresh one stalls identically on
+  a new target.
+- **The engine refusing the shape.** An inserter of the same prototype, placed by hand with
+  a chest to take from, swings out to 2.34 tiles every time -- with the source empty, with
+  the drop a fifth of a tile from its base, teleported to its own position every tick, and
+  re-aimed every tick. All four are things the mod does to an arm and none of them freeze a
+  hand.
+- **Something sharing the pickup tile.** The box stands 0.7 of a tile off its target, being
+  lifted the way everything else is, so on packed work a neighbour's own tile is under it
+  and a transport belt is a perfectly good inserter source. Destroying the neighbour mid
+  stall does not free the claw, and on a second run nothing contained the pickup point at
+  all.
+
+So the engine is willing and the arm is not wedged, and what the mod does every tick is not
+what stops it. What is left is something about the state the mod leaves a fetch in after a
+few of them have been done nearby.
 
 ## 19. A delivery lands without the claw getting there
 

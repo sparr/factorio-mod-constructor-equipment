@@ -564,6 +564,29 @@ describe("several things marked side by side", function()
     end)
   end)
 
+  --- Work packed round somebody standing still stalls, and this is as far as it has been
+  --- run down. Eight marked in a ring round a character: three go, and then a claw takes a
+  --- job on a fourth, reports itself working, and never extends towards it. Five of eight
+  --- after thirty seconds, where the same eight offset two tiles away go in a couple of
+  --- seconds.
+  ---
+  --- Kept as a measurement rather than an expectation. It is not asserted at eight, because
+  --- eight is not what happens and a test that fails every run tells nobody anything.
+  it("PROBE: how much of a ring round its owner gets taken up", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true,
+      "power-armor")
+    player.get_inventory(defines.inventory.character_main).clear()
+    doomed_at{ { -1, -1 }, { 0, -1 }, { 1, -1 }, { -1, 0 },
+               { 1, 0 }, { -1, 1 }, { 0, 1 }, { 1, 1 } }
+    after_ticks(1800, function()
+      helpers.write_file("ring.txt",
+        ("a ring of eight round its owner: %d taken up in 1800 ticks\n")
+          :format(player.get_item_count(BELT)), false)
+      assert.is_true(player.get_item_count(BELT) > 0,
+        "none of a ring of eight was taken up at all")
+    end)
+  end)
+
   it("clears a solid block of nine", function()
     world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
     player.get_inventory(defines.inventory.character_main).clear()

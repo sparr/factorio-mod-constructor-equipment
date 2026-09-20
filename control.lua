@@ -170,6 +170,7 @@ local function setup()
   storage.constructor_ramped = storage.constructor_ramped or {}
   -- who has switched their arms off from the toolbar, by player index
   storage.constructor_off = storage.constructor_off or {}
+  storage.constructor_shunned = storage.constructor_shunned or {}
   -- what each player's button was last told, so it is only set when it changes
   storage.constructor_button = storage.constructor_button or {}
   -- where each player's wearer stood last tick, and how far they moved to get there
@@ -1290,6 +1291,42 @@ local function claim_of(work)
   return work.unit_number or ("at " .. work.position.x .. "," .. work.position.y)
 end
 
+---Set a piece of work aside for a while, because it has just defeated an arm.
+---
+---An arm that runs over the swing limit gives the thing up and comes home, and then chooses
+---again. What it chooses is the same thing: nothing about the choosing has changed, and it
+---was the best by cost a moment ago. So it sets off, fails the same way, and the two of them
+---go round for as long as anybody is watching. Measured on eight things marked in a ring
+---round somebody standing still, three were taken up and the arm spent the rest of the run
+---on the other five, three hundred ticks at a time, and took none of them.
+---
+---Set aside for one swing limit, which is long enough that the arm has something else in
+---hand by the time it comes round again, and short enough that nothing is written off.
+---@param work LuaEntity?
+local function set_aside(work)
+  if not (work and work.valid) then return end
+  storage.constructor_shunned = storage.constructor_shunned or {}
+  storage.constructor_shunned[claim_of(work)] = game.tick
+end
+
+---Whether this is something an arm has just failed at and should leave alone for now.
+---@param work LuaEntity
+---@return boolean
+local function set_aside_still(work)
+  local list = storage.constructor_shunned
+  if not list then return false end
+  local key = claim_of(work)
+  local when = list[key]
+  if not when then return false end
+  -- Forgotten as it is asked about rather than swept: what is asked about is what is in
+  -- reach, and anything out of reach costs nothing to leave in the table.
+  if game.tick - when > SWING_LIMIT then
+    list[key] = nil
+    return false
+  end
+  return true
+end
+
 ---Whether a piece of work is something to be taken up rather than put down.
 ---
 ---Asked before the upgrade question, because a thing marked for deconstruction is still a
@@ -1773,6 +1810,7 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
       -- space the other had already built in, and coming home having wasted a swing.
       if (item or (taking(ghost) and room_for(inventory, ghost)))
           and not (claimed and claimed[claim_of(ghost)])
+          and not set_aside_still(ghost)
           and not standing_in(ghost, standing)
           and not out_of_reach(record, from, ghost.position, range)
           and buildable(ghost) then
@@ -3853,6 +3891,9 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     -- deliveries, and never home.
     local over = game.tick - (job.leg or job.started or game.tick) > SWING_LIMIT
     if over then
+      -- Before abandon(), which is what takes the ghost off the job. Whatever has just cost
+      -- an arm a whole swing limit is the last thing it should pick next.
+      set_aside(job.ghost)
       abandon(record, job)
     elseif not still_wanted(job.ghost)
         or standing_in(job.ghost, wearer.position)
