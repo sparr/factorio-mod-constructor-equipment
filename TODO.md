@@ -71,13 +71,37 @@ happened with.
 
 ## 18. Arms get stuck out holding nothing
 
-A claw sits at a ghost, tracking it as its owner moves, doing nothing. Seen on a spidertron
-after movements in every direction, on a car once, and most often on the train.
+The moving one no longer sticks: a round whose counter and whose claw had come apart now
+ends instead of waiting for a load that is never coming. What causes them to come apart is
+known and is not fixed.
 
-There is a standing-still version in 20 that reproduces every run, headless, in seconds:
-eight things marked in a ring round a character. Three are taken up, then a claw takes a job
-on a fourth, reports itself working, and never extends towards it. The same eight offset two
-tiles away go in a couple of seconds.
+**One arm's box catches another arm's load.** The engine empties a hand into whatever
+container stands at its drop position and does not ask whose it is. Every arm keeps its own
+box, and on a wearer with more than one arm those boxes can end up a third of a tile apart,
+because two arms working neighbouring ghosts are aimed at neighbouring points.
+
+Traced tick by tick on a train with two arms. At tick 2619 both hold a belt, boxes at
+9.9,1.7 and 10.3,2.0. At 2620 the first arm's hand is empty, its own box is still empty, and
+the second arm has revived its ghost -- while still holding its own belt, untouched. The
+first arm's belt went into the second arm's box and was spent on the second arm's ghost.
+
+Nothing is lost by it: a ghost is built, the thief carries its own load home, and the arm it
+was taken from ends its round. What it costs is a journey, and it is why arms on a train
+were the worst of it -- eight of them working the same line of ghosts.
+
+It needs two arms. One never does it; two, four and eight all do.
+
+A fix was tried and taken back out: refusing a box's contents unless this claw was what
+emptied into it. It works, and it strands the foreign belt in a box that is then taken away
+with it still inside -- seven belts destroyed over a run, where before nothing was. Anything
+along those lines has to settle what to do with a load that has landed in the wrong box
+before it refuses to spend it.
+
+**The standing-still one is a different fault and is not fixed.** It reproduces every run,
+headless, in seconds: eight things marked in a ring round a character. Three are taken up,
+then a claw takes a job on a fourth, reports itself working, and never extends towards it.
+The same eight offset two tiles away go in a couple of seconds, and none of the above makes
+any difference to it.
 
 What is ruled out, all measured on that reproduction:
 
@@ -96,18 +120,10 @@ What is ruled out, all measured on that reproduction:
   the drop a fifth of a tile from its base, teleported to its own position every tick, and
   re-aimed every tick. All four are things the mod does to an arm and none of them freeze a
   hand.
-- **Something sharing the pickup tile.** The box stands 0.7 of a tile off its target, being
-  lifted the way everything else is, so on packed work a neighbour's own tile is under it
-  and a transport belt is a perfectly good inserter source. Destroying the neighbour mid
-  stall does not free the claw, and on a second run nothing contained the pickup point at
-  all.
-- **The box itself.** A bare inserter told to pick up from the mod's own catcher, empty,
-  reaches it as readily as it reaches an iron chest, and goes on doing so with four marked
-  belts crowded round it.
-
-So the engine is willing and the arm is not wedged, and what the mod does every tick is not
-what stops it. What is left is something about the state the mod leaves a fetch in after a
-few of them have been done nearby.
+- **The box itself.** That same bare inserter reaches the mod's own catcher, empty, as
+  readily as an iron chest, and goes on doing so with four marked belts crowded round it.
+- **Something sharing the pickup tile.** Destroying the neighbour mid stall does not free
+  the claw.
 
 ## 20. Deconstruction leaves items behind and will not take up what is underfoot
 

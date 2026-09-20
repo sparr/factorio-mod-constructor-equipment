@@ -80,6 +80,11 @@ local HOME = 0.4
 --- nine laid round somebody's feet gave up one and left the other eight on the ground. A
 --- claw with a journey behind it got home only because the window widens by what the hand
 --- was last seen covering, and a claw that has not moved has covered nothing.
+---
+--- A tick of travel is allowed on top of it wherever it is used. A hand does not come to
+--- rest at exactly this radius on a mount that is moving -- it lags its own base by up to a
+--- step -- and an arm on a train was measured home and empty at 0.73 out, holding a job it
+--- had finished for eighty three ticks because the window stopped a hair short of that.
 local RETRACTED = reach.BORN - REST
 
 --- How little a hand has to move in a tick to count as having stopped.
@@ -3951,12 +3956,31 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
       take_up(player, wearer, record, job, claimed, nearby,
         from, tier_of(record).range)
     else
-      -- deliver() does nothing until the box has been given something, so there is no
-      -- arrival to measure and nothing to step over: it can simply be asked every tick
-      deliver(player, wearer, from, record, job, claimed, nearby)
+      -- A round that has run out without noticing. What is left of a round is what is left
+      -- in the claw, which redirect() checks before it turns a claw to the next ghost and
+      -- nothing checked afterwards. A hand that empties some other way leaves the counter
+      -- saying there is another delivery to make, and deliver() waits for a load into a box
+      -- that nothing is going to fill.
+      --
+      -- What that looks like is the claw sitting on the ghost it crossed to, turning and
+      -- stretching to stay exactly on it as its owner drives away, holding nothing and
+      -- doing nothing, until the swing limit gives up. Measured on a train run along a line
+      -- of ghosts: seventy three ticks of it, with the hand empty, the box empty, nothing
+      -- set aside, and the counter still saying one to go.
+      local inside = record.catcher and record.catcher.valid
+        and record.catcher.get_inventory(defines.inventory.chest)
+      if not arm.held_stack.valid_for_read and (job.escrow or 0) == 0
+          and (not inside or inside.is_empty()) then
+        abandon(record, job)
+      else
+        -- deliver() does nothing until the box has been given something, so there is no
+        -- arrival to measure and nothing to step over: it can simply be asked every tick
+        deliver(player, wearer, from, record, job, claimed, nearby)
+      end
     end
   elseif reach.distance(arm.held_stack_position, record.rest or mounting(wearer, slot, count))
-        < within(tier_of(record), math.max(HOME, RETRACTED + SETTLED), moved)
+        < within(tier_of(record), math.max(HOME, RETRACTED + reach.step(tier_of(record))),
+            moved)
       or game.tick - (job.leg or job.started or game.tick) > SWING_LIMIT then
     -- Home is the mounting point, which is not where the character's feet are. Anything
     -- still in the claw was paid for on the way out, so it is handed back rather than

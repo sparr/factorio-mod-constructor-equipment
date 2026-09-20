@@ -369,3 +369,108 @@ describe("what a vehicle leaves behind", function()
     end)
   end
 end)
+
+--- A claw glued to a ghost. The shape of it is a hand out at the thing it crossed to,
+--- turning and stretching to stay exactly on it as its owner drives away, holding nothing
+--- and doing nothing, until the swing limit gives up five seconds later.
+---
+--- What is behind it is a round whose counter and whose claw have come apart: the counter
+--- says there is another delivery to make and the hand is empty, so deliver() waits for a
+--- load into a box that nothing is going to fill. redirect() checks the two against each
+--- other before it turns a claw to the next ghost, and nothing checked afterwards.
+---
+--- Driven rather than set going, because that is what turned it up: run, ease off, stop,
+--- back up, run again.
+describe("a train driven up and down a line of ghosts", function()
+  local RAILS_FROM, RAILS_TO = -60, 260
+  local BELTS = 200
+
+  it("never leaves a claw sitting on a ghost with nothing to give it", function()
+    local surface, y = player.surface, world.ORIGIN.y
+    for x = world.ORIGIN.x + RAILS_FROM, world.ORIGIN.x + RAILS_TO, 2 do
+      surface.create_entity{ name = "straight-rail", position = { x, y },
+        direction = defines.direction.east, force = player.force }
+    end
+    local loco = surface.create_entity{ name = "locomotive",
+      position = { world.ORIGIN.x - 20, y }, direction = defines.direction.east,
+      force = player.force }
+    local wagon = surface.create_entity{ name = "cargo-wagon",
+      position = { world.ORIGIN.x - 27, y }, direction = defines.direction.east,
+      force = player.force }
+    loco.insert{ name = "nuclear-fuel", count = 5 }
+    wagon.insert{ name = BELT, count = BELTS }
+    -- the showroom's own locomotive kit, and its own layout: eight of the second tier, and
+    -- ghosts two tiles either side of the rail, one tile apart
+    local grid = {}
+    for _ = 1, 8 do grid[#grid + 1] = tiers.by_level[2].name end
+    grid[#grid + 1] = "battery-equipment"
+    world.fit(loco, grid, true)
+    loco.train.manual_mode = true
+    loco.set_driver(player)
+    for x = 6, 120 do
+      for _, dy in ipairs{ -2, 2 } do world.ghost(player, BELT, x, dy) end
+    end
+
+    local began, stuck, worst = game.tick, {}, 0
+    world.once(function()
+      local phase = ((game.tick - began) % 300)
+      if phase < 120 then loco.train.speed = 0.25
+      elseif phase < 150 then loco.train.speed = 0.05
+      elseif phase < 180 then loco.train.speed = 0
+      elseif phase < 240 then loco.train.speed = -0.15
+      else loco.train.speed = 0.3 end
+      for slot, record in pairs(storage.constructor_arms[player.index] or {}) do
+        local arm, job = record.entity, record.job
+        local glued = false
+        if arm and arm.valid and job and job.target then
+          local hand = arm.held_stack_position
+          glued = not arm.held_stack.valid_for_read
+            and reach.distance(arm.position, hand) > 1
+            and reach.distance(hand, { x = job.target.x,
+                  y = job.target.y - (record.lift or 0) }) < 0.5
+        end
+        stuck[slot] = glued and (stuck[slot] or 0) + 1 or 0
+        worst = math.max(worst, stuck[slot])
+      end
+      return game.tick - began > 1200
+    end, function()
+      loco.train.speed = 0
+      -- A claw does pass through this for a tick or two on any ordinary arrival. Five
+      -- seconds of it is the swing limit, and what was measured before was seventy three.
+      assert.is_true(worst < 40,
+        ("a claw sat on a ghost holding nothing for %d ticks"):format(worst))
+      local built = surface.count_entities_filtered{ name = BELT,
+        position = world.ORIGIN, radius = 300 }
+      local loose = 0
+      for _, item in ipairs(surface.find_entities_filtered{ name = "item-on-ground",
+            position = world.ORIGIN, radius = 300 }) do
+        if item.stack and item.stack.valid_for_read and item.stack.name == BELT then
+          loose = loose + item.stack.count
+        end
+      end
+      local held = wagon.valid
+        and wagon.get_inventory(defines.inventory.cargo_wagon).get_item_count(BELT) or 0
+      -- and what is still in the air at the end of the run: a claw part way through a
+      -- delivery, or a box standing on a ghost waiting for one
+      local flying = 0
+      for _, record in pairs(storage.constructor_arms[player.index] or {}) do
+        local arm, box = record.entity, record.catcher
+        if arm and arm.valid and arm.held_stack.valid_for_read
+            and arm.held_stack.name == BELT then
+          flying = flying + arm.held_stack.count
+        end
+        if box and box.valid then
+          flying = flying + box.get_inventory(defines.inventory.chest).get_item_count(BELT)
+        end
+      end
+      assert.are.equal(0, loose, ("%d belts were left on the ground"):format(loose))
+      -- and the driver's own pockets, which is where a belt goes if an arm is ever handed
+      -- back to a character rather than to the train
+      local pocketed = player.get_main_inventory().get_item_count(BELT)
+      assert.are.equal(BELTS, built + held + flying + pocketed,
+        ("a belt was made or lost: %d built, %d in the wagon, %d in the air, %d in pockets")
+          :format(built, held, flying, pocketed))
+      assert.is_true(built > 100, ("only %d belts went down"):format(built))
+    end, "the run never ended", 1300)
+  end)
+end)
