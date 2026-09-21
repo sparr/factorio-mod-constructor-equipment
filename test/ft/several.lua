@@ -207,3 +207,52 @@ describe("three of the equipment", function()
     end)
   end)
 end)
+
+--- Somebody else's arms are arms too.
+---
+--- What each arm is reaching for used to be gathered from one wearer's own list, so nothing
+--- stopped two players standing over the same ghost both sending a claw to it: one of them
+--- builds it and the other carries its load all the way home for nothing.
+---
+--- There is no making a second player in the harness -- a player comes from a connection --
+--- so the other wearer is stood up in storage instead. That is all the gathering reads of
+--- one: a record with a job holding a ghost.
+describe("a ghost somebody else's arm has claimed", function()
+  local ELSEWHERE = 99
+  local MINE = { world.SPOTS[1][1], world.SPOTS[1][2] }
+  local THEIRS = { world.SPOTS[2][1], world.SPOTS[2][2] }
+
+  before_each(function()
+    world.equipped_with(player, 1)
+    player.insert{ name = BELT, count = 20 }
+  end)
+
+  after_each(function()
+    storage.constructor_arms[ELSEWHERE] = nil
+  end)
+
+  it("is left alone until the claim goes", function()
+    local spoken_for = world.ghost(player, BELT, THEIRS[1], THEIRS[2])
+    storage.constructor_arms[ELSEWHERE] = { { job = { ghost = spoken_for } } }
+    after_ticks(world.CYCLE, function()
+      assert.is_true(spoken_for.valid,
+        "an arm built a ghost another player's arm was already reaching for")
+      storage.constructor_arms[ELSEWHERE] = nil
+    end)
+    after_ticks(world.CYCLE * 2, function()
+      assert.is_false(spoken_for.valid,
+        "the ghost was still standing after the other player's claim went, so it was not"
+        .. " the claim keeping the arm off it")
+    end)
+  end)
+
+  it("sends the arm to another one rather than nothing", function()
+    local spoken_for = world.ghost(player, BELT, THEIRS[1], THEIRS[2])
+    local free = world.ghost(player, BELT, MINE[1], MINE[2])
+    storage.constructor_arms[ELSEWHERE] = { { job = { ghost = spoken_for } } }
+    after_ticks(world.DELIVERED, function()
+      assert.is_false(free.valid, "the arm did not build the ghost nobody had claimed")
+      assert.is_true(spoken_for.valid, "the arm built the claimed ghost as well")
+    end)
+  end)
+end)

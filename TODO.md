@@ -44,11 +44,6 @@ orientation, which is worth more than a chain of circles once a cone is long and
 car's cone returns 330 candidates in one call against 435 in four. Wants a quiet machine to
 measure properly.
 
-**Two players can reach for the same ghost.** claims() is built from one wearer's own arms,
-so nothing stops a second player's arm setting off for something already spoken for. It
-predates any of this, and leading makes it likelier by lengthening how long an arm is
-committed.
-
 **The walking penalty is switched off.** tiers.SLOWS, with thirty tests skipped behind it.
 It is not only a cost: a slower wearer has a wider cone, so putting it back makes the low
 tiers reach further to the side than they do now.

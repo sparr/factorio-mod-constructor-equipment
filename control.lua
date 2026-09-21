@@ -1290,10 +1290,16 @@ end
 ---A unit number where there is one, and where there is not, the ground it stands on. A
 ---cliff has no unit number: it is scenery the map generator laid down rather than something
 ---built, and a search for one comes back with nothing to key a claim on.
+---
+---Which ground, surface and all. A unit number is the whole game's, and claims and the
+---shunned list are both the whole game's too, so a key made of coordinates alone has a
+---cliff on Nauvis and a cliff at the same spot on Vulcanus claiming and shunning each
+---other.
 ---@param work LuaEntity
 ---@return string|integer
 local function claim_of(work)
-  return work.unit_number or ("at " .. work.position.x .. "," .. work.position.y)
+  return work.unit_number
+    or ("at " .. work.surface.index .. ":" .. work.position.x .. "," .. work.position.y)
 end
 
 ---Set a piece of work aside for a while, because it has just defeated an arm.
@@ -3739,19 +3745,34 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
   return true
 end
 
----What each of a player's arms is already reaching for, so that no two go for the same
+---What every arm in the game is already reaching for, so that no two go for the same
 ---ghost.
----@param list table[]
----@return table<integer, boolean>
+---
+---Every arm rather than the asking player's own. This was built from one wearer's list, so
+---nothing stopped a second player's arm setting off for something already spoken for: both
+---claws cross to the same ghost, one of them builds it, and the other carries its load all
+---the way home for nothing. Leading makes it likelier by lengthening how long an arm is
+---committed to what it chose.
+---
+---The asking list is walked first and then everybody else's, skipping it where it comes
+---round again: it is the stored table itself, so the two are the same object.
+---@param list table[] the arms about to be asked
+---@return table<string|integer, boolean>
 local function claims(list)
   local claimed = {}
-  for _, record in pairs(list) do
-    local job = record.job
-    if job and job.ghost and job.ghost.valid then
-      claimed[claim_of(job.ghost)] = true
-      local partner = paired_with(job.ghost)
-      if partner then claimed[claim_of(partner)] = true end
+  local function note(records)
+    for _, record in pairs(records) do
+      local job = record.job
+      if job and job.ghost and job.ghost.valid then
+        claimed[claim_of(job.ghost)] = true
+        local partner = paired_with(job.ghost)
+        if partner then claimed[claim_of(partner)] = true end
+      end
     end
+  end
+  note(list)
+  for _, other in pairs(storage.constructor_arms or {}) do
+    if other ~= list then note(other) end
   end
   return claimed
 end
