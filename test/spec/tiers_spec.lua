@@ -58,13 +58,15 @@ describe("the tiers", function()
     end
   end)
 
-  -- Rotation is not the base game's figure, for the last two tiers. Those numbers are
-  -- tuned against an inserter that reaches one tile, and on a four or five tile arm they
-  -- make the turn look instantaneous against an extension that crawls. Dividing by how
-  -- much further the tier reaches puts the two halves of a swing back in the base game's
-  -- proportion, a shade longer turning round than reaching out.
+  -- Rotation is not the base game's figure at any tier. For the last two, those numbers
+  -- are tuned against an inserter that reaches one tile, and on a four or five tile arm
+  -- they make the turn look instantaneous against an extension that crawls. Dividing by
+  -- how much further the tier reaches puts the two halves of a swing back in the base
+  -- game's proportion, a shade longer turning round than reaching out. Then every tier is
+  -- taken to 0.85 of what that leaves, because an arm at the full figure whips its claw
+  -- round. lib.tiers says how far that could go and what stops it going further.
   it("turns at a speed its own reach can keep up with", function()
-    local wanted = { 0.014, 0.02, 0.01, 0.008 }
+    local wanted = { 0.0119, 0.017, 0.0085, 0.0068 }
     for level, speed in ipairs(wanted) do
       assert.are.equal(speed, tiers.list[level].rotation, "tier " .. level .. " rotation")
     end
@@ -93,10 +95,12 @@ describe("the tiers", function()
     end
   end)
 
+  -- Reach and extension are the plain inserter's own. Rotation is not: it is that
+  -- inserter's 0.014 taken to 0.85, the same as every tier is.
   it("starts where the plain inserter does", function()
     assert.are.equal(2, tiers.list[1].range)
     assert.are.equal(0.035, tiers.list[1].extension)
-    assert.are.equal(0.014, tiers.list[1].rotation)
+    assert.are.equal(0.0119, tiers.list[1].rotation)
   end)
 
   -- What the base game charges that same inserter, unscaled. Four times these was tried and

@@ -112,6 +112,18 @@ local HAND = {
 --- What actually differs from tier to tier: how far it reaches, whose arm it borrows and
 --- so what colour it is, how much room it takes in an armour, and what it is made of.
 ---
+--- Every rotation below is 0.85 of the figure it would otherwise be, because an arm that
+--- turns at the full figure whips its claw round faster than anything that size should.
+--- How much could come off is decided by what the swing can carry rather than by what
+--- looks right: a claw that cannot make the next bearing in time comes home instead of
+--- crossing, and the turn is then paid for twice. Measured over the whole fixture suite, a
+--- third off is far more than it carries -- a row of four two tiles abeam went from four
+--- built on one journey to two over two, and a block of nine marked for deconstruction
+--- wanted thirty of the harness's cycles where it had wanted six -- a quarter off still
+--- loses a walk past marked things and a bulk claw's round of four, and a fifth off costs
+--- nothing any fixture measures. 0.85 is inside that with room to spare. Taking more than
+--- a fifth wants the crossing horizon opened up to match.
+---
 --- The colours are the base game's own inserter tiers rather than tints, so an arm is
 --- always a colour a player has seen before. So are the prices: what a tier costs to swing
 --- and to sit idle is the price the base game charges for that same inserter.
@@ -119,7 +131,7 @@ local DEFINED = {
   {
     reach = 2,
     hand = "inserter", colour = "yellow",
-    extension = 0.035, rotation = 0.014,
+    extension = 0.035, rotation = 0.0119,
     width = 1, height = 2, movement = 5000, drain = "0.4kW",
     slows = 1,
     craft = 10,
@@ -133,7 +145,7 @@ local DEFINED = {
   {
     reach = 3,
     hand = "long-handed-inserter", colour = "red",
-    extension = 0.05, rotation = 0.02,
+    extension = 0.05, rotation = 0.017,
     width = 1, height = 3, movement = 5000, drain = "0.4kW",
     slows = 2/3,
     craft = 15,
@@ -152,7 +164,8 @@ local DEFINED = {
     -- borrows. A fast inserter spends a shade longer turning round than reaching its one
     -- tile; keeping its 0.04 on a four tile arm made the turn look instant against a
     -- crawling extension. Dividing by the reach puts the two back in vanilla's proportion.
-    extension = 0.1, rotation = 0.01,
+    -- That sum gives 0.01, and 0.85 of it is what is written, for the reason above.
+    extension = 0.1, rotation = 0.0085,
     width = 1, height = 4, movement = 7000, drain = "0.5kW",
     slows = 1/3,
     craft = 20,
@@ -171,8 +184,9 @@ local DEFINED = {
   {
     reach = 5,
     hand = "bulk-inserter", colour = "green",
-    -- The same again, over five tiles rather than four. See the tier above.
-    extension = 0.1, rotation = 0.008,
+    -- The same again, over five tiles rather than four. See the tier above: that sum gives
+    -- 0.008, and 0.85 of it is what is written.
+    extension = 0.1, rotation = 0.0068,
     -- Carries what a bulk inserter carries, and is charged what a bulk inserter is
     -- charged. No head start of its own: whatever the capacity research has bought, this
     -- holds exactly that and no more.

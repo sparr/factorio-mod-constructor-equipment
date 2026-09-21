@@ -188,12 +188,14 @@ What is ruled out, all measured on that reproduction:
 
 ## 22. An arm turns too fast
 
-Take a third off the rotation speed. Not done: measured, a third is more than the swing can
-carry. A claw that carries several stops crossing altogether at walking pace -- a row of
-four two tiles abeam went from four built on one journey to two over two, and no layout
-tried still crossed -- and a block of nine marked for deconstruction went from wanting six
-of the harness's cycles to wanting thirty, because a claw that cannot make the next bearing
-in time comes home rather than crossing and the turn is paid for twice. A walk past three
-scattered ghosts lost the last of the three. Wants a smaller reduction, or the crossing
-horizon opened up to match, and the numbers above are at the edge of the noise in those
-fixtures either way.
+A seventh is off every tier's rotation and that is as much as the swing carries without
+opening the crossing horizon up to match. Measured over the whole fixture suite: a third
+off, which is what was asked for, costs a claw its crossings -- a row of four two tiles
+abeam went from four built on one journey to two over two, and a block of nine marked for
+deconstruction wanted thirty of the harness's cycles where it had wanted six. A quarter off
+still loses a walk past marked things and a bulk claw's round of four. A fifth off costs
+nothing any fixture measures.
+
+What is left is the horizon. A claw gives up a crossing it cannot make the next bearing for
+in time, and that test is what a slower turn runs into; opening it up is what would let the
+full third come off.
