@@ -4,6 +4,7 @@ Version: 2.1.6
     - The arms now reach for where a ghost will be by the time the claw gets there rather than for where it stands, so things go up while you are walking or driving past that could not be built at all before: the smallest arm meets things more than three times its own reach ahead of itself, and the largest more than twice
     - A claw that carries several things now sets off with as much as the whole round will come within reach of, rather than only what is within reach at the moment it leaves, so a row alongside your path goes up in one trip instead of the near end of it going up and the rest being walked past
   Changes:
+    - The arms cost a fraction of what they did to work out what to reach for next, six to nine times less while you are moving, which is when they cost the most
     - An arm turns its claw more slowly, so a hand swings round at a speed that suits the size of the thing rather than snapping between bearings
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
   Bugfixes:

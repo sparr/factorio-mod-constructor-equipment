@@ -669,3 +669,134 @@ describe("a hand that has to turn as well as stretch", function()
     assert.is_true(checked > 5000, "the spread was too small at " .. checked)
   end)
 end)
+
+--- The cheap cone test, which exists to throw candidates away before anything expensive is
+--- spent on them. The only thing that matters about it is that it never throws away
+--- anything real: it may keep more than reach.meets would, and it may not keep less.
+describe("the cheap cone test", function()
+  local reach = require("lib.reach")
+
+  local ARMS = {
+    { range = 2, extension = 0.035 },
+    { range = 3, extension = 0.05 },
+    { range = 5, extension = 0.1 },
+  }
+  local DRIFTS = {
+    { x = 0, y = 0 }, { x = 0.15, y = 0 }, { x = 0, y = -0.3 },
+    { x = 0.3, y = 0.3 }, { x = -0.45, y = 0.2 }, { x = 0.05, y = -0.02 },
+  }
+
+  it("keeps everything reach.meets says is really in reach", function()
+    local tested, kept = 0, 0
+    for _, arm in ipairs(ARMS) do
+      for _, drift in ipairs(DRIFTS) do
+        local ticks = (arm.range - reach.BORN) / arm.extension
+        local cone = reach.cone(arm, drift, ticks)
+        for x = -30, 30 do
+          for y = -30, 30 do
+            local offset = { x = x * 0.5, y = y * 0.5 }
+            if reach.meets(arm, drift, offset, ticks) then
+              tested = tested + 1
+              if reach.in_cone(cone, offset) then kept = kept + 1 end
+            end
+          end
+        end
+      end
+    end
+    assert.is_true(tested > 500, "the sweep found almost nothing to test: " .. tested)
+    assert.are.equal(tested, kept,
+      ("the cone test threw away %d of the %d spots that are really in reach"):format(
+        tested - kept, tested))
+  end)
+
+  it("is tighter than the circle the search draws round the same cone", function()
+    local arm = { range = 5, extension = 0.1 }
+    local drift = { x = 0.45, y = 0 }
+    local ticks = (arm.range - reach.BORN) / arm.extension
+    local cone = reach.cone(arm, drift, ticks)
+    local _, radius = reach.search({ { range = arm.range, ticks = ticks } }, drift)
+    local inside, circled = 0, 0
+    for x = -60, 60 do
+      for y = -60, 60 do
+        local offset = { x = x * 0.5, y = y * 0.5 }
+        if reach.in_cone(cone, offset) then inside = inside + 1 end
+        if offset.x * offset.x + offset.y * offset.y <= radius * radius * 4 then
+          circled = circled + 1
+        end
+      end
+    end
+    assert.is_true(inside < circled,
+      ("the cone kept %d where a circle keeps %d"):format(inside, circled))
+  end)
+end)
+
+--- The box the search is drawn as when its owner is moving. It exists to be cheaper than
+--- the circle, and the only thing that would make it wrong is leaving something out.
+describe("the oriented search box", function()
+  local reach = require("lib.reach")
+
+  local DRIFTS = {
+    { x = 0.15, y = 0 }, { x = 0, y = -0.3 }, { x = 0.3, y = 0.3 },
+    { x = -0.45, y = 0.2 }, { x = 0.05, y = -0.02 }, { x = -0.2, y = -0.35 },
+  }
+
+  ---Whether a spot seen from the wearer is inside the box.
+  local function holds(middle, long, wide, turned, offset)
+    local angle = turned * 2 * math.pi
+    local dx, dy = offset.x - middle.x, offset.y - middle.y
+    local along = dx * math.cos(angle) + dy * math.sin(angle)
+    local across = -dx * math.sin(angle) + dy * math.cos(angle)
+    return math.abs(along) <= long + 1e-9 and math.abs(across) <= wide + 1e-9
+  end
+
+  it("holds everything the arms on a wearer can really meet", function()
+    local SETS = {
+      { { range = 2, extension = 0.035 } },
+      { { range = 5, extension = 0.1 } },
+      { { range = 2, extension = 0.035 }, { range = 5, extension = 0.1 } },
+    }
+    local tested, held = 0, 0
+    for _, set in ipairs(SETS) do
+      for _, drift in ipairs(DRIFTS) do
+        local arms = {}
+        for index, arm in ipairs(set) do
+          arms[index] = { range = arm.range,
+                          ticks = (arm.range - reach.BORN) / arm.extension }
+        end
+        local middle, long, wide, turned = reach.search_box(arms, drift)
+        assert.is_not_nil(middle, "a moving wearer was given no box at all")
+        for x = -60, 60 do
+          for y = -60, 60 do
+            local offset = { x = x * 0.5, y = y * 0.5 }
+            local reachable = false
+            for index, arm in ipairs(set) do
+              if reach.meets(arm, drift, offset, arms[index].ticks) then reachable = true end
+            end
+            if reachable then
+              tested = tested + 1
+              if holds(middle, long, wide, turned, offset) then held = held + 1 end
+            end
+          end
+        end
+      end
+    end
+    assert.is_true(tested > 1000, "the sweep found almost nothing to test: " .. tested)
+    assert.are.equal(tested, held,
+      ("the box left out %d of the %d spots the arms can really meet"):format(
+        tested - held, tested))
+  end)
+
+  it("covers less ground than the circle it replaces", function()
+    local arms = { { range = 5, ticks = (5 - reach.BORN) / 0.1 } }
+    local drift = { x = 0.45, y = 0 }
+    local _, radius = reach.search(arms, drift)
+    local _, long, wide = reach.search_box(arms, drift)
+    assert.is_true(long * wide * 4 < radius * radius * math.pi,
+      ("the box covers %.0f square tiles where the circle covers %.0f"):format(
+        long * wide * 4, radius * radius * math.pi))
+  end)
+
+  it("hands back nothing at all for a wearer standing still", function()
+    assert.is_nil(reach.search_box({ { range = 5, ticks = 43 } }, { x = 0, y = 0 }))
+  end)
+end)

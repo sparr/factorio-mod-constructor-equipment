@@ -167,6 +167,41 @@ function reach.search(arms, drift)
     (ahead + behind) / 2
 end
 
+---The same ground as reach.search, drawn as a box lying along the way its owner is going.
+---
+---A circle round a moving arm's reach is mostly the ground either side of it. What the arms
+---between them can touch runs from a reach behind the wearer to a reach plus a walk ahead,
+---and is never wider than the longest reach -- so a circle whose radius is half that length
+---is as wide as it is long, and at a train's speed that is fourteen tiles of width around
+---five tiles of arm.
+---
+---find_entities_filtered honours a BoundingBox orientation, so the box can lie along the
+---walk instead of boxing it in. Measured on a fourth tier arm in a packed field behind a
+---train: 673 candidates and 188 microseconds for the circle against 275 and 100 for the box.
+---
+---Laid along positive x and then turned, because that is the mapping the engine uses: a box
+---along x with orientation a is a box along the bearing a turns clockwise from x.
+---
+---Nothing is gained standing still, where the box is a square round a circle and a quarter
+---more area for nothing, so this hands back nil and the caller draws the circle instead.
+---@param arms {range: number, ticks: number}[]
+---@param drift {x: number, y: number}
+---@return {x: number, y: number}?, number?, number?, number? centre, half length, half
+---        width, orientation
+function reach.search_box(arms, drift)
+  local speed = math.sqrt(drift.x * drift.x + drift.y * drift.y)
+  if speed <= 0 then return nil end
+  local behind, ahead = 0, 0
+  for _, arm in ipairs(arms) do
+    behind = math.max(behind, arm.range)
+    ahead = math.max(ahead, arm.range + speed * arm.ticks)
+  end
+  local along = (ahead - behind) / 2
+  return { x = drift.x / speed * along, y = drift.y / speed * along },
+    (ahead + behind) / 2, behind,
+    atan2(drift.y, drift.x) / (2 * math.pi) % 1
+end
+
 ---Whether an arm could still put something down at a given spot, at any moment between now
 ---and a swing's time from now.
 ---
@@ -443,6 +478,73 @@ end
 ---@return number ticks
 function reach.longest(arm)
   return arm.range / arm.extension + reach.any_way(arm)
+end
+
+---The cone an arm can meet, worked out once so that a spot can be tested against it with
+---nothing but arithmetic.
+---
+---reach.meets answers the same question exactly and costs a quadratic solve to do it, which
+---is too much to spend on a candidate that is only going to be thrown away. Measured over a
+---packed field behind a train, sieving with meets costs more than not sieving at all, while
+---sieving with this is three times better than neither.
+---
+---What it draws is the straight-sided hull of the discs the hand sweeps: a dot product along
+---the way its owner is going, a cross product across it, and a compare against a half width
+---that flares as the hand grows and stops at the reach.
+---
+---A superset, never a trim. The flare is the external tangent to the discs at each end,
+---which stands off the axis by r / cos a rather than r, and the radius is taken at the spot
+---rather than interpolated end to end -- the hand stops growing the moment it is at full
+---stretch, and a straight line between the ends runs under the real thing in the middle.
+---Measured before that was fixed: two real spots of a hundred and fourteen thrown away.
+---@param arm {range: number, extension: number, out: number?}
+---@param drift {x: number, y: number} how far its owner went last tick
+---@param ticks number how far ahead to look
+---@return table
+function reach.cone(arm, drift, ticks)
+  local out = arm.out or reach.BORN
+  local speed = math.sqrt(drift.x * drift.x + drift.y * drift.y)
+  local length = speed * ticks
+  if length <= 1e-9 then
+    return { still = true,
+             radius = math.min(arm.range, out + arm.extension * (ticks + 1)) }
+  end
+  local grow = arm.extension / speed
+  local sina = math.min(grow, 0.999)
+  -- How far behind its own base the hand can still touch, which is not simply the first
+  -- disc's radius. The disc grows while its owner carries it forward, so where the hand
+  -- reaches furthest back is wherever growing has most outrun walking: at the start if the
+  -- walk is the faster, and at full stretch if the hand is. Measured before this was worked
+  -- out properly, a hand drifting at a twentieth of a tile a tick lost forty three of three
+  -- hundred and nineteen spots off its own back doorstep.
+  local capped = (arm.range - out) / arm.extension - 1
+  if capped < 0 then capped = 0 elseif capped > ticks then capped = ticks end
+  local behind = math.max(out + arm.extension,
+    math.min(arm.range, out + arm.extension * (capped + 1)) - speed * capped)
+  return {
+    dirx = drift.x / speed, diry = drift.y / speed,
+    length = length, behind = behind, base = out + arm.extension, grow = grow,
+    cosa = math.sqrt(math.max(1e-6, 1 - sina * sina)), range = arm.range,
+  }
+end
+
+---Whether a spot is inside a cone reach.cone worked out.
+---@param cone table
+---@param offset {x: number, y: number} the spot, seen from the arm's own base
+---@return boolean
+function reach.in_cone(cone, offset)
+  if cone.still then
+    return offset.x * offset.x + offset.y * offset.y <= cone.radius * cone.radius
+  end
+  local along = offset.x * cone.dirx + offset.y * cone.diry
+  if along < -cone.behind or along > cone.length + cone.range then return false end
+  local across = offset.x * cone.diry - offset.y * cone.dirx
+  if across < 0 then across = -across end
+  local held = along
+  if held < 0 then held = 0 elseif held > cone.length then held = cone.length end
+  local wide = (cone.base + held * cone.grow) / cone.cosa
+  if wide > cone.range then wide = cone.range end
+  return across <= wide
 end
 
 ---The circles to search a cone with, laid end to end along it.

@@ -22,21 +22,80 @@ the shape of the cone rather than anything to fix.
 
 What is left.
 
-**The search is wider than it needs to be, and which shape to draw is unmeasured.** It
-draws one circle round a capsule that assumes full stretch from the first tick. What an arm
-can really meet is a cone, and reach.meets and reach.chain measure that exactly, but only
-meets is wired and only for judging a candidate rather than for finding one.
+**The search is wider than it needs to be, and it is now measured what to do about it.**
+It draws one circle round a capsule that assumes full stretch from the first tick, hands
+every candidate to choose(), and choose() prices each one with a swing and then sorts the
+lot. `test/ft/searching.lua` measures four shapes over sixteen scenarios -- two tiers, two
+densities, four speeds -- and three ways of handling what they hand back. Every shape holds
+everything reach.meets says is really there, so correctness is equal and it is all cost.
 
-Three shapes are available and none of them wins everywhere. One circle round the cone is a
-single cheap call that over-reaches most at speed. A chain of circles follows a long thin
-cone but costs a call apiece. An oriented bounding box is one call that fits a needle, and
-should beat the chain once the cone is long enough. First numbers, on a fourth tier arm: 211
-candidates and 0.084ms for the capsule's circle against 116 and 0.036ms for the cone's own,
-and a car's cone at 330 candidates in one oriented call against 435 in four circles.
+find_entities_filtered does honour a BoundingBox orientation: a flat box over a diagonal
+line of fifteen ghosts found three of them, and the same box turned found all fifteen.
 
-What is wanted is a benchmark over the axes that decide it -- the cone's length and width,
-how many things are standing in it, and how thickly -- and from that the thresholds for
-picking a shape. Wants a quiet machine.
+Microseconds a call, best of three runs of three hundred, on a machine carrying a load
+average of two. Tier four, packed, at a train's speed:
+
+| shape | candidates | search | search and sift | sift after a cone test |
+| --- | --- | --- | --- | --- |
+| capsule, which is what is drawn now | 673 | 188 | 5536 | 1704 |
+| the cone's own circle | 490 | 405 | 4010 | 1733 |
+| chain of 4 | 242 | 293 | 1848 | 1444 |
+| chain of 8 | 198 | 395 | 1644 | 1490 |
+| oriented box | 275 | 100 | 2039 | **1380** |
+
+Three things, and the first is much the biggest.
+
+**The sift is the cost, not the search.** Pricing and sorting the candidates runs ten to
+thirty times what the engine call costs -- 5536 against 188 for the capsule. So the number
+of candidates is what matters, and any judgement made on search time alone is wrong.
+
+**Reject outside the cone with arithmetic, before pricing anything.** A dot product along
+the cone's axis, a cross product across it, and a compare against a half width that flares
+with the hand and stops at the reach. That one change takes the shape the mod already draws
+from 5536 to 1704, better than three times, and it needs no new search at all. Sieving with
+reach.meets instead is worse than not sieving: it is a quadratic solve per candidate and
+costs 2533 where the arithmetic costs 1490.
+
+**With that in front of it, the oriented box is the shape.** Its extra candidates stop
+mattering once they are thrown away for a few flops, and it is the cheapest call there is:
+best or equal best in every moving case, at 1380 against the capsule's 1704 here and 780
+against 1194 at tier two. Standing still the capsule still wins, as a square round a circle
+should. A chain is never worth its extra calls.
+
+So: the cheap cone test first, then the box while its owner moves and the circle while they
+stand. Together that is 5536 microseconds to 1380 at tier four in a packed field behind a
+train, and 4694 to 780 at tier two.
+
+**Done: the cone test and the scan are in.** reach.cone and reach.in_cone draw the cone as
+arithmetic, and choose() no longer sorts. It keeps the best candidate as it goes, skips
+anything outside the cone before pricing it, skips the turn -- two arctangents -- for
+anything whose stretch alone already costs more than the best so far, and runs the
+acceptance test only for a candidate that would take the lead. Measured on a packed field
+behind a train at the fourth tier: 5629 microseconds a search to 388.
+
+On a chunkful of the mixed ghosts a blueprint is really made of -- 128 belts, 128 inserters,
+24 assemblers, 24 chests, in `test/ft/chunkful.lua` -- a search costs 88 microseconds
+standing still against 33, 321 walking against 67, and 680 in a car against 139.
+
+**Done: the shape as well.** work_near draws a box lying along the walk wherever its owner
+is moving, and the circle where they are not -- reach.search_box, which hands back nothing
+at all standing still so that the caller falls back by itself. All four of work_near's
+searches share the shape, so the saving is four times over.
+
+Per search on the chunkful, order rotated between runs and each warmed up first, because
+whichever pipeline goes last goes fastest and two doing identical work differed by two to
+one on position alone:
+
+| | candidates, circle then box | sorted, as it was | scanned | box and scanned |
+| --- | --- | --- | --- | --- |
+| standing still | 23, 23 | 99us | 30us | 33us |
+| walking | 61, 49 | 324us | 75us | 52us |
+| in a car | 122, 60 | 697us | 149us | 81us |
+
+Standing still the box is the circle, since search_box declines, and the two differ only by
+noise. Moving, the whole is six to nine times what it was.
+
+Nothing is left of 12 but the walking penalty below.
 
 **The walking penalty is switched off.** tiers.SLOWS, with thirty tests skipped behind it.
 It is not only a cost: a slower wearer has a wider cone, so putting it back makes the low
@@ -109,3 +168,26 @@ swing: set_course offers a lead only where an intercept exists inside the horizo
 holding_course drops one that stops being flyable. A claw that sets off and turns back is
 one that had an intercept and then lost it. `test/ft/steering.lua` drives a train, and
 test/ft/losing.lua drives one at half speed and faster, so the layout is to hand.
+
+## The equipment's own quality does nothing
+
+A legendary arm reaches and swings exactly as far and as fast as a common one. Everything
+about a tier -- its reach, its extension and rotation speeds, what its claw holds, what its
+buffer holds -- comes from lib/tiers.lua by level alone, and nothing anywhere reads the
+quality of the piece in the grid.
+
+What the mod does already handle is the quality of the *work*: a ghost of a legendary belt
+is paid for with a legendary belt, an upgrade to one takes one, and everything that moves an
+item moves it at its own quality. That half is done. It is the equipment itself that is
+inert.
+
+What a quality arm should buy is a question before it is a change. Reach is the obvious
+candidate and the loudest: it is what decides how often a player has to stop and stand
+somewhere else, and a fifth tile is worth more than the throughput figure shows -- see the
+note on the fourth tier's price in lib/tiers.lua. Speed and buffer are the quieter ones. The
+base game's own scaling for equipment is a place to start rather than a thing to copy, since
+a grid's worth of arms is not a solar panel.
+
+Whatever it buys has to come out of the same one number per tier the rest of lib/tiers.lua
+is built on, or the progression stops being checkable: no tier, at any quality, may end up
+worse than the tier below it at the same quality.
