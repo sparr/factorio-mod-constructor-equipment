@@ -142,22 +142,6 @@ horizon, is already 0.5 / rotation -- so slowing the turn widens the horizon by 
 undercuts the idea that the horizon is what a slower turn runs into. Where a refused crossing
 is actually refused wants measuring before the number is touched.
 
-## An arm will not take up what its owner is standing on
-
-Things marked for taking up -- what a downgraded chest spills, say -- are left where they
-are when the player is standing on them.
-
-The first place to look is not the engine but the mod: choose() deliberately passes over
-what its owner stands in and sorts a pickup underfoot to the back of the queue. That rule
-predates leading and predates the deconstruction work, and it may simply be wrong now.
-
-The engine has a hand in it too, and that part is understood: an inserter whose pickup or
-drop falls on a tile holding something marked for deconstruction will not move its hand.
-The drop end is covered, since the box at the rest point stands on that tile, and the pickup
-end is cured by naming the target, which pin_from does. So if the mod is not refusing it by
-its own rule, the thing to check is whether that naming survives the case where the thing
-being fetched is the tile the arm is standing on.
-
 ## Arms turn back from some ghosts when a train is at full speed
 
 Driving forward at full speed, an arm sets off for a ghost and then turns back without

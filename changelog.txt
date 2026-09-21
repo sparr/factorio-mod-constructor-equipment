@@ -13,6 +13,9 @@ Version: 2.1.6
     - Fixed a box being taken away with something still inside, which destroyed whatever was in it: about one item in two hundred went that way where several arms worked one line from a moving vehicle
     - An idle claw no longer takes anything out of whatever it is resting over, so a chest you are standing on and the hold of the vehicle you are driving are left alone
     - Fixed an item being destroyed when an arm took a job with something already in its claw
+    - An arm picks up what you are standing on in its turn rather than waiting for a moment when there is nothing else in reach at all, which is a moment somebody standing among their own work never gives it
+    - An arm carries out an upgrade on the thing you are standing on, which it used to leave alone
+    - An arm builds a ghost you are standing on where the thing would not be in your way, so a belt goes up under your feet the way a construction robot would put it up; a chest or a machine still waits until you move, and the same goes for the vehicle you are driving
     - Fixed the arms refusing to clear away things marked for deconstruction from around where you are standing: a claw would report itself working and never reach for the next one, leaving most of a ring of marked things untouched
     - Fixed an arm running out of power partway home and hanging in the air with your item in its claw for five seconds before a backstop handed it back
     - Fixed a player being moved somewhere else mid reach, by a teleport, a respawn or a script, being read as a course and sending the arms looking for work across a circle thousands of tiles wide

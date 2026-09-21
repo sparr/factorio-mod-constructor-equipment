@@ -1509,6 +1509,15 @@ end
 
 ---Whether a ghost could actually be built where it stands, right now.
 ---
+---This is the whole of the question about standing on one, too. The mod used to refuse any
+---ghost whose footprint its owner was inside, which is broader than the truth: a belt does
+---not collide with a character and goes up perfectly well under one, the way a construction
+---robot would put it up. What decides it is whether the thing being built would collide
+---with whoever is standing there, and the engine already answers exactly that -- measured,
+---can_place_entity on a belt under a character says yes, on a chest or an assembler says no,
+---and on a medium electric pole says no until the character is far enough off centre to be
+---clear of its collision box rather than merely of its tile.
+---
 ---Asked because reaching for one that cannot be is a wasted journey that repeats: the claw
 ---goes out, the revive fails, it comes home, and the same ghost is picked again next tick.
 ---Standing near a thing is enough to stop it going up -- a character half a tile from a
@@ -1559,33 +1568,32 @@ local function underfoot(work, at)
      and at.y >= middle.y - down and at.y <= middle.y + down
 end
 
---- What standing on a thing adds to the cost of going for it: enough that anything else in
---- reach is done first, and not so much that it is never fetched at all. The units are the
---- ticks a swing takes, so a reach nobody would ever make is plenty.
-local UNDERFOOT = 100000
 
----Whether a character is standing on the ground a ghost will occupy.
+---Whether whoever is standing there is actually in the way of this piece of work.
 ---
----The arm would otherwise reach for something directly under its own base, fail, spring
----back, and try again for as long as the player stood there.
+---It used to be enough that their feet were inside the footprint, which is broader than the
+---truth and refused things a construction robot would happily have put up. A belt does not
+---collide with a character: you can stand on one, and a ghost of one under you goes up
+---exactly as it would if you were a tile away. A chest does collide, and an assembler
+---collides across three tiles, and those cannot.
+---
+---So the question is whether the thing that would be built collides with whoever is there,
+---and the engine answers precisely that -- including for the vehicle somebody is driving,
+---since it is the vehicle standing on the ground rather than them. Measured: a belt under a
+---character is placeable, a chest and an assembler are not, and a medium electric pole is
+---not until the character is far enough off centre to be clear of its collision box rather
+---than merely of its tile.
+---
+---Taking something up, an upgrade and a cliff are all exempt before that is even asked.
+---None of them wants room it has not already got, and a heap of plates is most often
+---exactly where you are standing.
 ---@param ghost LuaEntity
 ---@param at {x: number, y: number}
 ---@return boolean
 local function standing_in(ghost, at)
-  -- Nobody stands in a cliff: it is solid, and a character next to one would otherwise
-  -- count as inside it, because a cliff is four tiles across and the question is asked of
-  -- the footprint rather than the collision box.
-  if exploding(ghost) then return false end
-  -- Nor is standing on a thing a reason not to pick it up. This question is about an arm
-  -- refusing to reach under its own base to put something down, which is a real refusal
-  -- and looks like a twitch; taking something up from under your own feet is what a person
-  -- does by bending down, and a heap of plates is most often exactly where you stand.
-  --
-  -- It is a reason to do something else first, which is not the same thing: see choose(),
-  -- which sorts what its owner is standing on to the back of the queue rather than out of
-  -- it.
-  if taking(ghost) then return false end
-  return underfoot(ghost, at)
+  if exploding(ghost) or taking(ghost) or upgrading(ghost) then return false end
+  if not underfoot(ghost, at) then return false end
+  return not buildable(ghost)
 end
 
 ---Every piece of work near enough to a wearer that some arm of theirs might reach it.
@@ -1799,11 +1807,24 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
         end
         if not skip then
           local price = hand and reach.swing_ticks(tier, from, hand, at) or far
-          -- What its owner is standing on goes to the back of the queue. A claw will take
-          -- something up from under their feet, which is right -- see standing_in() -- and
-          -- it is the slowest thing it can do: the box lands on the arm's own base, so the
-          -- hand comes all the way in and has to go out again for whatever is next.
-          if taking(work) and underfoot(work, standing) then price = price + UNDERFOOT end
+          -- What standing on a thing really adds, which is one extension of the arm.
+          --
+          -- Taking something up from under the base is the slowest swing there is: the hand
+          -- comes all the way in, and whatever is next has to go all the way out again. So
+          -- it belongs behind work that is merely near, and that is all -- there used to be
+          -- a hundred thousand ticks here, which is not a queue position but a refusal.
+          -- Anything underfoot waited for a moment when nothing else was in reach at all,
+          -- and somebody standing among their own work never gives it that moment; what it
+          -- read as was an arm that would not pick up what you were standing on.
+          --
+          -- Measured on a heap underfoot with eight marked belts round it: banished, the
+          -- heap went last at tick 317 and the lot was clear at 317; with nothing added it
+          -- went first at tick 3 and the lot took until 592, because every journey after it
+          -- started from a fully folded hand. One extension is the cost the next job
+          -- actually pays.
+          if taking(work) and underfoot(work, standing) then
+            price = price + (tier and tier.range / tier.extension or 0)
+          end
 
           local better
           if not best then better = true
@@ -1835,7 +1856,6 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
               if (item or (taking(ghost) and room_for(inventory, ghost)))
                   and not (claimed and claimed[claim_of(ghost)])
                   and not set_aside_still(ghost)
-                  and not standing_in(ghost, standing)
                   and not out_of_reach(record, from, ghost.position, range)
                   and buildable(ghost) then
                 best, best_price, best_far = ghost, price, far
@@ -4711,6 +4731,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.vanilla",
     "test.ft.searching",
     "test.ft.chunkful",
+    "test.ft.underfoot",
   }, {
     load_luassert = true,
     game_speed = 100,

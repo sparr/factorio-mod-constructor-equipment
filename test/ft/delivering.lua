@@ -101,38 +101,63 @@ end)
 --- An inserter will not reach for something underneath its own base. Asked to, it twitches
 --- a tick's worth and springs back, and because a swing is under way nothing else gets a
 --- look in: standing on a ghost jammed the mod until you moved off, and sometimes after.
+--- Standing on a ghost is not by itself a reason to leave it alone. What decides it is
+--- whether the thing that would be built collides with whoever is standing there: a belt
+--- does not, and goes up under you exactly as a construction robot would put it up, while a
+--- chest does and has to wait until you move.
 describe("a ghost the character is standing on", function()
-  it("is left alone rather than reached for", function()
+  it("is built when it would not collide with them", function()
     -- put the character exactly in it, rather than trusting an offset of nothing to land
     -- inside a footprint that snaps to the tile grid
     local ghost = world.ghost(player, BELT, 0, 0)
     player.teleport(ghost.position, player.surface)
-    after_ticks(world.BUILD_INTERVAL, function()
-      assert.is_nil(job(), "it started a swing for something under its own feet")
-      assert.are.equal(1, world.ghosts(player), "it built one it could not reach")
+    assert.is_true(player.surface.can_place_entity{
+      name = BELT, position = ghost.position, direction = ghost.direction,
+      force = player.force,
+      build_check_type = defines.build_check_type.ghost_revive },
+      "a belt under a character is not placeable after all, so this proves nothing")
+    after_ticks(world.CYCLE * 2, function()
+      assert.are.equal(1, world.count(player, BELT),
+        "the belt it was standing on was never built")
+      assert.are.equal(0, world.ghosts(player), "it is still a ghost")
     end)
   end)
 
-  it("does not stop it building anything else", function()
+  it("builds both the one underfoot and the one beside it", function()
     local underfoot = world.ghost(player, BELT, 0, 0)
     player.teleport(underfoot.position, player.surface)
     world.ghost(player, BELT, 1, 0)
-    after_ticks(world.CYCLE * 2, function()
-      assert.are.equal(1, world.count(player, BELT),
-        "the reachable ghost was never built, so the one underfoot jammed it")
-      assert.are.equal(1, world.ghosts(player), "the one underfoot should still be waiting")
+    after_ticks(world.CYCLE * 3, function()
+      assert.are.equal(2, world.count(player, BELT),
+        "one of the two was left standing as a ghost")
+      assert.are.equal(0, world.ghosts(player), "something is still a ghost")
     end)
   end)
 
-  it("gets built once the character steps off it", function()
-    local ghost = world.ghost(player, BELT, 0, 0)
+  it("is left alone when it would collide with them", function()
+    local ghost = player.surface.create_entity{ name = "entity-ghost",
+      inner_name = "iron-chest", position = world.ORIGIN, force = player.force }
+    assert.is_not_nil(ghost, "could not place a chest ghost")
+    player.insert{ name = "iron-chest", count = 5 }
+    player.teleport(ghost.position, player.surface)
+    after_ticks(world.BUILD_INTERVAL, function()
+      assert.is_nil(job(), "it started a swing for a chest it was standing in")
+      assert.are.equal(1, world.ghosts(player), "it built one it could not")
+    end)
+  end)
+
+  it("builds the colliding one once the character steps off it", function()
+    local ghost = player.surface.create_entity{ name = "entity-ghost",
+      inner_name = "iron-chest", position = world.ORIGIN, force = player.force }
+    player.insert{ name = "iron-chest", count = 5 }
     player.teleport(ghost.position, player.surface)
     after_ticks(world.BUILD_INTERVAL, function()
       player.teleport({ ghost.position.x - 1.5, ghost.position.y }, player.surface)
     end)
     after_ticks(world.CYCLE * 3, function()
-      assert.are.equal(1, world.count(player, BELT),
-        "it never went back for the ghost once it could reach it")
+      assert.are.equal(1, player.surface.count_entities_filtered{ name = "iron-chest",
+        position = world.ORIGIN, radius = 5 },
+        "it never went back for the chest once it could build it")
     end)
   end)
 end)
@@ -606,8 +631,12 @@ end)
 --- as walking away from it, and the claw would otherwise sit over it trying and failing
 --- until the swing limit gave up on its own.
 describe("walking onto the ghost being built", function()
-  it("gives up rather than reaching for something underfoot", function()
-    local ghost = world.ghost(player, BELT, 2, 0)
+  it("gives up when what it was reaching for can no longer go up", function()
+    -- a chest, because a belt would simply be built: standing on one does not stop it
+    local ghost = player.surface.create_entity{ name = "entity-ghost",
+      inner_name = "iron-chest", position = { world.ORIGIN.x + 2, world.ORIGIN.y },
+      force = player.force }
+    player.insert{ name = "iron-chest", count = 10 }
     local target = ghost.position
     after_ticks(10, function()
       assert.is_not_nil(world.job(player), "nothing was reaching, so this proves nothing")
@@ -616,11 +645,11 @@ describe("walking onto the ghost being built", function()
     after_ticks(24, function()
       local job = world.job(player)
       assert.is_true(job == nil or job.going == "back",
-        "it was still reaching for the ghost it was standing on")
+        "it was still reaching for the chest it was standing in")
     end)
     after_ticks(world.CYCLE * 2, function()
       assert.are.equal(1, world.ghosts(player), "it built the one under its own feet")
-      assert.are.equal(10, player.get_item_count(BELT), "it spent the item anyway")
+      assert.are.equal(10, player.get_item_count("iron-chest"), "it spent the item anyway")
     end)
   end)
 
@@ -664,10 +693,18 @@ describe("a ghost the character is in the way of", function()
     player.insert{ name = POLE, count = 10 }
   end)
 
+  -- A pole is the awkward case: it takes a whole tile and collides across about a third of
+  -- one, so how far off centre a character stands decides whether they are really in its
+  -- way. The mod follows the engine on that rather than keeping an opinion of its own, so
+  -- what each offset should do is asked of the engine here rather than written down.
   for _, off in ipairs{ 0, 0.2, 0.35, 0.49 } do
-    it(("is left alone when stood on, %.2f off centre"):format(off), function()
+    it(("does what the engine allows, stood %.2f off centre"):format(off), function()
       local ghost = pole_at(1, 0)
       player.teleport({ ghost.position.x - off, ghost.position.y }, player.surface)
+      local allowed = player.surface.can_place_entity{
+        name = POLE, position = ghost.position, direction = ghost.direction,
+        force = player.force,
+        build_check_type = defines.build_check_type.ghost_revive }
       local reached = 0
       for n = 4, 120, 2 do
         after_ticks(n, function()
@@ -676,10 +713,15 @@ describe("a ghost the character is in the way of", function()
         end)
       end
       after_ticks(130, function()
-        assert.are.equal(0, reached,
-          ("it reached for a pole it was standing on, %.2f off centre, on %d samples")
-            :format(off, reached))
-        assert.are.equal(1, world.ghosts(player), "it built one it was standing on")
+        if allowed then
+          assert.are.equal(0, world.ghosts(player),
+            ("the engine allows a pole %.2f off centre and it was not built"):format(off))
+        else
+          assert.are.equal(0, reached,
+            ("it reached for a pole it was standing in, %.2f off centre, on %d samples")
+              :format(off, reached))
+          assert.are.equal(1, world.ghosts(player), "it built one it was standing in")
+        end
       end)
     end)
   end
