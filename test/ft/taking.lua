@@ -564,15 +564,20 @@ describe("several things marked side by side", function()
     end)
   end)
 
-  --- Work packed round somebody standing still stalls, and this is as far as it has been
-  --- run down. Eight marked in a ring round a character: three go, and then a claw takes a
-  --- job on a fourth, reports itself working, and never extends towards it. Five of eight
-  --- after thirty seconds, where the same eight offset two tiles away go in a couple of
-  --- seconds.
+  --- Work packed round somebody standing still used to stall: three went, and then a claw
+  --- took a job on a fourth, reported itself working, and never extended towards it. Five
+  --- of eight after thirty seconds, where the same eight offset two tiles away went in a
+  --- couple of seconds.
   ---
-  --- Kept as a measurement rather than an expectation. It is not asserted at eight, because
-  --- eight is not what happens and a test that fails every run tells nobody anything.
-  it("PROBE: how much of a ring round its owner gets taken up", function()
+  --- The cause was the engine's and the tile was the claw's own resting place. An inserter
+  --- whose pickup or drop position falls on a tile holding something marked for
+  --- deconstruction does not move its hand at all -- and a fetch drops at the rest point,
+  --- which is the tile its owner is standing on, which in a ring of marked things is a
+  --- marked tile. A box of the mod's own stands there now, which is enough to satisfy the
+  --- engine: see keeper_at() in control.lua.
+  ---
+  --- Asserted at eight now, because eight is what happens.
+  it("clears a ring round its owner", function()
     world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true,
       "power-armor")
     player.get_inventory(defines.inventory.character_main).clear()
@@ -582,8 +587,8 @@ describe("several things marked side by side", function()
       helpers.write_file("ring.txt",
         ("a ring of eight round its owner: %d taken up in 1800 ticks\n")
           :format(player.get_item_count(BELT)), false)
-      assert.is_true(player.get_item_count(BELT) > 0,
-        "none of a ring of eight was taken up at all")
+      assert.are.equal(8, player.get_item_count(BELT),
+        ("%d of the ring of eight came home"):format(player.get_item_count(BELT)))
     end)
   end)
 

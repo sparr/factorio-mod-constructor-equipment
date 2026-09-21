@@ -8,6 +8,11 @@ Version: 2.1.6
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
   Bugfixes:
     - Fixed two players' arms setting off for the same ghost, which had one of them build it while the other carried its load all the way home for nothing
+    - An arm now hands its load only into its own box, so a belt it has just built cannot take the item instead of the ghost getting it
+    - Fixed a box being taken away with something still inside, which destroyed whatever was in it: about one item in two hundred went that way where several arms worked one line from a moving vehicle
+    - An idle claw no longer takes anything out of whatever it is resting over, so a chest you are standing on and the hold of the vehicle you are driving are left alone
+    - Fixed an item being destroyed when an arm took a job with something already in its claw
+    - Fixed the arms refusing to clear away things marked for deconstruction from around where you are standing: a claw would report itself working and never reach for the next one, leaving most of a ring of marked things untouched
     - Fixed an arm running out of power partway home and hanging in the air with your item in its claw for five seconds before a backstop handed it back
     - Fixed a player being moved somewhere else mid reach, by a teleport, a respawn or a script, being read as a course and sending the arms looking for work across a circle thousands of tiles wide
     - Fixed the game ending when a player wearing arms boarded a rocket while an arm was out

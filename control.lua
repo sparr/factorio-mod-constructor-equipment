@@ -2145,48 +2145,6 @@ end
 --- could get a whole swing in.
 local OPEN = 2.5
 
----The box belonging to this arm, present only while this claw is near enough to be the one
----filling it.
----
----An open box is a hole in the world: it accepts insertions, so an inserter of the
----player's own pointing at a tile a ghost stands on would quietly feed it and the mod would
----take a stranger's item for its own delivery. Whether a container accepts automated
----insertion is fixed in its prototype and cannot be turned off and on, so the box is
----created and destroyed instead of being opened and shut.
----@param record table
----@param surface LuaSurface
----@param at {x: number, y: number}
----@param near boolean whether this claw is close enough for a delivery to be possible
----@return LuaEntity?
-local function catcher_at(record, surface, at, near)
-  local box = record.catcher
-  if not near then
-    -- nothing of ours should be in it yet, and if something is it goes back in the claw
-    if box and box.valid then
-      local inside = box.get_inventory(defines.inventory.chest)
-      if inside then
-        for _, stack in pairs(inside.get_contents()) do
-          take_back(record, stack.name, stack.quality and stack.quality.name or nil, stack.count)
-        end
-      end
-      box.destroy()
-    end
-    record.catcher = nil
-    return nil
-  end
-  if box and box.valid then
-    if box.position.x ~= at.x or box.position.y ~= at.y then box.teleport(at) end
-    return box
-  end
-  -- The arm's own force, not neutral: an inserter will not put anything into another
-  -- force's container, and a neutral box was quietly ignored while the load went on the
-  -- ground beside it.
-  local owner = record.entity and record.entity.valid and record.entity.force or "player"
-  box = surface.create_entity{ name = CATCHER, position = at, force = owner }
-  record.catcher = box
-  return box
-end
-
 ---Give something back to whoever an arm was mustered against, and put on the floor what
 ---they cannot take.
 ---
@@ -2214,22 +2172,215 @@ local function give_to(player, wearer, inventory, stack)
   }
 end
 
----Take the box away, handing back anything left in it.
+---Empty a box of everything in it, so that taking it away costs nothing.
+---
+---A box is not always holding its own arm's load. It stands wherever its claw is aimed, and
+---while a claw is leading that is a guess at where its ghost will be, so two arms bolted to
+---one hull can put their guesses on the same tile however far apart their ghosts are. The
+---engine empties a hand into whatever container stands at its drop position and does not
+---ask whose it is, so a box can be holding another arm's load at the moment it is taken
+---away -- and that arm's own claw is somewhere else, with a hand that may already be full.
+---
+---The claw first, since it is going home anyway and the load is most likely its own. Then
+---the pockets the arm was mustered against, and then the floor, which is where anything
+---goes that will not fit.
+---
+---Measured on eight second tier arms on a locomotive: about one belt in two hundred went
+---exactly that way. Arm three's load landed in arm four's box, arm four's hand was already
+---holding its own belt so the claw would not take it, and the box was destroyed with it
+---still inside. The theft is old and costs a journey; destroying what was stolen was the
+---whole of the loss.
 ---@param record table
----@return LuaItemStack[]? what was inside
+local function catcher_empty(record)
+  local box = record.catcher
+  if not (box and box.valid) then return end
+  local inside = box.get_inventory(defines.inventory.chest)
+  if not inside or inside.is_empty() then return end
+
+  for _, stack in pairs(inside.get_contents()) do
+    take_back(record, stack.name, stack.quality and (stack.quality.name or stack.quality)
+      or nil, stack.count)
+  end
+  if inside.is_empty() then return end
+
+  -- Whoever the arm was mustered against, which for an arm on a locomotive is the train's
+  -- cargo: where the load came out of in the first place.
+  local player = record.owner and game.get_player(record.owner)
+  local hold = player and pockets(player, record.wearer) or nil
+  for _, stack in pairs(inside.get_contents()) do
+    local quality = stack.quality and (stack.quality.name or stack.quality) or nil
+    local took = hold and hold.insert{ name = stack.name, quality = quality,
+                                       count = stack.count } or 0
+    if took < stack.count then
+      -- On the floor where the box stood, rather than away with it. Not onto a belt: a
+      -- lane swallows a stack whole and it is then nowhere anybody would look for it.
+      box.surface.spill_item_stack{
+        position = box.position,
+        stack = { name = stack.name, quality = quality, count = stack.count - took },
+        enable_looted = true,
+        force = box.force,
+        allow_belts = false,
+      }
+    end
+    inside.remove{ name = stack.name, quality = quality, count = stack.count }
+  end
+end
+
+---The box belonging to this arm, present only while this claw is near enough to be the one
+---filling it.
+---
+---An open box is a hole in the world: it accepts insertions, so an inserter of the
+---player's own pointing at a tile a ghost stands on would quietly feed it and the mod would
+---take a stranger's item for its own delivery. Whether a container accepts automated
+---insertion is fixed in its prototype and cannot be turned off and on, so the box is
+---created and destroyed instead of being opened and shut.
+---@param record table
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---The box it hands back has to be pinned as the arm's drop_target by whoever asked for
+---it, on the same tick. See pin_to() below for why, and for what happens when nobody does.
+---@param near boolean whether this claw is close enough for a delivery to be possible
+---@return LuaEntity?
+local function catcher_at(record, surface, at, near)
+  local box = record.catcher
+  if not near then
+    -- Nothing of ours should be in it yet. Something else's may be, and whatever is there
+    -- is handed out before the box goes rather than destroyed with it.
+    if box and box.valid then
+      catcher_empty(record)
+      box.destroy()
+    end
+    record.catcher = nil
+    return nil
+  end
+  if box and box.valid then
+    if box.position.x ~= at.x or box.position.y ~= at.y then box.teleport(at) end
+    return box
+  end
+  -- The arm's own force, not neutral: an inserter will not put anything into another
+  -- force's container, and a neutral box was quietly ignored while the load went on the
+  -- ground beside it.
+  local owner = record.entity and record.entity.valid and record.entity.force or "player"
+  box = surface.create_entity{ name = CATCHER, position = at, force = owner }
+  record.catcher = box
+  return box
+end
+
+---A box with nothing in it and no room for anything, stood where an idle claw rests.
+---
+---An inserter takes from whatever container is at its pickup position, and an arm's claw
+---rests two tenths of a tile from where it is bolted on -- which is on its owner. So an arm
+---with nothing to do helps itself to whatever its owner is standing on. Measured: a
+---character standing on an iron chest of fifty belts had one out of it and into the claw,
+---and an arm bolted to a tank took one out of the tank's own hold the same way.
+---
+---What that costs on its own is a chest quietly emptied by somebody walking over it, since
+---the belt goes to the player's pockets when the arm is put away. What it used to cost as
+---well was the belt itself: the next job's load was written straight over the hand.
+---
+---So an idle claw is given something to reach into that can never give it anything. Its own
+---box, with the bar down, so that nothing can be put in it either and there is therefore
+---never anything to take out.
+---@param record table
+---@param surface LuaSurface
+---@param at {x: number, y: number}
+---@return LuaEntity?
+local function keeper_at(record, surface, at, shut)
+  local box = record.keeper
+  if not (box and box.valid) then
+    local owner = record.entity and record.entity.valid and record.entity.force or "player"
+    box = surface.create_entity{ name = CATCHER, position = at, force = owner }
+    record.keeper = box
+  elseif box.position.x ~= at.x or box.position.y ~= at.y then
+    box.teleport(at)
+  end
+  if not box then return nil end
+
+  -- Shut for an idle claw, so there is never anything in it to help itself to. Open for one
+  -- with a job, because a claw coming home has to be able to come home: measured, an arm
+  -- whose drop is a box with no room in it is told there is no space and holds its hand
+  -- where it is rather than bringing it in, and the load then never reaches the pockets at
+  -- all. Open, the engine treats the rest point as somewhere it could let go and travels
+  -- there -- and it never does let go, because the rest point is nearer the base than a
+  -- hand can reach, which is the arrangement the homecoming has always run on.
+  local inside = box.get_inventory(defines.inventory.chest)
+  if inside and inside.supports_bar() then inside.set_bar(shut and 1 or (#inside + 1)) end
+  return box
+end
+
+---Take the idle claw's box away, for an arm that has work to do again.
+---@param record table
+local function keeper_away(record)
+  local box = record.keeper
+  record.keeper = nil
+  if box and box.valid then box.destroy() end
+end
+
+---Say that this box, and nothing else, is where this claw hands over.
+---
+---An inserter's drop target is not worked out fresh from its drop position every tick: the
+---engine keeps it, and what it keeps beats what the position would say. Left to itself it
+---picks the wrong thing twice over.
+---
+---Measured on a bare arm inserter of the fourth tier, over four runs, dropping into a box
+---on a tile with a belt already standing on it:
+---
+---  box alone                                 2 into the box, 0 onto the belt
+---  a belt on the box's tile                  0 into the box, 2 onto the belt
+---  that, and teleported onto itself each tick 0 into the box, 2 onto the belt
+---  that, and this line                       2 into the box, 0 onto the belt
+---
+---So a belt outranks the box on a shared tile, and the arms build belts: the tile a claw is
+---aimed at along the way to a ghost is very often a tile one of them has just finished. And
+---teleporting the entity clears the target outright -- even a teleport to the spot it is
+---already standing on, which is what aim() does to every arm on every tick -- after which
+---the engine resolves by position again and the belt wins again.
+---
+---Hence on the same tick as the teleport, every tick, from whoever positioned the box. The
+---engine's update for the next tick runs before the next aim(), so the pin is always in
+---force at the moment the hand lets go.
+---@param record table
+---@param box LuaEntity? what catcher_at handed back, if anything
+local function pin_to(record, box)
+  local arm = record.entity
+  if not (arm and arm.valid and box and box.valid) then return end
+  arm.drop_target = box
+end
+
+---The same for the other end of the swing: this box, and nothing else, is what this claw
+---reaches into.
+---
+---A fetch is where it matters, because a fetch is the one job whose box stands at the
+---pickup. A claw reaches for a source because there is something at its pickup position to
+---reach for, and the teleport in aim() throws the engine's answer to that away every tick
+---the same as it throws away the drop's.
+---
+---A delivery survives that, because the engine re-resolves when the hand lets go and there
+---is a whole swing of ticks for it to happen in. A fetch does not: with nothing resolved
+---there is nothing to set off towards, so the hand sits at the radius it was born at,
+---reporting itself working, for the whole of the swing limit. Measured on eight things
+---marked in a ring round a character standing still -- three go and the claw stalls on the
+---fourth, with its box standing exactly on its own pickup position and pickup_target empty.
+---@param record table
+---@param box LuaEntity? what catcher_at handed back, if anything
+local function pin_from(record, box)
+  local arm = record.entity
+  if not (arm and arm.valid and box and box.valid) then return end
+  arm.pickup_target = box
+end
+
+---Take the box away, losing nothing that was in it.
+---
+---Every caller used to be trusted to deal with what this handed back, and five of the six
+---ignored it. So the emptying happens here, where it cannot be forgotten, and there is
+---nothing left to hand back.
+---@param record table
 local function catcher_away(record)
   local box = record.catcher
+  if not (box and box.valid) then record.catcher = nil return end
+  catcher_empty(record)
   record.catcher = nil
-  if not (box and box.valid) then return nil end
-  local left = {}
-  local inside = box.get_inventory(defines.inventory.chest)
-  if inside then
-    for _, stack in pairs(inside.get_contents()) do
-      table.insert(left, { name = stack.name, quality = stack.quality, count = stack.count })
-    end
-  end
   box.destroy()
-  return left
 end
 
 ---put away mid reach, whether because the character walked off or because they took the
@@ -2237,6 +2388,7 @@ end
 ---@param player LuaPlayer
 ---@param record table
 local function put_away(player, record)
+  keeper_away(record)
   local arm = record.entity
   local wearer = record.wearer or player.character
   local inventory = pockets(player, wearer)
@@ -2271,10 +2423,9 @@ local function put_away(player, record)
 
   -- The box goes with the arm, and what it was holding is not the box's. A claw that had
   -- just put a belt in it, or one being handed what it had come to fetch, had that thrown
-  -- away with the box: catcher_away says what was left in it and nobody was listening.
-  for _, stack in pairs(catcher_away(record) or {}) do
-    hand_back(stack)
-  end
+  -- away with the box: for a long time catcher_away said what was left in it and nobody
+  -- was listening. It hands it back itself now.
+  catcher_away(record)
 
   if arm and arm.valid then
     -- Whatever it was carrying was paid for out of the pockets, so it goes back in them
@@ -2505,9 +2656,12 @@ local function muster(player, wearer)
     taken[name] = (taken[name] or 0) + 1
     record.piece = pieces_of(grid, name)[taken[name]]
     -- remembered so that putting the arm away can hand its charge and its load back where
-    -- they were drawn from, whoever its owner is wearing by then
+    -- they were drawn from, whoever its owner is wearing by then. The player too, so that a
+    -- box being taken away can find the pockets to empty itself into without every caller
+    -- having to carry one down to it.
     record.grid = grid
     record.wearer = wearer
+    record.owner = player.index
   end
   return list
 end
@@ -2648,6 +2802,30 @@ local function aim(player, wearer, record, slot, count, job)
   record.slot = slot
   record.count = count
   arm.pickup_position = { rest.x, rest.y }
+  -- Which end is pointed at the rest point, which starts as the pickup and is moved about
+  -- by the job below. Tracked rather than read back off the entity, because the engine
+  -- keeps a position to the nearest two hundred and fifty sixth of a tile and a comparison
+  -- against what was written would be a comparison against a rounded copy of it.
+  local picks_at_rest, drops_at_rest = true, false
+
+  -- A box of the mod's own, standing on the rest point, whatever the arm is doing.
+  --
+  -- It was here only for an idle claw to begin with, to stop one helping itself out of
+  -- whatever its owner is standing on. It is here always now because of a second thing the
+  -- engine does with that tile: an inserter whose pickup or drop position falls on a tile
+  -- holding something marked for deconstruction will not move its hand at all, reporting
+  -- itself working the whole time. A fetch drops at the rest point, and somebody clearing
+  -- ground stands in the middle of what they have marked, so that tile is a marked one
+  -- exactly when the arms are wanted most.
+  --
+  -- Measured on a bare inserter of the arms' own prototype: with the drop on a marked tile
+  -- and nothing else there the hand never moves, and with a box of any kind on that tile it
+  -- moves normally. A box with its bar down is enough -- the engine calls that waiting for
+  -- space in the destination, which is honest, and it is what the mod wants anyway since it
+  -- takes the load out of the hand itself. The pickup end is the same fault and is cured
+  -- differently, by naming a target rather than by standing something there, which is what
+  -- the pinning below does.
+  local keeper = keeper_at(record, arm.surface, rest, job == nil)
 
   if job then
     if job.going == "out" then
@@ -2656,10 +2834,12 @@ local function aim(player, wearer, record, slot, count, job)
         -- The other way round: the claw reaches for the thing rather than at it, and what
         -- it picks up comes back to where home is measured from.
         arm.pickup_position = { target.x, target.y }
+        picks_at_rest = false
         if job.crossing then
           arm.drop_position = { target.x, target.y }
         else
           arm.drop_position = { rest.x, rest.y }
+          drops_at_rest = true
         end
       elseif job.crossing then
         -- Crossing from the ghost just built to the next one of the round. The pickup end
@@ -2677,6 +2857,7 @@ local function aim(player, wearer, record, slot, count, job)
         -- anything into the very thing it is picking up from.
         arm.pickup_position = { target.x, target.y }
         arm.drop_position = { target.x, target.y }
+        picks_at_rest = false
       else
         arm.drop_position = { target.x, target.y }
       end
@@ -2691,6 +2872,7 @@ local function aim(player, wearer, record, slot, count, job)
       -- ever notices. Aimed at the same place home is measured from, the item comes out of
       -- the hand a little before the claw gets there.
       arm.drop_position = { rest.x, rest.y }
+      drops_at_rest = true
     end
     -- An empty hand on the way back is left alone. Aiming it at the mount points it at the
     -- arm's own base, which is no direction at all, and the engine picks one: the claw
@@ -2710,6 +2892,19 @@ local function aim(player, wearer, record, slot, count, job)
   -- floor on the thirteenth, at the same tick every run.
   if not job and arm.held_stack.valid_for_read then
     arm.drop_position = { rest.x, rest.y }
+    drops_at_rest = true
+  end
+
+  -- And whichever end is pointed at the rest point is pointed at the box standing there, by
+  -- name, after the teleport that threw the engine's own answer away. The other end is
+  -- named by advance(), at the box standing on whatever this arm is working on.
+  --
+  -- Both ends matter and they are cured differently. A drop is cured by the box merely
+  -- being there; a pickup is not, and has to be named. Naming both costs nothing and means
+  -- neither has to be reasoned about at the call sites.
+  if keeper and keeper.valid then
+    if picks_at_rest then arm.pickup_target = keeper end
+    if drops_at_rest then arm.drop_target = keeper end
   end
   return arm
 end
@@ -3901,8 +4096,11 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     -- and the arm stands out of its owner's back doing nothing at all. A delivery is the
     -- other way round and the box is held back until the claw is close, so that no other
     -- inserter of the player's can fill it first.
-    catcher_at(record, arm.surface, target, job.take
+    local waiting = catcher_at(record, arm.surface, target, job.take
       or reach.distance(hand, target) <= within(tier_of(record), OPEN, moved))
+    -- A fetch's box stands at the pickup rather than the drop, so it is the other end of
+    -- the swing that has to be told about it.
+    if job.take then pin_from(record, waiting) else pin_to(record, waiting) end
 
     -- The claw has crossed to the next ghost of its round and got there, so the handover
     -- is made here rather than left to the engine.
@@ -3943,7 +4141,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
         target = aimed_at(job, record)
         arm.drop_position = { target.x, target.y }
         arm.pickup_position = { target.x, target.y }
-        catcher_at(record, arm.surface, target, true)
+        pin_to(record, catcher_at(record, arm.surface, target, true))
       end
     end
 
@@ -4010,13 +4208,11 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
     if give_back(player, wearer, record) then
       record.job = nil
       -- What the box carried home goes to the pockets too. It is only ever there because
-      -- the claw could not hold it -- the far end of an underground pair, say -- and
-      -- catcher_away says what was in it to nobody in particular, so for a long time that
-      -- was a quiet way to lose exactly one underground belt.
-      local inventory = pockets(player, wearer)
-      for _, stack in pairs(catcher_away(record) or {}) do
-        give_to(player, wearer, inventory, stack)
-      end
+      -- the claw could not hold it -- the far end of an underground pair, say -- and for a
+      -- long time catcher_away said what was in it to nobody in particular, which was a
+      -- quiet way to lose exactly one underground belt. It puts it back into these same
+      -- pockets itself now.
+      catcher_away(record)
     end
   end
 end
@@ -4164,6 +4360,30 @@ local function assign(player, wearer, list, tick, nearby)
         -- that is about to be replaced.
         point(player, wearer, record, slot, #list, record.job)
         local arm = aim(player, wearer, record, slot, #list, record.job)
+        -- An arm takes a job with an empty hand, and the hand is not always empty.
+        --
+        -- A claw rests a little way out from where the arm is bolted on, which on a vehicle
+        -- is inside the hull -- and a hull with a hold of its own is a container as far as
+        -- the engine is concerned, so it helps itself to a belt out of the boot between one
+        -- tick and the next, unasked. The loading below then either set_stacks over what is
+        -- in the hand or clears it, and either way what the engine put there stops existing.
+        --
+        -- Measured on a tank turning through a field of ghosts: at tick 530 of the drive the
+        -- hold went down by two where one belt was spent, and the second was the one the
+        -- engine had picked up a few ticks earlier and set_stack wrote over. One belt in a
+        -- hundred and twenty, and only ever on a wearer that has somewhere to keep things.
+        --
+        -- Handed back rather than kept: it came out of these same pockets, so giving it
+        -- back nets to nothing, and the load this job is about is counted out below.
+        if arm and arm.held_stack.valid_for_read then
+          local inventory = pockets(player, wearer)
+          give_to(player, wearer, inventory, {
+            name = arm.held_stack.name,
+            quality = arm.held_stack.quality and arm.held_stack.quality.name or nil,
+            count = arm.held_stack.count,
+          })
+          arm.held_stack.clear()
+        end
         if arm and record.job.take then
           -- Nothing leaves the pockets for a fetch. The claw sets off empty.
           record.job.carried = 0
@@ -4204,7 +4424,7 @@ local function assign(player, wearer, list, tick, nearby)
         if arm and record.job and not record.job.take then
           local target = aimed_at(record.job, record)
           if reach.distance(arm.held_stack_position, target) <= within(tier, OPEN) then
-            catcher_at(record, arm.surface, target, true)
+            pin_to(record, catcher_at(record, arm.surface, target, true))
           end
         end
         working = true
@@ -4404,6 +4624,45 @@ script.on_event(defines.events.on_lua_shortcut, on_shortcut)
 script.on_event(defines.events.on_player_created, on_player_created)
 script.on_event(TOGGLE, on_toggle_key)
 
+--- What an arm is doing, for a harness to read. There is no way for another mod to see
+--- storage, and the interesting half of a stall is in the job rather than in the entity.
+---
+--- Gated on ce-stall being loaded for the same reason the fixtures are gated on ce-tests:
+--- neither is published, so neither can be present in a player's game, and the mod carries
+--- no debug surface it did not ask for.
+if script.active_mods["ce-stall"] then
+  remote.add_interface("constructor-equipment", {
+    ---@param index integer a player index
+    ---@return table[] one entry per arm, in the order they are mounted
+    arms = function(index)
+      local out = {}
+      for slot, record in pairs(storage.constructor_arms and storage.constructor_arms[index]
+          or {}) do
+        local job = record.job
+        out[slot] = {
+          arm = record.entity and record.entity.valid and record.entity.unit_number or nil,
+          catcher = record.catcher and record.catcher.valid
+            and record.catcher.position or nil,
+          keeper = record.keeper and record.keeper.valid and record.keeper.position or nil,
+          rest = record.rest,
+          lift = record.lift,
+          level = record.level,
+          busy = record.busy,
+          run = record.run,
+          job = job and {
+            item = job.item, take = job.take, going = job.going, left = job.left,
+            carried = job.carried, escrow = job.escrow, crossing = job.crossing,
+            met = job.met, target = job.target, leg = job.leg, started = job.started,
+            arrival = job.arrival, lead = job.lead,
+            ghost = job.ghost and job.ghost.valid or false,
+          } or nil,
+        }
+      end
+      return out
+    end,
+  })
+end
+
 --- ce-tests is never published, so this can never fire on a player's machine -- which
 --- matters, because info.json keeps test/ out of the package.
 if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
@@ -4428,6 +4687,10 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.steering",
     "test.ft.notatrest",
     "test.ft.showroom",
+    "test.ft.losing",
+    "test.ft.grabbing",
+    "test.ft.bare",
+    "test.ft.vanilla",
   }, {
     load_luassert = true,
     game_speed = 100,

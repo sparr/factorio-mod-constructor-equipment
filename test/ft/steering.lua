@@ -116,10 +116,13 @@ local function drive_through(name, turning, done)
     -- near the body misses what a leg put down and reads as a belt having gone missing.
     local standing = player.surface.count_entities_filtered{ name = BELT,
       position = world.ORIGIN, radius = 260 }
-    local claw = 0
     local record = (storage.constructor_arms[player.index] or {})[1]
     local held = record and record.entity and record.entity.valid
       and record.entity.held_stack.valid_for_read and record.entity.held_stack.count or 0
+    -- and in the box that catches a delivery, which stands out at whatever the claw is
+    -- aimed at and is as much a place a belt can be as the claw is
+    local claw = record and record.catcher and record.catcher.valid
+      and record.catcher.get_inventory(defines.inventory.chest).get_item_count(BELT) or 0
     local loose = 0
     for _, item in ipairs(player.surface.find_entities_filtered{ name = "item-on-ground",
           position = world.ORIGIN, radius = 260 }) do
@@ -127,14 +130,27 @@ local function drive_through(name, turning, done)
         loose = loose + item.stack.count
       end
     end
-    local all_told = vehicle.get_item_count(BELT) + standing + held + loose + claw
+    -- and riding the belts the arm has just built. A hand let go of over a belt is taken by
+    -- the lane in the same tick and leaves nothing on the ground to find, so a census that
+    -- does not ask the lanes reports a belt destroyed when it is merely somewhere nobody
+    -- would look. test/ft/losing.lua is the fixture that found that out.
+    local riding = 0
+    for _, belt in ipairs(player.surface.find_entities_filtered{ type = "transport-belt",
+          position = world.ORIGIN, radius = 260 }) do
+      for line = 1, 2 do
+        riding = riding + belt.get_transport_line(line).get_item_count(BELT)
+      end
+    end
+    local all_told = vehicle.get_item_count(BELT) + standing + held + loose + claw + riding
     world.unseat(player)
     vehicle.destroy()
     -- Written down as well as asserted on. The assertions only say nothing broke; what is
     -- worth reading is how much a steering wearer gets done against one going straight.
     helpers.write_file("steering.txt",
-      ("%-11s %-8s built %2d  worst claw lag %5.1f deg  belts all told %d\n")
-        :format(name, turning and "turning" or "straight", standing, worst, all_told), true)
+      ("%-11s %-8s built %2d  worst claw lag %5.1f deg  belts all told %d"
+        .. "  (%d riding a belt)\n")
+        :format(name, turning and "turning" or "straight", standing, worst, all_told,
+          riding), true)
     done(standing, worst, all_told)
   end, "the drive never ended", A_DRIVE + 200)
 end
@@ -463,13 +479,26 @@ describe("a train driven up and down a line of ghosts", function()
           flying = flying + box.get_inventory(defines.inventory.chest).get_item_count(BELT)
         end
       end
+      -- and riding the belts the arms have just built, which is somewhere a load can get to
+      -- without anybody putting it there: a hand let go of over a belt is taken by the lane
+      -- in the same tick, and there is nothing on the ground to find afterwards. Counted
+      -- because leaving it out is what once had this fixture reporting a belt destroyed
+      -- when it was sitting on a lane twenty tiles back. test/ft/losing.lua is the fixture
+      -- that found it.
+      local riding = 0
+      for _, belt in ipairs(surface.find_entities_filtered{ type = "transport-belt",
+            position = world.ORIGIN, radius = 300 }) do
+        for line = 1, 2 do
+          riding = riding + belt.get_transport_line(line).get_item_count(BELT)
+        end
+      end
       assert.are.equal(0, loose, ("%d belts were left on the ground"):format(loose))
       -- and the driver's own pockets, which is where a belt goes if an arm is ever handed
       -- back to a character rather than to the train
       local pocketed = player.get_main_inventory().get_item_count(BELT)
-      assert.are.equal(BELTS, built + held + flying + pocketed,
-        ("a belt was made or lost: %d built, %d in the wagon, %d in the air, %d in pockets")
-          :format(built, held, flying, pocketed))
+      assert.are.equal(BELTS, built + held + flying + pocketed + riding,
+        ("a belt was made or lost: %d built, %d in the wagon, %d in the air, %d in pockets,"
+          .. " %d riding a belt"):format(built, held, flying, pocketed, riding))
       assert.is_true(built > 100, ("only %d belts went down"):format(built))
     end, "the run never ended", 1300)
   end)
