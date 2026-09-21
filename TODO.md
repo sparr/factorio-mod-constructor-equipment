@@ -1,18 +1,5 @@
 # Outstanding, from the walks round of 2026-09-19 and 2026-09-20
 
-## 9. An arm stops when its owner stands on what it was reaching for
-
-It should give up on that one and go to something else rather than waiting.
-
-Not reproduced. A walk of the whole showroom built everything that should have been built
-and left standing only what each bay exists to leave standing, and a character who steps
-onto a ghost mid reach gives up on it within a few ticks and builds the next one along. The
-paths that could have waited are all covered: choose() passes over what its owner stands in
-and sorts a pickup underfoot to the back of the queue, advance() asks again every tick and
-turns to something else, and a spot a vehicle has rolled onto fails buildable() and is never
-offered. So this wants the bay, the save or the tier it was seen on before there is anything
-to fix.
-
 ## 12. An arm should aim where its target will be, not where it is
 
 Done for one delivery from rest, for an arm that is already out, and for a claw working
@@ -35,39 +22,47 @@ the shape of the cone rather than anything to fix.
 
 What is left.
 
-**The search is wider than it needs to be.** It draws the circle round a capsule that
-assumes full stretch from the first tick. What an arm can really meet is a cone, and
-reach.meets and reach.chain measure it exactly, but only meets is wired and only for judging
-a candidate rather than for finding one. Measured on a fourth tier arm: 211 candidates and
-0.084ms against 116 and 0.036ms for the cone's own circle. An area can also be given an
-orientation, which is worth more than a chain of circles once a cone is long and thin -- a
-car's cone returns 330 candidates in one call against 435 in four. Wants a quiet machine to
-measure properly.
+**The search is wider than it needs to be, and which shape to draw is unmeasured.** It
+draws one circle round a capsule that assumes full stretch from the first tick. What an arm
+can really meet is a cone, and reach.meets and reach.chain measure that exactly, but only
+meets is wired and only for judging a candidate rather than for finding one.
+
+Three shapes are available and none of them wins everywhere. One circle round the cone is a
+single cheap call that over-reaches most at speed. A chain of circles follows a long thin
+cone but costs a call apiece. An oriented bounding box is one call that fits a needle, and
+should beat the chain once the cone is long enough. First numbers, on a fourth tier arm: 211
+candidates and 0.084ms for the capsule's circle against 116 and 0.036ms for the cone's own,
+and a car's cone at 330 candidates in one oriented call against 435 in four circles.
+
+What is wanted is a benchmark over the axes that decide it -- the cone's length and width,
+how many things are standing in it, and how thickly -- and from that the thresholds for
+picking a shape. Wants a quiet machine.
 
 **The walking penalty is switched off.** tiers.SLOWS, with thirty tests skipped behind it.
 It is not only a cost: a slower wearer has a wider cone, so putting it back makes the low
 tiers reach further to the side than they do now.
 
-## 16. The toolbar button loses a load and confuses a fresh arm
-
-- Switched off mid delivery, the arm comes home and puts the item on the ground rather than
-  back in the inventory.
-- Switched on beside a ghost, the arm is made with the item already in its claw and then
-  sends the claw back to its owner before setting out, as though fetching what it holds.
-
-Neither reproduced. What is ruled out for the first: the folding arm's own drop position,
-which is its rest point, and a hand cannot come as close to its base as that point is, so
-the engine never reaches it and never lets go there -- checked at two tiles and at five, and
-by pressing at every fourth tick through a whole delivery against the bay's own column of
-eight, which never dropped anything and never lost a belt. For the second: a loaded claw was
-sampled every tick from birth at six positions round its owner, including behind and beside,
-and never once went inward before delivering. Wants the save, or the arm and the ghost it
-happened with.
-
 ## 20. Deconstruction leaves items behind
 
 About one in twenty items picked up from around three and a half tiles away is left on the
 ground, without even its deconstruct marker.
+
+**Reproduced on the showroom's chest downgrade bay.** The arm takes something like thirty
+seconds to pick up what is lying near it, and drops some of it around four tiles from the
+player. That is the bay to work from; what follows is what could not be got out of a bare
+ring.
+
+Not reproduced by laying rings out, over eight layouts counted to the last item: rings of twenty four marked
+belts at 2.5, 3.0, 3.5, 4.0 and 4.5 tiles, a ring of marked loose stacks rather than things
+standing, the same ring worked by a second tier arm, and a line of twenty walked past. Every
+one of them balances -- what was laid out equals what came home, plus what is still standing,
+plus what is on the ground, plus what is in a claw, a box or an escrow -- and in none of them
+is anything on the ground at all.
+
+Run against the code as it was before the round of fixes this note sits under as well, in
+case one of them had quietly cured it, and the numbers are identical. So it is not that this
+was fixed; it is that these are not the layouts it was seen on. Like 9 and 16, it wants the
+bay or the save it happened in.
 
 ## 22. An arm turns too fast
 
@@ -79,6 +74,38 @@ deconstruction wanted thirty of the harness's cycles where it had wanted six. A 
 still loses a walk past marked things and a bulk claw's round of four. A fifth off costs
 nothing any fixture measures.
 
-What is left is the horizon. A claw gives up a crossing it cannot make the next bearing for
-in time, and that test is what a slower turn runs into; opening it up is what would let the
-full third come off.
+Settled there. The horizon is left alone: a claw gives up a crossing it cannot make the next
+bearing for in time, and opening that up is what would let the full third come off, but a
+seventh is what the arms keep for now.
+
+One thing to check before anybody opens it. reach.any_way, which is the turning half of the
+horizon, is already 0.5 / rotation -- so slowing the turn widens the horizon by itself, which
+undercuts the idea that the horizon is what a slower turn runs into. Where a refused crossing
+is actually refused wants measuring before the number is touched.
+
+## An arm will not take up what its owner is standing on
+
+Things marked for taking up -- what a downgraded chest spills, say -- are left where they
+are when the player is standing on them.
+
+The first place to look is not the engine but the mod: choose() deliberately passes over
+what its owner stands in and sorts a pickup underfoot to the back of the queue. That rule
+predates leading and predates the deconstruction work, and it may simply be wrong now.
+
+The engine has a hand in it too, and that part is understood: an inserter whose pickup or
+drop falls on a tile holding something marked for deconstruction will not move its hand.
+The drop end is covered, since the box at the rest point stands on that tile, and the pickup
+end is cured by naming the target, which pin_from does. So if the mod is not refusing it by
+its own rule, the thing to check is whether that naming survives the case where the thing
+being fetched is the tile the arm is standing on.
+
+## Arms turn back from some ghosts when a train is at full speed
+
+Driving forward at full speed, an arm sets off for a ghost and then turns back without
+delivering, and it is the same ghosts every time rather than a scattering of them.
+
+That it is specific ghosts rather than random ones points at the course rather than at the
+swing: set_course offers a lead only where an intercept exists inside the horizon, and
+holding_course drops one that stops being flyable. A claw that sets off and turns back is
+one that had an intercept and then lost it. `test/ft/steering.lua` drives a train, and
+test/ft/losing.lua drives one at half speed and faster, so the layout is to hand.
