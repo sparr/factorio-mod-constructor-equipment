@@ -532,17 +532,28 @@ end
 ---Not the same question as full_swing, and the difference is the whole of why both exist.
 ---full_swing is how far ahead an arm is willing to look before it sets off: one flight, from
 ---where a fresh hand is born out to full stretch. This is how long a reach already under way
----is allowed to take, which is longer, because a hand part way through one can be anywhere.
----A hand back at its own base reaching the full five tiles wants fifty ticks against a
----swing's forty three, and it may have half a turn to make on top.
+---is allowed to take, which is longer, because a hand part way through one can be anywhere:
+---a hand back at its own base reaching the full five tiles wants fifty ticks against a
+---swing's forty three, and it may have half a turn to make as well.
 ---
----Measured the hard way: with a swing's worth as the limit for both, an arm coming home and
----offered something on the far side gave the reach up and took it again on every tick, and
----the ghost took 153 ticks to build against 46 for the one before it.
+---As well, not on top. The two are one swing and not two: extension and rotation are speeds
+---the engine runs at once and neither waits on the other, so what a journey costs is the
+---greater of them and never their sum. This added them for a long while, which made the
+---horizon on the fourth tier a hundred and twenty three ticks where the worst journey it can
+---ever be asked for is seventy three -- a hand at its own base with half a turn to make,
+---fifty ticks of stretch inside seventy three of turn.
+---
+---The same law reach.on_it is built on, and measured on the same hand. See
+---test/ft/swinging.lua, which times every bearing on three tiers against max(stretch, turn)
+---and finds the engine on the spot on floor of it, never later.
+---
+---Measured the hard way to begin with: with a swing's worth as the limit for both, an arm
+---coming home and offered something on the far side gave the reach up and took it again on
+---every tick, and the ghost took 153 ticks to build against 46 for the one before it.
 ---@param arm {range: number, extension: number, rotation: number?}
 ---@return number ticks
 function reach.longest(arm)
-  return arm.range / arm.extension + reach.any_way(arm)
+  return math.max(arm.range / arm.extension, reach.any_way(arm))
 end
 
 ---The cone an arm can meet, worked out once so that a spot can be tested against it with

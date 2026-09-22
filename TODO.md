@@ -16,10 +16,32 @@ measurements.
 Settled for now: a seventh is off every tier's rotation, which is as much as the swing
 carries. A third, which is what was asked for, costs a claw its crossings.
 
-The reason given for opening the horizon up to allow more does not survive a look at it.
-reach.any_way, the turning half of the horizon, is already 0.5 / rotation, so slowing the
-turn widens the horizon by itself. Where a refused crossing is actually refused wants
-measuring before that number is touched.
+The horizon itself is no longer a sum. reach.longest used to add the stretch to the turn,
+which is not what a journey costs: the engine runs both speeds at once and neither waits on
+the other, so it is the greater of them. It is max() now, and the worst journey an arm can be
+asked for -- a hand at its own base with half a turn to make -- still sits inside it, so
+nothing reachable was lost. Measured: the train of `test/ft/turning.lua` builds 209 and 226
+either way, to the ghost.
+
+Which half binds is now a per-tier question, and that is what the old reasoning missed:
+
+| tier | stretch | turn | horizon | binds |
+| --- | --- | --- | --- | --- |
+| 1 | 57.1 | 42.0 | 57.1 | the stretch |
+| 2 | 60.0 | 29.4 | 60.0 | the stretch |
+| 3 | 40.0 | 58.8 | 58.8 | the turn |
+| 4 | 50.0 | 73.5 | 73.5 | the turn |
+
+So "slowing the turn widens the horizon by itself" is true only where the turn is already the
+binding half. Take a third off instead of a seventh and tiers 3 and 4 widen, from 58.8 to
+75.0 and from 73.5 to 93.8; tiers 1 and 2 do not move at all, because the stretch still
+binds. If a slower turn costs the low tiers their crossings, the horizon will not be what
+gives it back.
+
+What is still unmeasured is whether the horizon is what refuses a crossing at all. Narrowing
+it by a third on the fourth tier and by two fifths on the first cost nothing anywhere in the
+suite, which is evidence that it is not -- the refusals are coming from somewhere else, and
+where wants finding before that number is touched.
 
 ## The equipment's own quality does nothing
 

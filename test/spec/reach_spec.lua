@@ -870,3 +870,34 @@ describe("a hand turning toward a bearing", function()
     bearing(337.5, reach.turned(EAST, { x = -1, y = 0 }, QUICK))
   end)
 end)
+
+-- How long a reach already under way is allowed to take. The greater of stretching and
+-- turning rather than their sum, because the engine runs both at once -- the same law
+-- reach.on_it is built on.
+describe("the longest a hand could need", function()
+  --- The fourth tier: five tiles at a tenth a tick, 0.0068 of a turn a tick. Fifty ticks of
+  --- stretch, seventy three and a half of turn.
+  local FOURTH = { range = 5, extension = 0.1, rotation = 0.0068 }
+
+  it("is the greater of stretching and turning, not their sum", function()
+    assert.is_true(math.abs(reach.longest(FOURTH) - 0.5 / 0.0068) < 1e-9,
+      ("%.1f where the turn alone is %.1f"):format(reach.longest(FOURTH), 0.5 / 0.0068))
+  end)
+
+  it("is the stretch where the stretch is the slower half", function()
+    -- A tier that turns quickly and creeps out: the stretch is what it waits on.
+    local creeper = { range = 5, extension = 0.02, rotation = 0.05 }
+    assert.are.equal(250, reach.longest(creeper))
+  end)
+
+  it("is the stretch alone for a hand that need not turn", function()
+    assert.are.equal(50, reach.longest{ range = 5, extension = 0.1 })
+  end)
+
+  it("is never less than one flight out", function()
+    -- Whatever else it is, a reach under way may have further to go than a fresh one: a
+    -- hand at its own base has the whole range to cover where a fresh one starts part way.
+    local tier = { range = 5, extension = 0.1, rotation = 0.0068 }
+    assert.is_true(reach.longest(tier) >= (tier.range - reach.BORN) / tier.extension)
+  end)
+end)
