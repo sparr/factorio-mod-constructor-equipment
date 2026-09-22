@@ -223,7 +223,7 @@ end
 --- it. That is what lets any row be walked into directly.
 local ROWS = {
   {
-    title = "1. Building",
+    title = "Building",
     note = "Modular armour, one first tier arm, a pocketful of belts.",
     kit = {
       armour = "modular-armor",
@@ -243,14 +243,23 @@ local ROWS = {
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           ghost("transport-belt", x + 9, y + 6)
         end },
-      { "A ghost under your feet",
-        "Stand on the mark. The belt appears under your feet, and an arm will not reach beneath its own base.",
+      { "A belt under your feet",
+        "Stand on the mark. The belt appears under your feet and goes up anyway: you can stand on a belt, so it is not in your way.",
         function(x, y)
           pad(x + 4, y + 6, "refined-hazard-concrete-left")
           -- Laid when the mark is stood on rather than waiting there. Walking up to a belt
           -- is walking towards it, which is all leading needs: it was built a few tiles
           -- short of the mark every time, and the bay you arrived at was an empty tile.
           lay_on(x + 4, y + 6, { { "transport-belt", 0, 0 } })
+        end },
+      { "A chest under your feet",
+        "Stand on the mark. This one waits, because a chest is a thing you cannot stand in. Step off and it goes up.",
+        function(x, y)
+          pad(x + 4, y + 6, "refined-hazard-concrete-left")
+          -- The other half of the same rule, and the half that still declines. What decides
+          -- it is whether the thing could be built where its owner is standing at all, not
+          -- whether the claw can reach under itself -- see standing_in() in control.lua.
+          lay_on(x + 4, y + 6, { { "iron-chest", 0, 0 } })
         end },
       { "Nothing to pay with",
         "Stand on the mark. You are carrying no steel chest, so it stays a ghost.",
@@ -286,7 +295,7 @@ local ROWS = {
   },
 
   {
-    title = "2. Tiers and numbers",
+    title = "Tiers and numbers",
     note = "Power armour, one arm of every tier, and the capacity research done.",
     kit = {
       armour = "power-armor-mk2",
@@ -359,7 +368,7 @@ local ROWS = {
   },
 
   {
-    title = "3. Power",
+    title = "Power",
     note = "Power armour with nothing but an arm in it, then one with a reactor.",
     kit = {
       armour = "power-armor",
@@ -374,7 +383,7 @@ local ROWS = {
           pad(x + 3, y + 6, "refined-hazard-concrete-left")
           for i = 0, 3 do ghost("transport-belt", x + 5, y + 5 + i) end
         end },
-      { "Take the reactor",
+      { "The same arm, with power behind it",
         "Stand on the mark. It puts a reactor and a battery in your armour, and now the same arm builds.",
         function(x, y)
           -- The mark hands them over rather than a chest offering them. Rummaging in a
@@ -425,7 +434,7 @@ local ROWS = {
   },
 
   {
-    title = "4. Switching off, and full pockets",
+    title = "Switching off, and full pockets",
     note = "Power armour, one arm, and a pocketful you will be asked to fill up.",
     kit = {
       armour = "power-armor",
@@ -460,7 +469,7 @@ local ROWS = {
   },
 
   {
-    title = "5. The upgrade planner",
+    title = "The upgrade planner",
     note = "Power armour, the bulk arm, and better belts to pay with.",
     kit = {
       armour = "power-armor",
@@ -525,7 +534,7 @@ local ROWS = {
   },
 
   {
-    title = "6. The deconstruction planner",
+    title = "The deconstruction planner",
     note = "Power armour, the bulk arm, a planner and a charge for the cliff.",
     kit = {
       armour = "power-armor",
@@ -608,7 +617,7 @@ local ROWS = {
   },
 
   {
-    title = "7. A tank",
+    title = "A tank",
     note = "A vehicle the base game gives an equipment grid. Get in and drive along the ghosts.",
     vanilla = true,
     kit = { armour = "modular-armor", equipment = {}, items = {} },
@@ -630,7 +639,7 @@ local ROWS = {
   },
 
   {
-    title = "8. A spidertron",
+    title = "A spidertron",
     note = "The other vehicle the base game gives a grid, and the one that walks.",
     vanilla = true,
     kit = { armour = "modular-armor", equipment = {}, items = {} },
@@ -658,7 +667,7 @@ local ROWS = {
   },
 
   {
-    title = "9. A car, with a grid the showroom added",
+    title = "A car, with a grid the showroom added",
     note = "NOT VANILLA. A car has no equipment grid in the base game; this one has one so there is something to see.",
     vanilla = false,
     kit = { armour = "modular-armor", equipment = {}, items = {} },
@@ -678,7 +687,7 @@ local ROWS = {
   },
 
   {
-    title = "10. A locomotive, with a grid the showroom added",
+    title = "A locomotive, with a grid the showroom added",
     note = "NOT VANILLA. A locomotive has no equipment grid in the base game either. It builds out of the wagon behind it, because a locomotive has no hold of its own.",
     vanilla = false,
     kit = { armour = "modular-armor", equipment = {}, items = {} },
@@ -711,8 +720,84 @@ local ROWS = {
                 wagon = "cargo-wagon" },
   },
 
+  --- Three of AAI's vehicles, for the one thing the base game's four cannot show: a hull of
+  --- a shape nobody wrote lib/pack.lua against. A chaingunner is a tile and a half square, an
+  --- ironclad is twice as long as it is wide, and a hauler is a big square -- against a tank,
+  --- a car and a locomotive, which are all roughly the same long rectangle.
+  ---
+  --- Each is its own mod and none of them is a dependency of anything here. A row whose
+  --- vehicle is missing is left out of the showroom entirely rather than laid out empty, and
+  --- the rows after it close up: see clear_and_build(), which does the leaving out and puts
+  --- the numbers on afterwards.
   {
-    title = "11. Leading",
+    title = "An AAI chaingunner, the smallest hull there is",
+    note = "Power armour, and four second tier arms bolted to a hull a tile and a half square.",
+    vanilla = false,
+    when = function() return prototypes.entity["vehicle-chaingunner"] ~= nil end,
+    kit = { armour = "power-armor", equipment = {}, items = {} },
+    bays = {
+      { "Four arms on a small hull",
+        "Get in and drive east. Four arms on a hull this size sit almost on top of one another, which is what this is here to show.",
+        function(x, y)
+          pad(x + 2, y + 6, "refined-hazard-concrete-left")
+          for i = 0, 29 do
+            ghost("transport-belt", x + 6 + i, y + 4)
+            ghost("transport-belt", x + 6 + i, y + 8)
+          end
+        end },
+    },
+    vehicle = { name = "vehicle-chaingunner", at = { 3, 6 }, fuel = "solid-fuel",
+                arms = { TIERS[2], TIERS[2], TIERS[2], TIERS[2] } },
+  },
+
+  {
+    title = "An AAI ironclad, twice as long as it is wide",
+    note = "Its own equipment grid, not the showroom's, and six second tier arms down a long hull.",
+    vanilla = false,
+    -- "ironclad", not "vehicle-ironclad": alone among AAI's vehicles it drops the prefix.
+    when = function() return prototypes.entity["ironclad"] ~= nil end,
+    kit = { armour = "power-armor", equipment = {}, items = {} },
+    bays = {
+      { "Arms down a long hull",
+        "Get in and drive east. An ironclad carries a grid of its own, so nothing here had to give it one.",
+        function(x, y)
+          pad(x + 2, y + 6, "refined-hazard-concrete-left")
+          -- Two lines wide apart, since a hull this long puts its end arms a good way from
+          -- its middle and a single line would only ever be worked by the near ones.
+          for i = 0, 29 do
+            ghost("transport-belt", x + 6 + i, y + 3)
+            ghost("transport-belt", x + 6 + i, y + 9)
+          end
+        end },
+    },
+    vehicle = { name = "ironclad", at = { 3, 6 }, fuel = "solid-fuel",
+                arms = { TIERS[2], TIERS[2], TIERS[2],
+                         TIERS[2], TIERS[2], TIERS[2] } },
+  },
+
+  {
+    title = "An AAI hauler, with a grid the showroom added",
+    note = "A big square hull and a hold of its own, so the arms build out of what it carries.",
+    vanilla = false,
+    when = function() return prototypes.entity["vehicle-hauler"] ~= nil end,
+    kit = { armour = "power-armor", equipment = {}, items = {} },
+    bays = {
+      { "Building out of the hold",
+        "Get in and drive east. The belts come out of the hauler rather than your pockets, the way a train's come out of its wagons.",
+        function(x, y)
+          pad(x + 2, y + 6, "refined-hazard-concrete-left")
+          for i = 0, 29 do
+            ghost("transport-belt", x + 6 + i, y + 4)
+            ghost("transport-belt", x + 6 + i, y + 8)
+          end
+        end },
+    },
+    vehicle = { name = "vehicle-hauler", at = { 3, 6 }, fuel = "solid-fuel",
+                arms = { TIERS[3], TIERS[3], TIERS[2], TIERS[2] } },
+  },
+
+  {
+    title = "Leading",
     note = "Power armour, one fourth tier arm, a reactor and a pocketful of belts.",
     -- Wider bays than the rest of the showroom. Every bay here is walked rather than stood
     -- on, and a walk long enough to meet something ten tiles off runs into the next bay at
@@ -763,7 +848,7 @@ local ROWS = {
   },
 
   {
-    title = "12. Rounds on the move",
+    title = "Rounds on the move",
     note = "The same arm with the capacity research done, so its claw carries several.",
     spread = 24,
     kit = {
@@ -813,6 +898,74 @@ local ROWS = {
   },
 }
 
+--- Every quality the game has, worst first, and never the placeholder.
+---@return table[] each { name, level }
+local function qualities()
+  local found = {}
+  for name, quality in pairs(prototypes.quality) do
+    if name ~= "quality-unknown" then
+      found[#found + 1] = { name = name, level = quality.level }
+    end
+  end
+  table.sort(found, function(one, other) return one.level < other.level end)
+  return found
+end
+
+table.insert(ROWS, {
+  title = "Quality",
+  note = "The same arm at every quality. Each mark along the row hands you a better one.",
+  vanilla = false,
+  -- Nothing worth showing where there is only the one quality, which is every game without
+  -- the quality mod in it. A row of a single bay saying "this is normal" is not a row.
+  when = function() return #qualities() > 1 end,
+  kit = {
+    armour = "power-armor",
+    equipment = { TIERS[4], "fission-reactor-equipment", "battery-mk2-equipment" },
+    items = { ["transport-belt"] = 100 },
+  },
+  -- Worked out when the row is laid rather than written down, because which qualities exist
+  -- is a question about the game rather than about the mod.
+  bays = function()
+    local bays = {}
+    for _, quality in ipairs(qualities()) do
+      bays[#bays + 1] = {
+        quality.name:sub(1, 1):upper() .. quality.name:sub(2),
+        -- The multiplier is the engine's own figure rather than a sum written here: a
+        -- quality prototype carries it, and it is exactly what the inserter's two speeds
+        -- come out scaled by.
+        ("Stand on the mark. The arm you are handed is %s, and the engine swings it %s."):
+          format(quality.name, quality.level == 0 and "at its ordinary rate"
+            or ("%.1f times as fast"):format(
+              prototypes.quality[quality.name].default_multiplier)),
+        function(x, y)
+          -- The mark hands over an arm of this quality and lays the work at the same time,
+          -- so the whole of the instruction is standing on it.
+          local kit = {
+            armour = "power-armor",
+            equipment = { { TIERS[4], quality.name }, "fission-reactor-equipment",
+                          "battery-mk2-equipment" },
+            items = { ["transport-belt"] = 100 },
+          }
+          bay_kit(x + 2, y + 6, kit,
+            ("for a %s arm, and a wall of belts to put up with it"):format(quality.name))
+          -- A block rather than a line, and all of it inside the reach of a five tile arm,
+          -- so that what is being watched is how fast the claw works rather than how far it
+          -- can lean. Same block at every quality, so the only thing that differs along the
+          -- row is the arm.
+          local laid = {}
+          for dx = 4, 6 do
+            for dy = 4, 8 do
+              laid[#laid + 1] = { "transport-belt", dx, dy }
+            end
+          end
+          lay_on(x + 2, y + 6, laid)
+        end,
+      }
+    end
+    return bays
+  end,
+})
+
 -- --------------------------------------------------------------------------- kitting
 
 ---Give the character exactly what a row wants and nothing else.
@@ -829,8 +982,18 @@ local function kit(player, row)
     player.insert{ name = wanted.armour, count = 1 }
     local armour = worn and worn[1]
     if armour and armour.grid then
-      for _, name in pairs(wanted.equipment or {}) do
-        if prototypes.equipment[name] then armour.grid.put{ name = name } end
+      -- A name, or { name, quality } for a piece that is not the ordinary one. A quality
+      -- the game does not have -- which is every one of them without the quality mod -- is
+      -- left out rather than refused, so a row asking for legendary arms in a game with no
+      -- quality in it simply gets none rather than failing to lay itself out.
+      for _, want in pairs(wanted.equipment or {}) do
+        local name = want
+        local quality = nil
+        if type(want) == "table" then name, quality = want[1], want[2] end
+        if prototypes.equipment[name]
+            and (not quality or prototypes.quality[quality]) then
+          armour.grid.put{ name = name, quality = quality }
+        end
       end
       for _, piece in pairs(armour.grid.equipment) do
         piece.energy = (wanted.charged == false) and 0 or piece.max_energy
@@ -857,12 +1020,31 @@ local function clear_and_build()
   end
   made.always_day = true
 
+  -- Only the rows this game can actually show, worked out before anything is measured off
+  -- them. A row about a mod's vehicle is laid out when that mod is here and left out
+  -- entirely when it is not: half a row, with a mark and a heading and no vehicle to get
+  -- into, is worse than no row at all.
+  --
+  -- A row may also work its bays out when it is laid rather than say them outright, which is
+  -- what a row about qualities needs: which of them exist is not known until there is a game
+  -- to ask. Both happen here, so that the ground, the chunks and the counting downstream are
+  -- all measured off the showroom that is really going to be built.
+  local showing = {}
+  for place, row in ipairs(ROWS) do
+    if not row.when or row.when() then
+      if type(row.bays) == "function" then row.bays = row.bays() end
+      -- Where it sits in ROWS, so that a pad can find its own row again afterwards.
+      row.index = place
+      showing[#showing + 1] = row
+    end
+  end
+
   local width = 0
-  for _, row in pairs(ROWS) do
+  for _, row in pairs(showing) do
     local wide = row.spread or BAY
     width = math.max(width, #row.bays * wide + wide)
   end
-  local tall = #ROWS * ROW + ROW
+  local tall = #showing * ROW + ROW
 
   made.request_to_generate_chunks({ width / 2, tall / 2 },
     math.ceil(math.max(width, tall) / 32) + 2)
@@ -897,16 +1079,24 @@ local function clear_and_build()
   storage.lays = {}
   storage.marks = {}
   storage.bay_kits = {}
-  for index, row in ipairs(ROWS) do
+
+  -- The number in a heading is put on here rather than written into the title, so that a row
+  -- left out leaves no hole in the counting: a showroom that goes seven, eight, eleven reads
+  -- as one that has lost something.
+  for index, row in ipairs(showing) do
     local rx, ry = row_at(index)
-    label(rx, ry + 1, row.title, row.note,
+    label(rx, ry + 1, ("%d. %s"):format(index, row.title), row.note,
       row.vanilla == false and { 1, 0.65, 0.4 } or nil)
 
     -- the west pad, which kits whoever stands on it, and the east one, which moves them on
     pad(rx + 1, ry + 6, "refined-concrete")
     label(rx - 1, ry + 7.6, "STAND HERE",
       "for what this row wants", { 0.55, 0.9, 0.6 })
-    storage.pads[index] = { west = { x = rx + 1.5, y = ry + 6.5 } }
+    -- Which entry of ROWS this is, remembered because the two numberings are not the same:
+    -- the pads are numbered by what was laid out and ROWS holds every row there could be. A
+    -- showroom with no AAI vehicles in it lays Leading eleventh while ROWS has a chaingunner
+    -- eleventh, and standing on Leading's pad handed over the chaingunner's kit.
+    storage.pads[index] = { west = { x = rx + 1.5, y = ry + 6.5 }, row = row.index }
 
     -- A row may ask for wider bays than the rest. Leading is the one thing here that needs
     -- room to happen in: an arm sets off for something ten tiles off and the walk that
@@ -930,7 +1120,7 @@ local function clear_and_build()
     -- clear ground either side, so that walking the last exhibit does not end with being
     -- carried off it, and so the pad is never touching the thing it stands beyond.
     local east = math.max(rx + (#row.bays + 1) * wide, math.ceil(eastmost) + 2)
-    if index < #ROWS then
+    if index < #showing then
       pad(east, ry + 6, "refined-hazard-concrete-right")
       label(east - 2, ry + 7.6, "STAND HERE",
         row.vehicle and ("to go to row %d, vehicle and all"):format(index + 1)
@@ -1020,11 +1210,11 @@ local function clear_and_build()
 
   local ghosts = made.count_entities_filtered{ type = "entity-ghost" }
   local vehicles = 0
-  for _, row in pairs(ROWS) do if row.vehicle then vehicles = vehicles + 1 end end
+  for _, row in pairs(showing) do if row.vehicle then vehicles = vehicles + 1 end end
   local bays = 0
-  for _, row in pairs(ROWS) do bays = bays + #row.bays end
-  log(("ce-demo: built %d rows, %d bays, %d ghosts, %d vehicles"):format(
-    #ROWS, bays, ghosts, vehicles))
+  for _, row in pairs(showing) do bays = bays + #row.bays end
+  log(("ce-demo: built %d rows of %d, %d bays, %d ghosts, %d vehicles"):format(
+    #showing, #ROWS, bays, ghosts, vehicles))
 
   for _, player in pairs(game.players) do
     if player.character then
@@ -1146,15 +1336,17 @@ script.on_event(defines.events.on_tick, function()
             end
             player.teleport({ next_row.west.x, next_row.west.y }, made)
             storage.stood[player.index] = { x = next_row.west.x, y = next_row.west.y }
-            kit(player, ROWS[index + 1])
+            local went_to = ROWS[next_row.row]
+            kit(player, went_to)
             storage.standing = index + 1
-            player.print(ROWS[index + 1].title .. " -- " .. ROWS[index + 1].note)
+            player.print(("%d. %s -- %s"):format(index + 1, went_to.title, went_to.note))
           end
           break
         elseif on_pad(player, pads.west) and storage.standing ~= index then
-          kit(player, ROWS[index])
+          local stood_on = ROWS[pads.row]
+          kit(player, stood_on)
           storage.standing = index
-          player.print(ROWS[index].title .. " -- " .. ROWS[index].note)
+          player.print(("%d. %s -- %s"):format(index, stood_on.title, stood_on.note))
           break
         end
       end
@@ -1193,7 +1385,11 @@ remote.add_interface("ce-demo", {
   ---Give a player exactly what a row wants, the same as standing on its west pad does.
   kit = function(player_index, row)
     local player = game.get_player(player_index)
-    if player and ROWS[row] then kit(player, ROWS[row]) end
+    -- By the number on the ground rather than the place in ROWS, which is what the probe
+    -- and anybody reading the showroom sees.
+    local pads = (storage.pads or {})[row]
+    local wanted = pads and ROWS[pads.row] or nil
+    if player and wanted then kit(player, wanted) end
   end,
   ---Which surface it all stands on.
   surface = function() return SURFACE end,

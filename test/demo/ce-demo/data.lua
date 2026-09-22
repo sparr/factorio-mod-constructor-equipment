@@ -18,3 +18,18 @@ for kind, name in pairs{ car = "car", locomotive = "locomotive" } do
   local vehicle = data.raw[kind] and data.raw[kind][name]
   if vehicle then vehicle.equipment_grid = grid.name end
 end
+
+--- And the same for whichever of AAI's vehicles are installed, for the same reason and with
+--- the same admission on their bays. They are here because their hulls are shapes the base
+--- game does not have -- a chaingunner is a tile and a half square, an ironclad is twice as
+--- long as it is wide -- and where an arm ends up bolted to one is a thing lib/pack.lua has
+--- an opinion about that nothing else tests.
+---
+--- Whichever are installed: each is its own mod and none of them is a dependency, so this
+--- adds a grid to the ones that are here and says nothing about the ones that are not. An
+--- ironclad already carries a medium grid of its own and is left with it.
+for _, name in ipairs{ "vehicle-hauler", "vehicle-chaingunner", "vehicle-miner",
+                       "vehicle-warden" } do
+  local vehicle = data.raw.car and data.raw.car[name]
+  if vehicle and not vehicle.equipment_grid then vehicle.equipment_grid = grid.name end
+end

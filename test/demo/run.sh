@@ -14,7 +14,10 @@
 #
 # CE_FACTORIO    the game binary, if it is not where Steam puts it here
 # CE_DEMO_DATA   the data directory the game runs out of (default ~/.cache/bo-play)
-# CE_SPACE_AGE   set to 1 to load the expansion as well
+# CE_SPACE_AGE   set to 1 to load the expansion as well, which the quality row wants
+# CE_AAI         set to 0 to leave AAI's vehicle mods out. They are loaded when they are in
+#                ~/.factorio/mods, because the rows about their hulls are worth seeing and
+#                the showroom leaves those rows out when the vehicles are not there.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -70,6 +73,22 @@ cp -r "$root/test/demo/ce-demo" "$data/mods/ce-demo"
 # CE_SPACE_AGE=1 turns them back on, the same knob test/ft/run.sh uses.
 expansion=false
 [[ "${CE_SPACE_AGE:-0}" == "1" ]] && expansion=true
+# AAI's vehicles, if they have been asked for and are there to be had. Each is its own mod
+# and none is a dependency of anything here: the rows about them are left out of the
+# showroom when they are absent, so this only ever adds rows.
+aai_entries=""
+if [[ "${CE_AAI:-1}" == "1" ]]; then
+    for want in aai-vehicles-chaingunner aai-vehicles-ironclad aai-vehicles-hauler; do
+        found=$(ls -1 "$HOME/.factorio/mods/${want}"_*.zip 2>/dev/null | sort -V | tail -1)
+        if [[ -n "$found" ]]; then
+            ln -sfn "$found" "$data/mods/$(basename "$found")"
+            aai_entries+="{\"name\":\"$want\",\"enabled\":true},"
+        else
+            echo "no $want installed; the showroom will leave its row out" >&2
+        fi
+    done
+fi
+
 cat > "$data/mods/mod-list.json" <<JSON
 {"mods":[
 {"name":"base","enabled":true},
@@ -77,6 +96,7 @@ cat > "$data/mods/mod-list.json" <<JSON
 {"name":"quality","enabled":$expansion},
 {"name":"recycler","enabled":$expansion},
 {"name":"space-age","enabled":$expansion},
+$aai_entries
 {"name":"constructor-equipment","enabled":true},
 {"name":"ce-demo","enabled":true}
 ]}

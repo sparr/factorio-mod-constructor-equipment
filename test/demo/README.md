@@ -47,11 +47,19 @@ You start on row 1's pad with modular armour, one first tier arm and a pocketful
 
 ## What is in it
 
-**1. Building.** The plain case and the four ways it declines. A ghost in reach; one six
-tiles off, which a two tile arm leaves alone; one under your own feet, which an arm will not
-reach beneath its own base; one you are carrying nothing to pay for; a curved rail, which
-wants three rails where the claw holds one; and a run of ghosts to walk away from, which is
-where the slowdown shows.
+Rows are numbered as they are laid out rather than in the source, because some of them are
+only there when the mods they are about are. A row about one of AAI's vehicles is left out
+of a game without that vehicle in it, and the row about quality is left out of a game with
+only the one quality; the rows after close up rather than leaving a hole in the counting. So
+the numbers below are what you see with everything installed, and are lower otherwise. Built
+with nothing but the base game and this mod, the showroom is the first twelve rows.
+
+**1. Building.** The plain case and the ways it declines. A ghost in reach; one six tiles
+off, which a two tile arm leaves alone; a belt under your own feet, which goes up anyway
+because a belt is not a thing you are standing in; a chest under your own feet, which waits
+until you move off it; one you are carrying nothing to pay for; a curved rail, which wants
+three rails where the claw holds one; and a run of ghosts to walk away from, which is where
+the slowdown shows.
 
 **2. Tiers and numbers.** Four arms at once, one of each tier. The mark puts you down among
 four ghosts at one, two, three and four tiles, because walking up to them offers them one at
@@ -99,26 +107,50 @@ train's wagons instead. Their titles say
 so in orange. Without it, a car is the case where a driver's own armour goes quiet and
 nothing takes over.
 
-**11. Leading.** The bays that have to be walked rather than stood on, because an arm aims
+**11. An AAI chaingunner**, **12. an ironclad** and **13. a hauler** are **not vanilla**,
+and are here for the one thing the base game's four vehicles cannot show: a hull of a shape
+nobody wrote the mounting against. A tank, a car and a locomotive are all roughly the same
+long rectangle. A chaingunner is a tile and a half square and its four arms sit almost on top
+of one another; an ironclad is twice as long as it is wide, and carries a grid of its own
+rather than one the showroom added; a hauler is a big square with a hold, so its arms build
+out of what it is carrying. Each is its own mod, none is a dependency, and a row whose
+vehicle is not installed is not laid out at all.
+
+**14. Leading.** The bays that have to be walked rather than stood on, because an arm aims
 where its target will be by the time the claw gets there and standing still there is nowhere
 else for it to be. A belt ten tiles off a five tile arm, which goes up as you pass. One four
 tiles square to the side, which does not, and says why: a hand stretches out more slowly than
-its owner walks, so about a tile to the side is all a walk has, and the arm knows it and
-never sets off -- stop beside that one and it goes up at once. And a two tile arm meeting
+its owner walks, so something square abeam is past a walk before the claw could be there, and
+the arm knows it and never sets off -- stop beside that one and it goes up at once. And a two tile arm meeting
 something six tiles off, since leading is not only for the big ones.
 
-**12. Rounds on the move.** The same arm with the capacity research, so its claw carries
+**15. Rounds on the move.** The same arm with the capacity research, so its claw carries
 several. Four belts ten to thirteen tiles ahead, which are past what one swing can reach or
 even see when the claw leaves and go up in a single trip anyway, because the round is shopped
-for over its whole life. Then three crammed inside that tile of side reach, where two go up
-and one does not, and which two is not fixed.
+for over its whole life. Then a ladder of five off to one side, each rung a tile further
+off your line than the last: the near three go up on the way past and the far two do not, so
+what the bay shows is where the edge is rather than a count. Measured at four spacings, two,
+three and four tiles abeam go up and five and six do not.
+
+**16. Quality.** One mark per quality the game has, worst first, each handing you the same
+fourth tier arm at a better quality than the last along with a block of belts to put up with
+it. The equipment's quality is the arm's: the engine swings a quality inserter faster by both
+its speeds and charges it proportionally more power, so what changes along the row is how
+fast the same claw works and nothing else. A legendary one extends and turns two and a half
+times as fast as a common one, which is the engine's own figure and is what each bay's note
+quotes. Left out of a game with only the one quality in it.
 
 ## What the smoke run should say
 
 ```
-ce-demo: built 12 rows, 31 bays, 358 ghosts, 4 vehicles
+ce-demo: built 12 rows of 16, 31 bays, 360 ghosts, 4 vehicles
 everything placed
 ```
+
+Twelve of sixteen because the smoke run is the base game and this mod and nothing else: the
+three rows about AAI's vehicles and the one about quality are not laid out, and the count
+says so rather than leaving it to be noticed. With all of them, it is sixteen rows, 39 bays,
+540 ghosts and 7 vehicles.
 
 A bay that quietly failed to build looks exactly like a bay demonstrating that nothing
 happens, which is why the smoke run counts rather than eyeballs.

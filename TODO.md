@@ -99,6 +99,61 @@ which the log attributes to "Base mod > Krastorio 2" and which has nothing to do
 mod. The data stage completes, so what is written above is what the two mods really agree
 on; it is not a thing a player can sit down and play today.
 
+## A claw that goes home before it goes out
+
+Two sightings from the showroom, which may be one fault:
+
+**A tap of movement.** Stand about 2.1 tiles from a ghost with a first tier arm and tap a
+movement key towards it. The arm sets off with a lead, comes home because its owner stopped
+at the end of the tap, and then sets off again for a standing delivery. It should have gone
+on delivering from the first departure: the ghost never left its reach, and the only thing
+that changed was the drift going back to nothing.
+
+**The toolbar button.** Switch the arms on while standing in reach of a ghost. The arm
+appears already holding a belt and already part way out -- which will be reach.BORN, the
+179/256 of a tile a fresh hand is born at -- then retracts all the way to its owner before
+extending out to the ghost. It should go straight there.
+
+What they have in common is a claw that comes home when nothing has asked it to. Likely
+suspects: set_course() handing back a lead worked out for a drift that has since gone to
+nothing, and aim() pointing the drop at the rest point on a tick where the job is not yet
+set, which is the shape of the bug fixed in redirect() -- see the commit about a fetch's
+three ends, and whether the same hole is open on the first tick of a job rather than on a
+crossing.
+
+## A heap underfoot is worked last, and should be worked first
+
+The showroom's chest downgrade sheds its plates around and under the player, and the ones
+under the player go last. They should go about first: they are the nearest thing there is.
+
+choose() charges work underfoot an extra full extension -- `price + tier.range /
+tier.extension` -- on the grounds that taking something up from under the base is the slowest
+swing there is, since the hand comes all the way in and whatever is next has to go all the
+way out again. That reasoning was measured on a heap with other work round it and it is
+right for a claw choosing between one thing underfoot and one thing at arm's length.
+
+It is wrong for a heap that is mostly underfoot. When the next job is another plate off the
+same heap, the hand does not have to go all the way out again, so the charge is paying for a
+journey that never happens. What is wanted is a price that knows what the next job is likely
+to be, or an underfoot charge that falls away when the work is dense.
+
+## An arm on a train at speed builds nothing
+
+Lay two rows of belt ghosts on each side of the track, extend the track to three times the
+showroom's length so the train reaches full speed, and at full speed nothing is built at all.
+
+It should be able to. A claw does not have to chase a ghost: it is held on a lead, a point
+fixed in the arm's own frame, and the ghost sweeps onto it. A second tier arm wants 26 ticks
+to reach two tiles abeam, and a locomotive at full speed covers about 36 tiles in that time,
+so the arm has to set off when the ghost is some 36 tiles ahead -- which is inside the 46
+ticks of horizon a second tier swing has, and ought to be inside what the search brings back.
+
+So the suspicion is the shape of what is searched or sieved at high drift rather than the
+horizon: reach.search_box, reach.cone, or the abeam half of either. Worth measuring what
+comes back and what is turned away at a locomotive's top speed before touching any of them.
+`test/ft/turning.lua` already drives a train, but at 0.3 and 0.6 tiles a tick against a top
+speed nearer 1.4, so the speeds this happens at are not covered by anything.
+
 ## What there is to work with
 
 Fixtures and harnesses built for the items above, so that picking one up does not start from
