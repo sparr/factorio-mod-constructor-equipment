@@ -142,17 +142,6 @@ horizon, is already 0.5 / rotation -- so slowing the turn widens the horizon by 
 undercuts the idea that the horizon is what a slower turn runs into. Where a refused crossing
 is actually refused wants measuring before the number is touched.
 
-## Arms turn back from some ghosts when a train is at full speed
-
-Driving forward at full speed, an arm sets off for a ghost and then turns back without
-delivering, and it is the same ghosts every time rather than a scattering of them.
-
-That it is specific ghosts rather than random ones points at the course rather than at the
-swing: set_course offers a lead only where an intercept exists inside the horizon, and
-holding_course drops one that stops being flyable. A claw that sets off and turns back is
-one that had an intercept and then lost it. `test/ft/steering.lua` drives a train, and
-test/ft/losing.lua drives one at half speed and faster, so the layout is to hand.
-
 ## The equipment's own quality does nothing
 
 A legendary arm reaches and swings exactly as far and as fast as a common one. Everything

@@ -4049,6 +4049,53 @@ local function hand_over(record, job)
   if left > 0 then arm.held_stack.count = left else arm.held_stack.clear() end
 end
 
+--- How many ticks running a course has to be unflyable before the claw gives it up.
+---
+--- One is too few. A course at speed is often marginal by a hair, and whether an intercept
+--- exists flickers from tick to tick as its owner carries the arm along -- so a claw that
+--- gave up on the first refusal spent its whole journey changing its mind: it took a
+--- neighbour, lost that one the next tick, took the first one back, and delivered to
+--- neither. Measured on a train along a double line of ghosts, twenty three of them were
+--- set off for and never built at a quarter of a tile a tick.
+---
+--- Genuine losses do not flicker, and they are told apart by where the thing now is rather
+--- than by waiting: an owner who stops walking, turns away, is teleported or leaves the
+--- surface puts it outside the cone the hand can sweep altogether, and that is given up on
+--- at once. The grace is only for a course lost by a hair.
+local ADRIFT = 4
+
+---Whether an arm should give up the course it is on.
+---
+---Asked every tick, and answered yes only once the course has been refused ADRIFT ticks
+---running. holding_course() is what does the refusing, and it re-solves the lead as a side
+---effect, so it has to be called every tick whatever the answer.
+---@param record table
+---@param from {x: number, y: number}
+---@param range number
+---@return boolean
+local function lost_course(record, from, range)
+  if holding_course(record, from, range) then
+    record.adrift = nil
+    return false
+  end
+  -- Grace only where the loss could be a flicker. A course that has gone because its owner
+  -- stopped, turned away, was teleported or left the surface is gone for good and the claw
+  -- should come home at once; one that has gone by a hair, with the thing still inside the
+  -- cone the hand sweeps, is the kind that comes back a tick later.
+  local job = record.job
+  local tier = tier_of(record)
+  local cone = reach.cone(
+    { range = range, extension = tier.extension, out = hand_out(record) },
+    record.drift or STILL, reach.full_swing(tier))
+  if not (job and job.target and reach.in_cone(cone,
+      { x = job.target.x - from.x, y = job.target.y - from.y })) then
+    record.adrift = nil
+    return true
+  end
+  record.adrift = (record.adrift or 0) + 1
+  return record.adrift >= ADRIFT
+end
+
 local function advance(player, wearer, record, slot, count, claimed, nearby)
   local job = record.job
 
@@ -4204,7 +4251,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
       abandon(record, job)
     elseif not still_wanted(job.ghost)
         or standing_in(job.ghost, wearer.position)
-        or not holding_course(record, from, tier_of(record).range) then
+        or lost_course(record, from, tier_of(record).range) then
       local tier = tier_of(record)
       if not redirect(player, wearer, from, record, job, claimed, tier.range, nearby) then
         abandon(record, job)
@@ -4732,6 +4779,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.searching",
     "test.ft.chunkful",
     "test.ft.underfoot",
+    "test.ft.turning",
   }, {
     load_luassert = true,
     game_speed = 100,

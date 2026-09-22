@@ -8,6 +8,7 @@ Version: 2.1.6
     - An arm turns its claw more slowly, so a hand swings round at a speed that suits the size of the thing rather than snapping between bearings
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
   Bugfixes:
+    - Fixed arms driven past a line of ghosts at speed setting off for one, changing their mind on the next tick, and delivering to neither: a claw gives a course up only once it has really gone rather than the first time it wavers
     - Fixed two players' arms setting off for the same ghost, which had one of them build it while the other carried its load all the way home for nothing
     - An arm now hands its load only into its own box, so a belt it has just built cannot take the item instead of the ghost getting it
     - Fixed a box being taken away with something still inside, which destroyed whatever was in it: about one item in two hundred went that way where several arms worked one line from a moving vehicle
