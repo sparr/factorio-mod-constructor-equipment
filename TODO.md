@@ -66,67 +66,6 @@ Whatever it buys has to come out of the same one number per tier the rest of lib
 is built on, or the progression stops being checkable: no tier, at any quality, may end up
 worse than the tier below it at the same quality.
 
-## A hand part way through a big turn is not where its claw is drawn
-
-reach.on_it is right, and this entry used to say it was wrong. The law it carries -- the
-radius inside out +/- extension * (k + 1), the bearing inside rotation * 2pi * k, both at the
-same k -- is the law the engine flies. Extension and rotation are two speeds it runs at once
-and neither waits on the other, so a hand told to go somewhere arrives on the greater of the
-two times. Measured over three tiers, five bearings and two radii in `test/ft/swinging.lua`,
-the engine landed on the tick max() names every time, never later than it and at worst a tick
-before, which is its last step covering whatever gap is left rather than creeping up on it.
-
-What the old entry measured was a hand on its way to a *further* target passing through a
-band that describes arriving at a nearer one, which those two inequalities never claimed
-anything about. The real fault is underneath: **the state the law is asked of.**
-
-hand_out() and hand_facing() take the hand's radius and bearing from held_stack_position,
-which is where the claw is *drawn*. Past about two thirds of a turn that is not where the
-engine's arm is: the drawn hand runs ahead of its own state in the radius and in the bearing
-at once, and comes back to it by the end of the turn. In the model's own two numbers, each
-already allowed the one step of grace on_it gives it:
-
-| turn | radius | bearing |
-| --- | --- | --- |
-| up to 120 degrees | nothing at all | nothing at all |
-| 135 degrees | 0.011 to 0.072 tiles | 0 to 2.4 degrees |
-| 150 degrees | 0.140 to 0.201 | 2.6 to 5.5 degrees |
-| 180 degrees | 0.504 to 0.559 | 5.8 to 11.3 degrees |
-
-The same on all three tiers measured, which is what says it is the drawing rather than a
-speed. Decomposed, the drawn hand is the state plus an offset that lies along the world's own
-vertical whichever way the arm faces, nought at both ends of the turn and widest in the
-middle.
-
-Fed the drawn hand, the arithmetic comes out **optimistic**. Ninety re-aims of a loaded claw
-part way through a swing, timed to the delivery: where the swing was a half turn, the drawn
-hand's answer was short of what it actually took on 39 of them, by as much as twelve ticks.
-Asked of the state instead -- the birth radius carried out at the extension speed, the birth
-bearing carried round at the rotation speed -- the same arithmetic was right to the tick on
-all ninety.
-
-So an arm still sets off for what it cannot get to in the time it thinks, and that is what is
-left of this.
-
-ADRIFT, the four ticks of grace a course gets before the claw gives it up, is no longer what
-stops the flicker. With the crossing test fixed, `test/ft/turning.lua` reports one attempt on
-any ghost at either speed whether the grace is four ticks or one. What it still buys is small
-and pulls both ways -- 202 and 225 built with it against 204 and 220 without -- so it stays
-until something measures it properly.
-
-**What a fix needs.** The engine's own two numbers, carried by the mod rather than read back:
-a radius moving toward whatever end the arm is chasing at the tier's extension speed, and a
-bearing moving toward it at the tier's rotation speed, both reset to reach.BORN and the built
-direction whenever point() builds the arm again. Nothing in the API offers them -- orientation
-reads nought on an inserter, see point() -- so they have to be integrated tick by tick. What
-that has to survive: an arm with no charge, whose hand does not move while the sum would; the
-ends being re-aimed outside aim(), which redirect() and deliver() both do; and the tick the
-load leaves the hand, where which end is being chased changes.
-
-`test/ft/swinging.lua` is the fixture. It holds the drawn hand to its state up to 120 degrees,
-records the gap past that, and times a re-aimed claw against both readings; a fix is what lets
-the drawn hand be held to its state at every turn.
-
 ## Mods with vehicle and equipment categories of their own
 
 Everything the mod knows about what can carry an arm is written down here rather than asked.
@@ -148,7 +87,8 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | where | what it measures |
 | --- | --- |
 | `test/ft/turning.lua` | a train along a double line of ghosts, counting the ones an arm set off for and never delivered to, and the worst number of attempts on any one of them. It passes now; it is what a claw changing its mind shows up in. |
-| `test/ft/swinging.lua` | a bare inserter turning and stretching at once, tick by tick, and one re-aimed part way through a swing. This is where the law is measured right and the state it is asked of is measured wrong. |
+| `test/ft/swinging.lua` | a bare inserter turning and stretching at once, tick by tick; one re-aimed part way through a swing; and one making a turn and nothing else at a fixed radius. Between them they pin the law, the tick of grace each half of it gets, and how far the drawing strays from the state. |
+| `test/ft/following.lua` | the two numbers control.lua carries for a hand, run against a real inserter through a walk's worth of re-aims. |
 | `test/ft/searching.lua` | four search shapes over sixteen scenarios, asserting each holds everything reach.meets says is there and logging what each costs. |
 | `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
 | `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. |

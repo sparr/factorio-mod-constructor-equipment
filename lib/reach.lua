@@ -317,12 +317,22 @@ function reach.on_it(arm, drift, offset, k)
   local wanted = atan2(dy, dx)
   local apart = math.abs(wanted - now) % (2 * math.pi)
   if apart > math.pi then apart = 2 * math.pi - apart end
-  -- No grace here, unlike the radius above. The engine's last extension step covers
-  -- whatever gap is left; its last turn step does not. Measured directly at a fixed radius
-  -- of three tiles, where the width of an arrival window is worth little angle: 45, 90, 135
-  -- and 180 degrees took 16, 32, 47 and 63 ticks against nominals of 15.625, 31.25, 46.875
-  -- and 62.5, which is ceil of the nominal every time and never a tick under it.
-  return apart <= arm.rotation * 2 * math.pi * k + 1e-9
+  -- The same tick of grace the radius gets, because the engine's last turn step covers
+  -- whatever is left of the turn exactly as its last extension step does.
+  --
+  -- This said the opposite for a long while, on a measurement that had the hand arriving on
+  -- ceil of the nominal. Measured again with the hand held at a fixed three tiles by a
+  -- barred box, so that nothing stretches and nothing is delivered, and with arrival asked
+  -- as a hundredth of a tile from the spot -- a fifth of a degree at that radius, a twelfth
+  -- of a step -- it is floor every time: 45, 90, 135 and 180 degrees took 7, 14, 22 and 29
+  -- steps on the second tier against nominals of 7.35, 14.71, 22.06 and 29.41, and 18, 36,
+  -- 55 and 73 on the fourth against 18.38, 36.77, 55.15 and 73.53. Eight of eight, two
+  -- tiers, never a step over.
+  --
+  -- What the old figure was measuring is most likely the mod's arrival window rather than
+  -- the hand: a window is worth a fraction of a tick of turn, and at three tiles half a
+  -- degree of it is a fifth of a step.
+  return apart <= arm.rotation * 2 * math.pi * (k + 1) + 1e-9
 end
 
 ---How long a hand takes to be able to face any way at all, in ticks.
@@ -460,6 +470,61 @@ function reach.intercept(arm, drift, offset, ticks)
   if later <= ticks and reach.on_it(arm, drift, offset, later) then arrival = later end
   return arrival,
     { x = offset.x - drift.x * arrival, y = offset.y - drift.y * arrival }
+end
+
+---Where a hand gets to in one tick, going out or coming in at its own speed.
+---
+---The engine's own step, and it does not creep up on its target: whatever is left inside one
+---step is covered in that step rather than in the one after. Measured on every tier, a hand
+---is at full stretch on the tick the nominal speed says it will still be short.
+---@param out number how far out it is now
+---@param want number how far out it is going
+---@param extension number tiles a tick
+---@return number
+function reach.stepped(out, want, extension)
+  if math.abs(want - out) <= extension then return want end
+  return out + (want > out and extension or -extension)
+end
+
+---Whether a hand has a turn left to make toward a bearing.
+---
+---More than one step of it, that is: a turn with less than a step left is finished in that
+---step, so a hand within a step of where it is going is a hand that is not turning.
+---@param pointing {x: number, y: number} a unit vector, as the hand points now
+---@param towards {x: number, y: number} where it is going, of any length
+---@param rotation number turns a tick
+---@return boolean
+function reach.turning(pointing, towards, rotation)
+  local length = math.sqrt(towards.x * towards.x + towards.y * towards.y)
+  if length < 1e-9 then return false end
+  local apart = math.abs((atan2(towards.y, towards.x) - atan2(pointing.y, pointing.x)
+    + math.pi) % (2 * math.pi) - math.pi)
+  return apart > rotation * 2 * math.pi
+end
+
+---Which way a hand points after one tick of turning toward a bearing.
+---
+---The short way round, at the tier's own rate, with the same last step as above: a turn with
+---less than a step left to make is finished in that step.
+---@param pointing {x: number, y: number} a unit vector, as the hand points now
+---@param towards {x: number, y: number} where it is going, of any length
+---@param rotation number turns a tick
+---@return {x: number, y: number} a unit vector
+function reach.turned(pointing, towards, rotation)
+  local length = math.sqrt(towards.x * towards.x + towards.y * towards.y)
+  -- No bearing to a spot the hand is standing on, so there is nothing to turn toward and
+  -- the hand keeps the bearing it has.
+  if length < 1e-9 then return pointing end
+  local wanted = atan2(towards.y, towards.x)
+  local now = atan2(pointing.y, pointing.x)
+  local step = rotation * 2 * math.pi
+  -- The short way round, as a signed angle in (-pi, pi].
+  local apart = (wanted - now + math.pi) % (2 * math.pi) - math.pi
+  if math.abs(apart) <= step then
+    return { x = towards.x / length, y = towards.y / length }
+  end
+  local turned = now + (apart > 0 and step or -step)
+  return { x = math.cos(turned), y = math.sin(turned) }
 end
 
 ---The longest a hand could ever need to get anywhere it can get to, in ticks.

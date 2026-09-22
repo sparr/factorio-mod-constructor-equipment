@@ -1072,6 +1072,95 @@ local function standing_clear(job, record, at)
 end
 
 
+---Which way a freshly built hand points, as a unit vector.
+---
+---Where the arm was built facing, which is the whole of what decides it -- see reach.BORN.
+---Nothing means north, which is what an inserter faces when nobody says otherwise.
+---@param record table
+---@return {x: number, y: number}
+local function born_facing(record)
+  local x, y = pack.facing(record.facing or defines.direction.north)
+  return { x = x, y = y }
+end
+
+---Follow the engine's arm through one tick, so that the mod knows where it is.
+---
+---The state of an inserter's hand is two numbers: how far out it is, and which way it points.
+---Neither is in the API -- orientation reads nought on an inserter, see point() -- and the
+---one thing that looks like them is held_stack_position, which is where the claw is *drawn*.
+---Past about two thirds of a turn that is not where the arm is: the drawn hand runs ahead of
+---its own state in both numbers at once and comes back to it by the end of the turn, by as
+---much as half a tile and eleven degrees on a half turn. Fed that, the arithmetic in
+---lib/reach.lua came out optimistic by as much as twelve ticks, so a claw set off for things
+---it could not reach in the time it thought. Measured in `test/ft/swinging.lua`.
+---
+---So the two numbers are carried instead. The engine moves each of them toward whatever end
+---the hand is chasing, at the tier's own rate, and so does this: same law, same step, no
+---drawing in the way. Nothing has to be remembered about what the mod asked for, because the
+---entity is asked what it was last told -- drop_position and pickup_position hold whatever
+---was last written to them, by aim() or by redirect() or by deliver(), and they travel with
+---the entity, so the teleport that puts the arm back on its owner does not disturb them.
+---
+---Once a tick and before anything reads the state, which is why this is a pass of its own at
+---the top of on_tick rather than something aim() does: the order matters. Measured, an
+---inserter updates after the scripts do, so a target written this tick is the one the engine
+---moves on this tick -- an arm re-aimed on tick five has turned one step by tick six -- and a
+---hand charged on the tick it is made has already taken its first step by the next one. So
+---the step made here is the one the engine made with the target that stood at the end of the
+---tick before.
+---@param record table
+local function follow(record)
+  if record.followed == game.tick then return end
+  record.followed = game.tick
+  local arm = record.entity
+  if not (arm and arm.valid) then
+    record.out, record.pointing = nil, nil
+    return
+  end
+  local base = arm.position
+  if not (record.out and record.pointing) then
+    -- Nothing carried for this arm yet: a save written before the mod carried it, or an arm
+    -- that came from somewhere other than arm_of(). The drawing is the only answer there is,
+    -- and it is the right one for everything but a hand that is turning, so it is where this
+    -- picks the arm up. Seeded rather than stepped, because it is already this tick's state.
+    local hand = arm.held_stack_position
+    local dx, dy = hand.x - base.x, hand.y - base.y
+    local length = math.sqrt(dx * dx + dy * dy)
+    record.out = length
+    record.pointing = length >= 0.2 and { x = dx / length, y = dy / length }
+      or born_facing(record)
+    return
+  end
+  -- Which end the engine was chasing, which is the drop while the hand holds something and
+  -- the pickup while it does not. Remembered as that tick ran rather than read back now: the
+  -- load leaves the hand during the engine's own update, so an arm that spent the whole of
+  -- last tick carrying something out reads as empty by the time this asks.
+  local at = record.chasing_drop and arm.drop_position or arm.pickup_position
+  local towards = { x = at.x - base.x, y = at.y - base.y }
+  local tier = tier_of(record)
+  local pointing = record.pointing
+  local turning = reach.turning(pointing, towards, tier.rotation)
+  record.out = reach.stepped(record.out,
+    math.sqrt(towards.x * towards.x + towards.y * towards.y), tier.extension)
+  record.pointing = reach.turned(pointing, towards, tier.rotation)
+  if turning then return end
+
+  -- A hand that was not turning is a hand whose drawing is exact, so where the engine draws
+  -- it is a better answer than any sum: it is the engine's own. Measured over three tiers,
+  -- the gap between the two opens only while a hand is turning and is shut again by the time
+  -- the turn is -- see test/ft/swinging.lua -- and a hand already on its bearing has no turn
+  -- left to make.
+  --
+  -- Which makes this the ordinary case and the sum above the exception. It is also what
+  -- keeps the sum from drifting: an arm with nothing to move with does not move while the
+  -- arithmetic says it does, and the tick it is pointed at anything again puts it right.
+  local hand = arm.held_stack_position
+  local dx, dy = hand.x - base.x, hand.y - base.y
+  local length = math.sqrt(dx * dx + dy * dy)
+  record.out = length
+  if length >= 0.2 then record.pointing = { x = dx / length, y = dy / length } end
+end
+
 ---How far out an arm's hand is, in tiles from its own base.
 ---
 ---Where a freshly built one is born when there is no arm yet, because that is where the next
@@ -1082,7 +1171,7 @@ end
 local function hand_out(record)
   local arm = record and record.entity
   if not (arm and arm.valid) then return reach.BORN end
-  return reach.distance(arm.position, arm.held_stack_position)
+  return record.out or reach.BORN
 end
 
 ---Which way an arm's hand is pointing, or nothing if it has no bearing yet.
@@ -1125,10 +1214,11 @@ local POINTED = 0.3
 local function hand_facing(record, towards)
   local arm = record and record.entity
   if not (arm and arm.valid) then return nil end
-  local base, hand = arm.position, arm.held_stack_position
-  local dx, dy = hand.x - base.x, hand.y - base.y
-  local length = math.sqrt(dx * dx + dy * dy)
-  if length < 0.2 then return nil end
+  local pointing = record.pointing
+  if not pointing then return nil end
+  -- A hand sitting on its own base points nowhere the engine will honour, whatever bearing
+  -- has been carried for it, so the measure is still how far out it is.
+  if hand_out(record) < 0.2 then return nil end
   -- Nothing for a bearing that is about to be replaced, which is not the same as one that
   -- could be. It used to be enough that the arm was rebuildable, on the grounds that the
   -- bearing was about to be whatever it needed to be -- but point() rebuilds only when it
@@ -1142,13 +1232,14 @@ local function hand_facing(record, towards)
   -- later, over and over. One case, traced: an arm already facing the right sixteenth with
   -- its hand two tenths out and pointing north east, sent for something east south east.
   if towards and rebuildable(record) then
+    local base = arm.position
     local ax, ay = towards.x - base.x, towards.y - base.y
     if ax * ax + ay * ay >= POINTED * POINTED
         and arm.direction ~= pack.towards(ax, ay) then
       return nil
     end
   end
-  return { x = dx / length, y = dy / length }
+  return pointing
 end
 
 ---An arm as lib/reach.lua wants to hear about it: what it can do, where its hand is, and
@@ -1833,8 +1924,20 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
   -- right angle of error in the one number this sort is for.
   local hand = nil
   if tier and arm and arm.valid then
-    local held = arm.held_stack_position
-    hand = { x = held.x, y = held.y + (record.lift or 0) }
+    -- The hand the mod carries rather than the claw the engine draws, for the same reason
+    -- course_to() asks of the carried one: past about two thirds of a turn the drawing is
+    -- not where the arm is, and this is what decides which ghost is cheapest. Built back up
+    -- from the two numbers, which is a radius along a bearing from the arm's own base.
+    --
+    -- No lift to put back on, either, which the drawing needed and this does not. An arm is
+    -- drawn a lift above its owner and everything it is aimed at has the same lift taken
+    -- off, so a hand read off the entity is a lift north of where it looks -- 0.70 of a tile
+    -- on a character, which on a hand two tiles out is a fifth of a right angle of error in
+    -- the one number this sort is for. A radius and a bearing are the same either way.
+    local out, pointing = hand_out(record), record.pointing
+    if pointing then
+      hand = { x = from.x + pointing.x * out, y = from.y + pointing.y * out }
+    end
   end
   -- One pass keeping the best, rather than pricing everything and sorting it.
   --
@@ -2107,6 +2210,12 @@ local function arm_of(player, wearer, record)
       charge(record, arm)
     end
     record.entity = arm
+    -- A fresh hand is born at reach.BORN along the way the arm was built facing, and follow()
+    -- carries it from there. Deliberately not marked as followed for this tick: measured, an
+    -- arm charged on the tick it is made has already taken its first step by the next one,
+    -- so the step follow() makes on the next tick is one the engine really made.
+    record.out, record.pointing = reach.BORN, born_facing(record)
+    record.chasing_drop = arm and arm.held_stack.valid_for_read or false
   end
   return arm
 end
@@ -4595,6 +4704,33 @@ local function assign(player, wearer, list, tick, nearby)
   return working
 end
 
+---Whether there is anything left to build, asked ten times a second rather than every tick.
+---
+---Lifted out of on_tick so that what the tick has to remember for the next one can happen
+---after everything, rather than behind a return that only check ticks reach.
+---@param tick integer
+local function check(tick)
+  for _, player in pairs(game.players) do
+    local wearer = wearer_of(player)
+    if wearer and wearer.valid and not switched_off(player) then
+      -- Nothing left in reach is when the character starts getting their speed back, not
+      -- merely no arm swinging this instant: the search runs ten times a second and a claw
+      -- can be home for a few ticks before the next one, and recovering in those gaps had
+      -- the character surging between one ghost and the next all the way along a
+      -- blueprint. So this asks whether there is anything to build.
+      local list = storage.constructor_arms[player.index] or {}
+      -- No arm working after that means no arm could find anything, because an arm with
+      -- nothing to do takes work the instant there is any: without a clock there is no
+      -- such thing as free but not yet due. So this needs no second search of its own.
+      if not assign(player, wearer, list, tick, nearby) then
+        -- the run is over, which is what lets the slowdown ramp off
+        for _, record in pairs(list) do record.run = nil end
+        recover(player, wearer)
+      end
+    end
+  end
+end
+
 ---@param event EventData.on_tick
 local function on_tick(event)
   stowing()
@@ -4615,6 +4751,11 @@ local function on_tick(event)
     end
     if wearer and wearer.valid and wearing(wearer) and not switched_off(player) then
       local list = muster(player, wearer)
+      -- Where every hand has got to, brought up to date before anything asks. A pass of its
+      -- own and before the arms are worked, because aim() writes this tick's targets and
+      -- follow() has to step on the one that stood when the engine last moved -- see
+      -- follow(), and the order measured there.
+      for _, record in pairs(list) do follow(record) end
       local claimed = claims(list)
       -- One search a tick at most, shared by the arms already out and the ones about to set
       -- off, and only made if one of them asks. Most ticks nobody does: every arm is out on
@@ -4661,25 +4802,15 @@ local function on_tick(event)
     end
   end
 
-  if event.tick % CHECK_INTERVAL ~= CHECK_TICK then return end
+  if event.tick % CHECK_INTERVAL == CHECK_TICK then check(event.tick) end
 
+  -- And what each hand will be chasing when the engine comes to move it, remembered while
+  -- the tick can still see it. The load leaves a hand during the engine's own update, so an
+  -- arm asked next tick which end it spent this one going to would answer the wrong one.
   for _, player in pairs(game.players) do
-    local wearer = wearer_of(player)
-    if wearer and wearer.valid and not switched_off(player) then
-      -- Nothing left in reach is when the character starts getting their speed back, not
-      -- merely no arm swinging this instant: the search runs ten times a second and a claw
-      -- can be home for a few ticks before the next one, and recovering in those gaps had
-      -- the character surging between one ghost and the next all the way along a
-      -- blueprint. So this asks whether there is anything to build.
-      local list = storage.constructor_arms[player.index] or {}
-      -- No arm working after that means no arm could find anything, because an arm with
-      -- nothing to do takes work the instant there is any: without a clock there is no
-      -- such thing as free but not yet due. So this needs no second search of its own.
-      if not assign(player, wearer, list, event.tick, nearby) then
-        -- the run is over, which is what lets the slowdown ramp off
-        for _, record in pairs(list) do record.run = nil end
-        recover(player, wearer)
-      end
+    for _, record in pairs(storage.constructor_arms[player.index] or {}) do
+      local arm = record.entity
+      record.chasing_drop = (arm and arm.valid and arm.held_stack.valid_for_read) or false
     end
   end
 end
@@ -4856,6 +4987,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.underfoot",
     "test.ft.turning",
     "test.ft.swinging",
+    "test.ft.following",
   }, {
     load_luassert = true,
     game_speed = 100,

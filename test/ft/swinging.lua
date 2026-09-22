@@ -5,10 +5,11 @@
 ---
 --- The law of arrival is exactly what reach.on_it assumes. Extension and rotation are two
 --- speeds the engine runs at once and neither waits on the other, so a hand told to go
---- somewhere gets there in the greater of the two times. Measured here over three tiers, five
---- bearings and two radii, the engine landed on the tick max() names every time, never later
---- than it and at worst a tick before -- which is its last step covering whatever gap is left
---- rather than creeping up on it.
+--- somewhere gets there in the greater of the two times -- and on floor of it, because the
+--- step that arrives covers whatever is left rather than creeping up on it. That holds on
+--- both halves alike, which is what lets on_it charge a turn with the same tick of grace it
+--- gives the radius: the last describe below pins it on a turn and nothing else, where the
+--- radius cannot be what is really being measured.
 ---
 --- The state that law has to be asked of is the part that is wrong. held_stack_position is
 --- where the claw is drawn, and past about two thirds of a turn that is not where the engine's
@@ -150,21 +151,29 @@ describe("a hand going out and round at once", function()
   end
 
   for _, level in ipairs{ 1, 2, 4 } do
+    local tier = tiers.by_level[level]
     for _, turn in ipairs{ 0, 45, 90, 135, 180 } do
-      for _, part in ipairs{ 0.45, 1.0 } do
+      -- The third of these puts the target at exactly the radius a hand is born at, so
+      -- there is nothing to stretch and the turn is the whole journey. That case is the one
+      -- reach.on_it's charge for a turn is written against, and it is not the same as the
+      -- others: see the arrival logged for it.
+      for _, part in ipairs{ 0.45, 1.0, reach.BORN / tier.range } do
         it(("tier %d, %d degrees round, %.2f of the reach: arrives on the greater of the"
             .. " stretch and the turn"):format(level, turn, part), function()
-          local tier = tiers.by_level[level]
           local want = tier.range * part
           flown(tier, turn, want, function(path)
             local by_out = math.abs(want - reach.BORN) / tier.extension
             local by_turn = (turn / 360) / tier.rotation
             local law = math.max(by_out, by_turn)
+            -- On the spot, not near it. A tolerance in degrees is worth a fraction of a
+            -- tick of turn and reads an arrival a tick early on anything the turn binds, so
+            -- what is asked is the distance to the spot itself, against the two hundred and
+            -- fifty sixth of a tile an axis the engine keeps positions to.
+            local target = { x = want * math.cos(math.rad(turn)),
+                             y = -want * math.sin(math.rad(turn)) }
             local arrived
             for index, hand in ipairs(path) do
-              local out = math.sqrt(hand.x * hand.x + hand.y * hand.y)
-              if math.abs(out - want) < 0.01
-                  and apart(math.deg(atan2(-hand.y, hand.x)) % 360, turn % 360) < 0.5 then
+              if reach.distance(hand, target) < 0.01 then
                 arrived = index - 1
                 break
               end
@@ -173,7 +182,8 @@ describe("a hand going out and round at once", function()
               .. " %.1f, turn %.1f) | arrived %s"):format(level, turn, part, law, by_out,
               by_turn, tostring(arrived)))
             assert.is_not_nil(arrived, "the hand never got there")
-            -- Never late, and at worst a tick early, which is the last step again.
+            -- Floor of the law: never later than it, and at worst the one tick earlier that
+            -- the engine's last step covers, on the radius and on the bearing alike.
             assert.is_true(arrived <= law + 1e-6,
               ("arrived on %d against a law of %.1f"):format(arrived, law))
             assert.is_true(arrived > law - 1.5,
@@ -270,6 +280,98 @@ describe("a hand re-aimed part way through a swing", function()
           end, "the claw never delivered", 220)
         end)
       end
+    end
+  end
+end)
+
+--- A turn and nothing else, which is the case the charge for a turn in reach.on_it is
+--- written against and the one it used to be written against wrongly.
+---
+--- The hand is taken out to three tiles and held there by a barred box -- the engine calls
+--- that waiting for space in the destination, and it parks the hand at the drop holding what
+--- it has rather than bringing it home -- so nothing stretches and nothing is delivered. Then
+--- it is swung to a new bearing at that same radius. At three tiles a hundredth of a tile is
+--- a fifth of a degree, which is a twelfth of a step, so what is timed is the hand and not a
+--- window.
+describe("a turn and nothing else", function()
+  local player
+
+  local function scrub()
+    for _, e in ipairs(player.surface.find_entities_filtered{ position = world.ORIGIN,
+          radius = 40 }) do
+      if e.valid and e.type ~= "character" then e.destroy() end
+    end
+  end
+
+  before_each(function() player = world.player(); world.clear(player); scrub() end)
+  after_each(function() scrub(); world.clear(player) end)
+
+  for _, level in ipairs{ 2, 4 } do
+    for _, turn in ipairs{ 45, 90, 135, 180 } do
+      it(("tier %d, %d degrees at three tiles"):format(level, turn), function()
+        local surface = player.surface
+        local tier = tiers.by_level[level]
+        local base = { x = world.ORIGIN.x + 10.5, y = world.ORIGIN.y + 0.5 }
+        local arm = surface.create_entity{ name = tier.inserter, position = base,
+          force = player.force, direction = defines.direction.east }
+        local R = 3
+        local function spot(deg)
+          local a = math.rad(deg)
+          return { x = base.x + math.cos(a) * R, y = base.y - math.sin(a) * R }
+        end
+        local one, two = spot(0), spot(turn)
+        arm.pickup_position = { base.x + 0.2, base.y }
+        arm.drop_position = { one.x, one.y }
+        arm.held_stack.set_stack{ name = "transport-belt", count = 1 }
+        arm.energy = arm.prototype.get_max_energy_usage() * 100
+        -- Barred, so the engine takes the hand out to the drop and waits there holding the
+        -- belt rather than letting go: there is no delivery to interrupt the turn.
+        local function box(at)
+          local made = surface.create_entity{ name = "constructor-equipment-catcher",
+            position = { at.x, at.y }, force = player.force }
+          made.get_inventory(defines.inventory.chest).set_bar(1)
+          return made
+        end
+        local catcher = box(one)
+
+        -- Settled at the radius before the turn starts, so nothing is stretching.
+        local SETTLE = 60
+        local began, steps, arrived, settled = game.tick, nil, nil, nil
+        world.once(function()
+          arm.energy = arm.prototype.get_max_energy_usage() * 100
+          local k = game.tick - began
+          if k == SETTLE then
+            local hand = arm.held_stack_position
+            settled = math.sqrt((hand.x - arm.position.x) ^ 2
+              + (hand.y - arm.position.y) ^ 2)
+            catcher.destroy()
+            arm.drop_position = { two.x, two.y }
+            catcher = box(two)
+            steps = 0
+          elseif steps then
+            steps = steps + 1
+            local hand = arm.held_stack_position
+            if not arrived and math.sqrt((hand.x - two.x) ^ 2 + (hand.y - two.y) ^ 2)
+                < 0.01 then
+              arrived = steps
+            end
+          end
+          return arrived ~= nil or k > SETTLE + 120
+        end, function()
+          local nominal = (turn / 360) / tier.rotation
+          log(("SWING | tier %d | %3d degrees at %d tiles and nothing to stretch | settled"
+            .. " at %s | nominal %.3f steps | took %s"):format(level, turn, R,
+            settled and ("%.4f"):format(settled) or "nil", nominal, tostring(arrived)))
+          assert.is_not_nil(arrived, "the hand never got round")
+          assert.are.equal(R, settled, "the hand was not settled at the radius")
+          -- Floor, not ceil: the last turn step covers whatever is left of the turn, which
+          -- is what lets reach.on_it charge a turn with the same tick of grace it gives the
+          -- radius.
+          assert.are.equal(math.floor(nominal), arrived,
+            ("a %d degree turn took %d steps against a nominal of %.3f"):format(turn,
+              arrived, nominal))
+        end, "never arrived", SETTLE + 200)
+      end)
     end
   end
 end)

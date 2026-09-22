@@ -604,14 +604,21 @@ describe("a hand that has to turn as well as stretch", function()
     return { x = math.cos(angle) * 3, y = math.sin(angle) * 3 }
   end
 
-  --- Measured against the engine at every one of these: 1, 16, 32, 47 and 63 ticks. The
-  --- arithmetic is allowed to be the tick early that the engine's own last step covers.
+  --- Floor of the nominal, which is what the engine does: its last turn step covers whatever
+  --- is left of the turn rather than creeping up on it, the same as its last extension step.
+  --- Nominals here are 15.625, 31.25, 46.875 and 62.5 steps.
+  ---
+  --- These read 16, 32, 47 and 63 for a long while, on a measurement that is most likely of
+  --- the mod's own arrival window rather than of the hand. Measured again with the hand held
+  --- at a fixed three tiles by a barred box and arrival asked as a hundredth of a tile from
+  --- the spot, the engine is there on floor every time -- see test/ft/swinging.lua, and the
+  --- eight cases written up at reach.on_it.
   it("charges a turn at the tier's own rate", function()
     assert.are.equal(0, reach.earliest(TURNING, STILL, round_by(0), HORIZON))
-    assert.are.equal(16, reach.earliest(TURNING, STILL, round_by(45), HORIZON))
-    assert.are.equal(32, reach.earliest(TURNING, STILL, round_by(90), HORIZON))
-    assert.are.equal(47, reach.earliest(TURNING, STILL, round_by(135), HORIZON))
-    assert.are.equal(63, reach.earliest(TURNING, STILL, round_by(180), HORIZON))
+    assert.are.equal(15, reach.earliest(TURNING, STILL, round_by(45), HORIZON))
+    assert.are.equal(31, reach.earliest(TURNING, STILL, round_by(90), HORIZON))
+    assert.are.equal(46, reach.earliest(TURNING, STILL, round_by(135), HORIZON))
+    assert.are.equal(62, reach.earliest(TURNING, STILL, round_by(180), HORIZON))
   end)
 
   it("takes the shorter way round", function()
@@ -798,5 +805,68 @@ describe("the oriented search box", function()
 
   it("hands back nothing at all for a wearer standing still", function()
     assert.is_nil(reach.search_box({ { range = 5, ticks = 43 } }, { x = 0, y = 0 }))
+  end)
+end)
+
+-- The two numbers an inserter's arm really is, stepped the way the engine steps them. The
+-- mod carries these rather than reading the claw, because the claw is drawn somewhere else
+-- while a hand is turning -- see follow() in control.lua, and test/ft/following.lua, which
+-- runs these against a real inserter.
+describe("a hand stepping out or in", function()
+  it("moves one step toward where it is going", function()
+    assert.are.equal(1.05, reach.stepped(1, 3, 0.05))
+    assert.are.equal(0.95, reach.stepped(1, 0, 0.05))
+  end)
+
+  it("covers whatever is left inside a step rather than creeping up on it", function()
+    assert.are.equal(3, reach.stepped(2.97, 3, 0.05))
+    assert.are.equal(3, reach.stepped(3.04, 3, 0.05))
+  end)
+
+  it("stays where it is once it is there", function()
+    assert.are.equal(3, reach.stepped(3, 3, 0.05))
+  end)
+end)
+
+describe("a hand turning toward a bearing", function()
+  local EAST = { x = 1, y = 0 }
+  --- A sixteenth of a turn a tick, so a quarter turn is four ticks.
+  local QUICK = 1 / 16
+
+  ---How far round a vector is, in degrees, with the y axis growing southwards. Compared to a
+  ---millionth of a degree rather than exactly: these are cosines and sines of each other.
+  local function bearing(want, of)
+    local got = math.deg((math.atan2 or math.atan)(of.y, of.x)) % 360
+    assert.is_true(math.abs(got - want) < 1e-6,
+      ("bearing %.6f where %.6f was wanted"):format(got, want))
+  end
+
+  it("turns one step, the short way round", function()
+    bearing(22.5, reach.turned(EAST, { x = 0, y = 1 }, QUICK))
+    bearing(337.5, reach.turned(EAST, { x = 0, y = -1 }, QUICK))
+  end)
+
+  it("covers whatever is left inside a step", function()
+    local nearly = { x = math.cos(math.rad(20)), y = math.sin(math.rad(20)) }
+    bearing(20, reach.turned(EAST, nearly, QUICK))
+  end)
+
+  it("keeps its bearing when there is nowhere to point", function()
+    assert.are.same(EAST, reach.turned(EAST, { x = 0, y = 0 }, QUICK))
+  end)
+
+  it("is turning only while more than a step is left", function()
+    assert.is_true(reach.turning(EAST, { x = 0, y = 1 }, QUICK))
+    assert.is_false(reach.turning(EAST, { x = math.cos(math.rad(20)),
+      y = math.sin(math.rad(20)) }, QUICK))
+    assert.is_false(reach.turning(EAST, EAST, QUICK))
+    assert.is_false(reach.turning(EAST, { x = 0, y = 0 }, QUICK))
+  end)
+
+  --- A dead half turn is the one bearing with no short way round, so the sum picks a side and
+  --- keeps it. Which side does not matter -- a hand turns at the same rate either way and
+  --- arrives on the same tick -- but it has to be a side rather than nothing.
+  it("picks a side for a turn that has no short way round", function()
+    bearing(337.5, reach.turned(EAST, { x = -1, y = 0 }, QUICK))
   end)
 end)
