@@ -1118,14 +1118,36 @@ end
 ---engine picks one, and picking the same one here would be guessing.
 ---@param record table
 ---@return {x: number, y: number}?
-local function hand_facing(record)
+--- How far off a target has to be before which way it lies means anything. Nearer than
+--- this and the bearing is noise, and an arm pointed by noise is an arm pointed anywhere.
+local POINTED = 0.3
+
+local function hand_facing(record, towards)
   local arm = record and record.entity
   if not (arm and arm.valid) then return nil end
-  if rebuildable(record) then return nil end
   local base, hand = arm.position, arm.held_stack_position
   local dx, dy = hand.x - base.x, hand.y - base.y
   local length = math.sqrt(dx * dx + dy * dy)
   if length < 0.2 then return nil end
+  -- Nothing for a bearing that is about to be replaced, which is not the same as one that
+  -- could be. It used to be enough that the arm was rebuildable, on the grounds that the
+  -- bearing was about to be whatever it needed to be -- but point() rebuilds only when it
+  -- has a reason to, and it has none when the arm already faces the right sixteenth or when
+  -- what it is going for is nearer than POINTED. Measured over a train run, 167 of 186 calls
+  -- to point() refused the rebuild and 5 made one, so the bearing usually does survive.
+  --
+  -- What that cost: the claw was picked for a job with no turn charged at all, kept a hand
+  -- pointing somewhere else entirely, and the next tick charged the turn and found the ghost
+  -- unreachable -- so it set off for things it could never meet and gave them up a tick
+  -- later, over and over. One case, traced: an arm already facing the right sixteenth with
+  -- its hand two tenths out and pointing north east, sent for something east south east.
+  if towards and rebuildable(record) then
+    local ax, ay = towards.x - base.x, towards.y - base.y
+    if ax * ax + ay * ay >= POINTED * POINTED
+        and arm.direction ~= pack.towards(ax, ay) then
+      return nil
+    end
+  end
   return { x = dx / length, y = dy / length }
 end
 
@@ -1134,14 +1156,14 @@ end
 ---@param record table
 ---@param range number
 ---@return table
-local function arm_state(record, range)
+local function arm_state(record, range, towards)
   local tier = tier_of(record)
   return {
     range = range,
     extension = tier.extension,
     rotation = tier.rotation,
     out = hand_out(record),
-    facing = hand_facing(record),
+    facing = hand_facing(record, towards),
   }
 end
 
@@ -2704,9 +2726,6 @@ local function muster(player, wearer)
   return list
 end
 
---- How far off a target has to be before which way it lies means anything. Nearer than
---- this and the bearing is noise, and an arm pointed by noise is an arm pointed anywhere.
-local POINTED = 0.3
 
 ---Build an arm facing what it is about to reach for.
 ---
@@ -2966,7 +2985,7 @@ local function set_course(record, from, range, setting_off)
   local job = record.job
   if not job then return false end
   job.met = false
-  local arm = arm_state(record, range)
+  local arm = arm_state(record, range, job.target)
   -- How far ahead to look, and the two cases want different answers. An arm deciding whether
   -- to set off looks one flight ahead, which is the same distance the search covers, so that
   -- it never takes on what it was never offered. An arm already out is not deciding anything

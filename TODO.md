@@ -164,3 +164,42 @@ a grid's worth of arms is not a solar panel.
 Whatever it buys has to come out of the same one number per tier the rest of lib/tiers.lua
 is built on, or the progression stops being checkable: no tier, at any quality, may end up
 worse than the tier below it at the same quality.
+
+## A meeting planned behind the arm is fragile, and ADRIFT covers for it
+
+Half of this is fixed. A course was being decided with no turn charged at all, because
+hand_facing() gave no bearing for any arm that *could* be rebuilt -- on the grounds that the
+bearing was about to be whatever it needed to be. point() only rebuilds when it has a reason
+to, and over a train run 167 of 186 calls refused while 5 rebuilt, so the bearing usually
+survives. It asks what point() will really do now.
+
+What is left is the other half. Some flips have a bearing on both ticks and flip anyway:
+
+    t2474 offset 4.481,1.948  facing -0.823,-0.568 -> 19
+    t2477 offset 3.583,1.948  facing -0.968,-0.249 -> nil
+
+The ghost is ahead by three and a half tiles and the hand points almost due west, because the
+lead is behind the arm: at arrival nineteen with a drift of 0.3 the meeting point is a tile
+and a half back down the track. The train has passed the thing and the plan is to reach
+backwards for it while being pulled away. The arithmetic is honest and the answer is fragile,
+and a tick of drift takes it away.
+
+Measured with the bearing fixed and no grace at all, that alone still leaves eight ghosts at
+a quarter of a tile a tick set off for and never delivered, worst five attempts. So ADRIFT is
+still doing real work and is still a plaster.
+
+What would settle it is deciding what to do about a meeting that is already behind the arm
+and receding -- refuse it outright, or require a margin that survives the drift it is built
+on -- and then taking ADRIFT back out. `test/ft/turning.lua` is what to measure against.
+
+## Mods with vehicle and equipment categories of their own
+
+Everything the mod knows about what can carry an arm is written down here rather than asked.
+The equipment sits in categories this mod names, and the vehicles it expects are the ones the
+base game ships plus whatever test/ft/ce-tests hands a grid to. A mod that adds a vehicle
+with a grid of its own, or an equipment category of its own, is not considered anywhere.
+
+What that is likely to cost: an arm that will not go into a grid it would fit, a vehicle
+whose arms are never mustered, or a hull whose shape pack.lua has no opinion about and
+mounts everything in the middle of. None of it is measured -- there is no fixture with a
+modded vehicle in it -- so the first thing is to find out which of those actually happen.
