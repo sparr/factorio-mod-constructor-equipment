@@ -1,105 +1,15 @@
-# Outstanding, from the walks round of 2026-09-19 and 2026-09-20
+# Outstanding
 
-## 12. An arm should aim where its target will be, not where it is
+## 12. The walking penalty is switched off
 
-Done for one delivery from rest, for an arm that is already out, and for a claw working
-several ghosts in a round. An arm works out where its target will be by the time its hand
-could get there, holds the claw on that point as its owner carries it along, and drops the
-guess for the thing itself the moment it is really in reach. A ghost that is in reach for
-forty ticks against a forty three tick reach could not be built at all before and is built
-now. Every tier leads; the first one meets things three times its own reach away. The
-bearing a claw has to swing through is part of the sum, so a lead it cannot rotate onto in
-time is not offered. All three ways a claw changes its mind mid flight -- the ghost being
-taken away, a round moving on to its next, and a turn leaving the course unflyable -- are
-exercised against a moving owner. A round is shopped for over its own life rather than over
-the one swing the tick's search covers, since a claw refills at home and nowhere else, so
-what it sets off carrying is all it will put down that journey.
+tiers.SLOWS, with thirty tests skipped behind it. It is not only a cost: a slower wearer has
+a wider cone, so putting it back makes the low tiers reach further to the side than they do
+now.
 
-What an arm cannot do is reach something square abeam of a walk, because the hand extends
-slower than its owner walks: about 1.07 tiles at walking pace. Three ghosts crammed inside
-that at full speed get two of them, and the same three at half speed get all three. That is
-the shape of the cone rather than anything to fix.
-
-What is left.
-
-**The search is wider than it needs to be, and it is now measured what to do about it.**
-It draws one circle round a capsule that assumes full stretch from the first tick, hands
-every candidate to choose(), and choose() prices each one with a swing and then sorts the
-lot. `test/ft/searching.lua` measures four shapes over sixteen scenarios -- two tiers, two
-densities, four speeds -- and three ways of handling what they hand back. Every shape holds
-everything reach.meets says is really there, so correctness is equal and it is all cost.
-
-find_entities_filtered does honour a BoundingBox orientation: a flat box over a diagonal
-line of fifteen ghosts found three of them, and the same box turned found all fifteen.
-
-Microseconds a call, best of three runs of three hundred, on a machine carrying a load
-average of two. Tier four, packed, at a train's speed:
-
-| shape | candidates | search | search and sift | sift after a cone test |
-| --- | --- | --- | --- | --- |
-| capsule, which is what is drawn now | 673 | 188 | 5536 | 1704 |
-| the cone's own circle | 490 | 405 | 4010 | 1733 |
-| chain of 4 | 242 | 293 | 1848 | 1444 |
-| chain of 8 | 198 | 395 | 1644 | 1490 |
-| oriented box | 275 | 100 | 2039 | **1380** |
-
-Three things, and the first is much the biggest.
-
-**The sift is the cost, not the search.** Pricing and sorting the candidates runs ten to
-thirty times what the engine call costs -- 5536 against 188 for the capsule. So the number
-of candidates is what matters, and any judgement made on search time alone is wrong.
-
-**Reject outside the cone with arithmetic, before pricing anything.** A dot product along
-the cone's axis, a cross product across it, and a compare against a half width that flares
-with the hand and stops at the reach. That one change takes the shape the mod already draws
-from 5536 to 1704, better than three times, and it needs no new search at all. Sieving with
-reach.meets instead is worse than not sieving: it is a quadratic solve per candidate and
-costs 2533 where the arithmetic costs 1490.
-
-**With that in front of it, the oriented box is the shape.** Its extra candidates stop
-mattering once they are thrown away for a few flops, and it is the cheapest call there is:
-best or equal best in every moving case, at 1380 against the capsule's 1704 here and 780
-against 1194 at tier two. Standing still the capsule still wins, as a square round a circle
-should. A chain is never worth its extra calls.
-
-So: the cheap cone test first, then the box while its owner moves and the circle while they
-stand. Together that is 5536 microseconds to 1380 at tier four in a packed field behind a
-train, and 4694 to 780 at tier two.
-
-**Done: the cone test and the scan are in.** reach.cone and reach.in_cone draw the cone as
-arithmetic, and choose() no longer sorts. It keeps the best candidate as it goes, skips
-anything outside the cone before pricing it, skips the turn -- two arctangents -- for
-anything whose stretch alone already costs more than the best so far, and runs the
-acceptance test only for a candidate that would take the lead. Measured on a packed field
-behind a train at the fourth tier: 5629 microseconds a search to 388.
-
-On a chunkful of the mixed ghosts a blueprint is really made of -- 128 belts, 128 inserters,
-24 assemblers, 24 chests, in `test/ft/chunkful.lua` -- a search costs 88 microseconds
-standing still against 33, 321 walking against 67, and 680 in a car against 139.
-
-**Done: the shape as well.** work_near draws a box lying along the walk wherever its owner
-is moving, and the circle where they are not -- reach.search_box, which hands back nothing
-at all standing still so that the caller falls back by itself. All four of work_near's
-searches share the shape, so the saving is four times over.
-
-Per search on the chunkful, order rotated between runs and each warmed up first, because
-whichever pipeline goes last goes fastest and two doing identical work differed by two to
-one on position alone:
-
-| | candidates, circle then box | sorted, as it was | scanned | box and scanned |
-| --- | --- | --- | --- | --- |
-| standing still | 23, 23 | 99us | 30us | 33us |
-| walking | 61, 49 | 324us | 75us | 52us |
-| in a car | 122, 60 | 697us | 149us | 81us |
-
-Standing still the box is the circle, since search_box declines, and the two differ only by
-noise. Moving, the whole is six to nine times what it was.
-
-Nothing is left of 12 but the walking penalty below.
-
-**The walking penalty is switched off.** tiers.SLOWS, with thirty tests skipped behind it.
-It is not only a cost: a slower wearer has a wider cone, so putting it back makes the low
-tiers reach further to the side than they do now.
+Everything else under 12 is done. Leading, the cone test, the single-pass choose() and the
+oriented search box are all in, and what each of them cost and bought is written where it
+was decided -- reach.cone, reach.search_box and choose() in control.lua carry their own
+measurements.
 
 ## 20. Deconstruction leaves items behind
 
@@ -123,24 +33,15 @@ case one of them had quietly cured it, and the numbers are identical. So it is n
 was fixed; it is that these are not the layouts it was seen on. Like 9 and 16, it wants the
 bay or the save it happened in.
 
-## 22. An arm turns too fast
+## 22. The crossing horizon, if anybody opens it up
 
-A seventh is off every tier's rotation and that is as much as the swing carries without
-opening the crossing horizon up to match. Measured over the whole fixture suite: a third
-off, which is what was asked for, costs a claw its crossings -- a row of four two tiles
-abeam went from four built on one journey to two over two, and a block of nine marked for
-deconstruction wanted thirty of the harness's cycles where it had wanted six. A quarter off
-still loses a walk past marked things and a bulk claw's round of four. A fifth off costs
-nothing any fixture measures.
+Settled for now: a seventh is off every tier's rotation, which is as much as the swing
+carries. A third, which is what was asked for, costs a claw its crossings.
 
-Settled there. The horizon is left alone: a claw gives up a crossing it cannot make the next
-bearing for in time, and opening that up is what would let the full third come off, but a
-seventh is what the arms keep for now.
-
-One thing to check before anybody opens it. reach.any_way, which is the turning half of the
-horizon, is already 0.5 / rotation -- so slowing the turn widens the horizon by itself, which
-undercuts the idea that the horizon is what a slower turn runs into. Where a refused crossing
-is actually refused wants measuring before the number is touched.
+The reason given for opening the horizon up to allow more does not survive a look at it.
+reach.any_way, the turning half of the horizon, is already 0.5 / rotation, so slowing the
+turn widens the horizon by itself. Where a refused crossing is actually refused wants
+measuring before that number is touched.
 
 ## The equipment's own quality does nothing
 
@@ -165,32 +66,66 @@ Whatever it buys has to come out of the same one number per tier the rest of lib
 is built on, or the progression stops being checkable: no tier, at any quality, may end up
 worse than the tier below it at the same quality.
 
-## A meeting planned behind the arm is fragile, and ADRIFT covers for it
+## A hand part way through a big turn is not where its claw is drawn
 
-Half of this is fixed. A course was being decided with no turn charged at all, because
-hand_facing() gave no bearing for any arm that *could* be rebuilt -- on the grounds that the
-bearing was about to be whatever it needed to be. point() only rebuilds when it has a reason
-to, and over a train run 167 of 186 calls refused while 5 rebuilt, so the bearing usually
-survives. It asks what point() will really do now.
+reach.on_it is right, and this entry used to say it was wrong. The law it carries -- the
+radius inside out +/- extension * (k + 1), the bearing inside rotation * 2pi * k, both at the
+same k -- is the law the engine flies. Extension and rotation are two speeds it runs at once
+and neither waits on the other, so a hand told to go somewhere arrives on the greater of the
+two times. Measured over three tiers, five bearings and two radii in `test/ft/swinging.lua`,
+the engine landed on the tick max() names every time, never later than it and at worst a tick
+before, which is its last step covering whatever gap is left rather than creeping up on it.
 
-What is left is the other half. Some flips have a bearing on both ticks and flip anyway:
+What the old entry measured was a hand on its way to a *further* target passing through a
+band that describes arriving at a nearer one, which those two inequalities never claimed
+anything about. The real fault is underneath: **the state the law is asked of.**
 
-    t2474 offset 4.481,1.948  facing -0.823,-0.568 -> 19
-    t2477 offset 3.583,1.948  facing -0.968,-0.249 -> nil
+hand_out() and hand_facing() take the hand's radius and bearing from held_stack_position,
+which is where the claw is *drawn*. Past about two thirds of a turn that is not where the
+engine's arm is: the drawn hand runs ahead of its own state in the radius and in the bearing
+at once, and comes back to it by the end of the turn. In the model's own two numbers, each
+already allowed the one step of grace on_it gives it:
 
-The ghost is ahead by three and a half tiles and the hand points almost due west, because the
-lead is behind the arm: at arrival nineteen with a drift of 0.3 the meeting point is a tile
-and a half back down the track. The train has passed the thing and the plan is to reach
-backwards for it while being pulled away. The arithmetic is honest and the answer is fragile,
-and a tick of drift takes it away.
+| turn | radius | bearing |
+| --- | --- | --- |
+| up to 120 degrees | nothing at all | nothing at all |
+| 135 degrees | 0.011 to 0.072 tiles | 0 to 2.4 degrees |
+| 150 degrees | 0.140 to 0.201 | 2.6 to 5.5 degrees |
+| 180 degrees | 0.504 to 0.559 | 5.8 to 11.3 degrees |
 
-Measured with the bearing fixed and no grace at all, that alone still leaves eight ghosts at
-a quarter of a tile a tick set off for and never delivered, worst five attempts. So ADRIFT is
-still doing real work and is still a plaster.
+The same on all three tiers measured, which is what says it is the drawing rather than a
+speed. Decomposed, the drawn hand is the state plus an offset that lies along the world's own
+vertical whichever way the arm faces, nought at both ends of the turn and widest in the
+middle.
 
-What would settle it is deciding what to do about a meeting that is already behind the arm
-and receding -- refuse it outright, or require a margin that survives the drift it is built
-on -- and then taking ADRIFT back out. `test/ft/turning.lua` is what to measure against.
+Fed the drawn hand, the arithmetic comes out **optimistic**. Ninety re-aims of a loaded claw
+part way through a swing, timed to the delivery: where the swing was a half turn, the drawn
+hand's answer was short of what it actually took on 39 of them, by as much as twelve ticks.
+Asked of the state instead -- the birth radius carried out at the extension speed, the birth
+bearing carried round at the rotation speed -- the same arithmetic was right to the tick on
+all ninety.
+
+So an arm still sets off for what it cannot get to in the time it thinks, and that is what is
+left of this.
+
+ADRIFT, the four ticks of grace a course gets before the claw gives it up, is no longer what
+stops the flicker. With the crossing test fixed, `test/ft/turning.lua` reports one attempt on
+any ghost at either speed whether the grace is four ticks or one. What it still buys is small
+and pulls both ways -- 202 and 225 built with it against 204 and 220 without -- so it stays
+until something measures it properly.
+
+**What a fix needs.** The engine's own two numbers, carried by the mod rather than read back:
+a radius moving toward whatever end the arm is chasing at the tier's extension speed, and a
+bearing moving toward it at the tier's rotation speed, both reset to reach.BORN and the built
+direction whenever point() builds the arm again. Nothing in the API offers them -- orientation
+reads nought on an inserter, see point() -- so they have to be integrated tick by tick. What
+that has to survive: an arm with no charge, whose hand does not move while the sum would; the
+ends being re-aimed outside aim(), which redirect() and deliver() both do; and the tick the
+load leaves the hand, where which end is being chased changes.
+
+`test/ft/swinging.lua` is the fixture. It holds the drawn hand to its state up to 120 degrees,
+records the gap past that, and times a re-aimed claw against both readings; a fix is what lets
+the drawn hand be held to its state at every turn.
 
 ## Mods with vehicle and equipment categories of their own
 
@@ -203,3 +138,28 @@ What that is likely to cost: an arm that will not go into a grid it would fit, a
 whose arms are never mustered, or a hull whose shape pack.lua has no opinion about and
 mounts everything in the middle of. None of it is measured -- there is no fixture with a
 modded vehicle in it -- so the first thing is to find out which of those actually happen.
+
+## What there is to work with
+
+Fixtures and harnesses built for the items above, so that picking one up does not start from
+nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, so
+`test/ft/run.sh turning` runs one file's worth.
+
+| where | what it measures |
+| --- | --- |
+| `test/ft/turning.lua` | a train along a double line of ghosts, counting the ones an arm set off for and never delivered to, and the worst number of attempts on any one of them. It passes now; it is what a claw changing its mind shows up in. |
+| `test/ft/swinging.lua` | a bare inserter turning and stretching at once, tick by tick, and one re-aimed part way through a swing. This is where the law is measured right and the state it is asked of is measured wrong. |
+| `test/ft/searching.lua` | four search shapes over sixteen scenarios, asserting each holds everything reach.meets says is there and logging what each costs. |
+| `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
+| `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. |
+| `test/ft/losing.lua` | every belt in the arena counted every tick while a train builds a line, with a dump of the ticks round any that goes missing. |
+| `test/ft/grabbing.lua` | an idle claw over a chest and over a vehicle's hold, which is what the barred box at the rest point exists to stop. |
+| `test/ft/bare.lua` | the deconstruction stall with no mod in the loop: one inserter driven by hand through the same cycle. |
+| `test/ft/vanilla.lua` | the same in base game prototypes only, and it runs the console commands in `test/stall/console.lua` as written so what is handed to somebody is what is tested. |
+| `test/stall.sh` | a real game laid out on the standing-still stall, with markers drawn for the claw, both ends of the swing and the boxes. `/ce-rig` builds the minimal version of it. |
+| `test/demo/run.sh` | the showroom, which is where 20 was seen. |
+
+Two engine behaviours found along the way are written up in `factorio/CLAUDE.md` rather than
+here, since they are the game's rather than this mod's: an inserter will not move its hand at
+all when its pickup or drop falls on a tile holding something marked for deconstruction, and
+find_entities_filtered honours a BoundingBox orientation.

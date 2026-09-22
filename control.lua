@@ -4799,6 +4799,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.chunkful",
     "test.ft.underfoot",
     "test.ft.turning",
+    "test.ft.swinging",
   }, {
     load_luassert = true,
     game_speed = 100,
