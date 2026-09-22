@@ -1187,10 +1187,9 @@ local STILL = { x = 0, y = 0 }
 ---building, every one of them, because the estimate had its owner overshooting past them.
 ---Walking away is the honest direction -- the reach only gets longer from here.
 ---
----Asked when an arm is deciding to set off and not while it is out. A swing already under
----way is judged on where its target is now, because the engine can still finish one this
----says is hopeless: predicting mid swing as well threw away a delivery that landed on tick
----forty five.
+---What is left of this is sizing a round: how many of a thing a claw should shop for before
+---it leaves, which is a different question from whether any one of them can be flown to.
+---Whether a thing is worth setting off for is course_to(), which charges the turn as well.
 ---@param record table the arm
 ---@param from {x: number, y: number} where it reaches from now
 ---@param at {x: number, y: number} what it would reach for
@@ -1207,14 +1206,61 @@ local function out_of_reach(record, from, at, range, ticks)
     return reach.out_of_range(from, at, range)
   end
   local tier = tier_of(record)
-  -- Where the hand is, but deliberately not which way it points. This is asked of every
-  -- candidate the search brings back, and a bearing costs a walk of up to half a turn's
-  -- worth of ticks apiece where the rest is a handful of sums. Left out it is generous,
-  -- which is what a filter is allowed to be: what it turns away is gone for good, and what
-  -- it lets through set_course looks at properly, bearing and all.
+  -- Where the hand is, but deliberately not which way it points. A round is sized over its
+  -- whole life, several swings long, by which time the bearing the hand happens to hold now
+  -- says nothing; and a bearing costs a walk of up to half a turn's worth of ticks apiece
+  -- where the rest is a handful of sums. Generous is what this is allowed to be: nothing
+  -- sets off on its answer, and every ghost it counts is put to course_to() in its turn.
   return not reach.meets(
     { range = range, extension = tier.extension, out = hand_out(record) },
     drift, { x = at.x - from.x, y = at.y - from.y }, ticks or reach.full_swing(tier))
+end
+
+---The course a claw would fly to reach a thing, or nothing if there is none.
+---
+---One question asked in one place, because it used to be two. An arm deciding whether to set
+---off asked out_of_reach(), which leaves the bearing out on purpose and is therefore
+---generous; an arm already going asked set_course(), which charges the turn. A claw that
+---crossed from one ghost to the next went through the generous one alone -- redirect() took
+---whatever choose() offered and threw set_course()'s answer away -- so it set off for things
+---the strict test refused on the very next tick, gave them up, was offered the neighbour,
+---and lost that one the same way. Traced on a train, a claw ping ponged between two adjacent
+---ghosts a tick apiece and delivered to neither.
+---
+---So both ends now ask this. What it turns away nothing sets off for, and what it lets
+---through is a course the tick after will still recognise.
+---@param record table
+---@param from {x: number, y: number} where the arm reaches from
+---@param at {x: number, y: number} the thing, in the world
+---@param range number
+---@param setting_off boolean? whether this is an arm deciding to go, rather than one going
+---@return {met: boolean, arrival: number?, lead: {x: number, y: number}?}?
+local function course_to(record, from, at, range, setting_off)
+  -- No arm to speak of is no hand to start from and no turn to charge, so what is in reach
+  -- is in reach. The search is asked this before any arm exists.
+  if not record then
+    if reach.out_of_range(from, at, range) then return nil end
+    return { met = true }
+  end
+  local arm = arm_state(record, range, at)
+  -- A hand with no bearing and a thing already in reach wants no lead at all: aim at it and
+  -- be done. An empty claw is rebuilt facing wherever it is going, so there is nothing for
+  -- it to turn through and the engine's own chase is the short way round.
+  if not arm.facing and not reach.out_of_range(from, at, range) then
+    return { met = true }
+  end
+  -- How far ahead to look, and the two cases want different answers. An arm deciding whether
+  -- to set off looks one flight ahead, which is the same distance the search covers, so that
+  -- it never takes on what it was never offered. An arm already out is not deciding anything
+  -- -- it has a ghost and it is going -- so what it wants to know is whether the thing can
+  -- still be got to at all, and a hand part way through a reach can want longer than a
+  -- flight: one back at its own base reaching five tiles wants fifty ticks against a swing's
+  -- forty three.
+  local horizon = setting_off and reach.full_swing(tier_of(record)) or reach.longest(arm)
+  local arrival, lead = reach.intercept(
+    arm, record.drift or STILL, { x = at.x - from.x, y = at.y - from.y }, horizon)
+  if not arrival then return nil end
+  return { met = false, arrival = arrival, lead = lead }
 end
 
 ---Where a claw is aimed for a ghost: the ghost, carried up into the frame the arm swings in.
@@ -1878,7 +1924,17 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
               if (item or (taking(ghost) and room_for(inventory, ghost)))
                   and not (claimed and claimed[claim_of(ghost)])
                   and not set_aside_still(ghost)
-                  and not out_of_reach(record, from, ghost.position, range)
+                  -- The whole course, bearing and all, rather than the generous filter that
+                  -- used to stand here. What this offers is taken -- assign() and redirect()
+                  -- both set off for it -- so offering something the next tick's
+                  -- holding_course() would refuse is how a claw comes to change its mind
+                  -- every tick.
+                  --
+                  -- Asked here rather than of every candidate because only one that would
+                  -- take the lead gets this far, which is a handful a search. Measured on the
+                  -- train of test/ft/turning.lua, which is eight arms over nine hundred ticks
+                  -- of a packed double line: 927 and 801 milliseconds against 903 and 790.
+                  and course_to(record, from, ghost.position, range, record.job == nil)
                   and buildable(ghost) then
                 best, best_price, best_far = ghost, price, far
                 best_item, best_needed, best_quality = item, needed, quality
@@ -1953,8 +2009,10 @@ local function loads_for(record, nearby, claimed, standing, from, range, item, q
     if wanted >= capacity then break end
     if still_wanted(ghost) and not (claimed and claimed[claim_of(ghost)])
         and not standing_in(ghost, standing)
-        -- The same question choose() asks, which is whether the arm could meet it at any
-        -- point in the flight rather than whether it happens to be in reach this instant.
+        -- Whether the arm could meet it at any point in the flight rather than whether it
+        -- happens to be in reach this instant. Generous, and deliberately not the whole
+        -- course choose() works out: this is counting how many to carry, and each one is put
+        -- to course_to() properly when the claw comes to cross to it.
         -- Asked the old way, a round set off for by an arm that is leading its first ghost
         -- counted nothing at all -- the whole round is ahead of its owner at that moment --
         -- so the claw carried one and crossed to nothing. Measured on four ghosts ten to
@@ -2976,45 +3034,29 @@ local redirect
 ---A lead is only wanted while the ghost is out of reach. One already in reach is aimed at
 ---directly, which is what the mod has always done and what every case on a wearer who is
 ---standing still is.
+---
+---A hand with a load in it is the case a lead exists for. It cannot be turned -- see point(),
+---which refuses -- so it has to swing round at its own rate, and aimed at something that
+---moves it chases the bearing instead of cutting to where the bearing is going. Measured on a
+---hand four and a half tiles out: aimed at the ghost it never arrived at all, and held on a
+---lead it arrived on the tick the arithmetic named.
 ---@param record table
 ---@param from {x: number, y: number} where the arm reaches from
 ---@param range number
----@return boolean whether there is still a reach worth making
 ---@param setting_off boolean? whether this is an arm deciding to go, rather than one going
+---@return boolean whether there is still a reach worth making
 local function set_course(record, from, range, setting_off)
   local job = record.job
   if not job then return false end
-  job.met = false
-  local arm = arm_state(record, range, job.target)
-  -- How far ahead to look, and the two cases want different answers. An arm deciding whether
-  -- to set off looks one flight ahead, which is the same distance the search covers, so that
-  -- it never takes on what it was never offered. An arm already out is not deciding anything
-  -- -- it has a ghost and it is going -- so what it wants to know is whether the thing can
-  -- still be got to at all, and a hand part way through a reach can want longer than a
-  -- flight: one back at its own base reaching five tiles wants fifty ticks against a swing's
-  -- forty three.
-  -- A hand with no bearing and a ghost already in reach wants no lead at all: aim at the
-  -- thing and be done. An empty claw is rebuilt facing wherever it is going, so there is
-  -- nothing for it to turn through and the engine's own chase is the short way round.
-  --
-  -- A hand with a load in it is the case a lead exists for. It cannot be turned -- see
-  -- point(), which refuses -- so it has to swing round at its own rate, and aimed at
-  -- something that moves it chases the bearing instead of cutting to where the bearing is
-  -- going. Measured on a hand four and a half tiles out: aimed at the ghost it never
-  -- arrived at all, and held on a lead it arrived on the tick the arithmetic named.
-  if not arm.facing and not reach.out_of_range(from, job.target, range) then
-    job.met, job.lead, job.arrival = true, nil, nil
-    return true
+  local course = course_to(record, from, job.target, range, setting_off)
+  if not course then
+    job.met, job.lead, job.arrival = false, nil, nil
+    return false
   end
-  local horizon = setting_off and reach.full_swing(tier_of(record)) or reach.longest(arm)
-  local arrival, lead = reach.intercept(
-    arm,
-    record.drift or STILL,
-    { x = job.target.x - from.x, y = job.target.y - from.y },
-    horizon)
-  job.arrival = arrival and (game.tick + arrival) or nil
-  job.lead = lead
-  return arrival ~= nil
+  job.met = course.met
+  job.lead = course.lead
+  job.arrival = course.arrival and (game.tick + course.arrival) or nil
+  return true
 end
 
 ---Keep a reach aimed at something it can still get to, as its owner's course changes.
@@ -3910,15 +3952,22 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     end
     if name ~= carried_name or grade ~= carrying then return false end
 
+    -- The course before the job, so that a refusal leaves the claw on the ghost it had
+    -- rather than on one it cannot fly to. choose() has asked this already and this asks it
+    -- again of the job as it now stands; what it costs is one intercept, and what it buys is
+    -- that nothing is ever crossed to on an answer nobody looked at.
+    local was_ghost, was_target = job.ghost, job.target
+    job.ghost, job.target = ghost, ghost.position
+    if not set_course(record, from, range) then
+      -- Put the job back exactly as it was, course included: set_course writes the lead as a
+      -- side effect, so a refusal has already cleared the one the claw was flying.
+      job.ghost, job.target = was_ghost, was_target
+      if job.target then set_course(record, from, range) end
+      return false
+    end
     if claimed then claimed[claim_of(ghost)] = true end
-    job.ghost = ghost
-    job.target = ghost.position
     -- A new thing to stand over, so where its box goes is asked again.
     job.shift = nil
-    -- And a new thing to work out an intercept to. A claw crossing from one to the next is
-    -- an arm that is already out, so the course is worked out from where its hand actually
-    -- is rather than from where a fresh one would start.
-    set_course(record, from, range)
     -- Crossing to it, which takes aiming the drop at where it is going. An inserter will
     -- not carry a load past its drop position: measured, a claw holding one belt and sent to
     -- the next thing with its drop still at home put the belt down at home -- which for a
@@ -3978,12 +4027,19 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     if job.left < 1 then return false end
   end
 
+  -- The same again: the course is worked out before the job is changed over, and a refusal
+  -- puts the job back as it was. A claw that crossed on an answer nobody looked at spent its
+  -- journey changing its mind -- see course_to().
+  local was_ghost, was_target = job.ghost, job.target
+  job.ghost, job.target = ghost, ghost.position
+  if not set_course(record, from, range) then
+    -- The same restoration: a refusal has already cleared the lead the claw was flying.
+    job.ghost, job.target = was_ghost, was_target
+    if job.target then set_course(record, from, range) end
+    return false
+  end
   if claimed then claimed[claim_of(ghost)] = true end
-  job.ghost = ghost
-  job.target = ghost.position
   job.shift = nil
-  -- The same again: a new thing means a new intercept, from wherever the hand has got to.
-  set_course(record, from, range)
   -- Crossing to it, the way a fetch does. The claw is holding the rest of the round and
   -- the engine has just let go of what it delivered, so its next move is back to wherever
   -- it picks up from whatever its hand holds. Pointed home that is a wasted journey each

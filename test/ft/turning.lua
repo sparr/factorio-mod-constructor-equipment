@@ -1,22 +1,25 @@
---- SCRATCH: arms that set off for a ghost at full speed and turn back without delivering.
+--- Arms that set off for a ghost at full speed and turn back without delivering.
 ---
---- Reported as happening to particular ghosts rather than to a scattering of them. It is
---- reproduced here at every speed tried, and it is not the arms setting off repeatedly from
---- home: traced tick by tick, a claw never goes through assign() at all for these. It is
---- caught in redirect(), which is the path a loaded claw takes when it changes its mind
---- mid flight.
+--- Reported as happening to particular ghosts rather than to a scattering of them. It was
+--- reproduced here at every speed tried, and it was not the arms setting off repeatedly from
+--- home: traced tick by tick, a claw never went through assign() at all for these. It was
+--- caught in redirect(), which is the path a loaded claw takes when it crosses to the next
+--- ghost of its round.
 ---
---- Every abandonment is holding_course() refusing a course set_course() accepted one tick
---- earlier, and redirect() then finds a neighbour whose course looks flyable, takes it, and
---- loses that one the next tick too. The claw ping pongs between two or three adjacent
---- ghosts, a tick apiece, and delivers to none of them:
+--- And what redirect() did was take whatever choose() offered without ever looking at
+--- whether there was a course to it. choose() filtered on out_of_reach(), which leaves the
+--- bearing out on purpose and is therefore generous; holding_course() charges the turn. So a
+--- claw crossed to a neighbour the strict test refused on the very next tick, gave it up, was
+--- offered the one after, and lost that one the same way -- a tick apiece, delivering to
+--- none of them:
 ---
 ---   2588 slot 4 gives up on 251.5,198.5 after 1 ticks: course=false
 ---   2591 slot 4 gives up on 252.5,198.5 after 1 ticks: course=false
 ---   2592 slot 4 gives up on 251.5,198.5 after 1 ticks: course=false
 ---
---- What this fixture measures is the symptom: how many ghosts an arm set off for and never
---- delivered to.
+--- Both ends ask the same question now -- see course_to() in control.lua -- and the worst any
+--- ghost sees is one attempt. What this fixture measures is the symptom: how many ghosts an
+--- arm set off for and never delivered to.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
 
