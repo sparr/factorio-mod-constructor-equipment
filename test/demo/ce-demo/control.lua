@@ -783,17 +783,31 @@ local ROWS = {
           -- The claw is shopping for the whole round rather than for its first ghost.
           for i = 0, 3 do ghost("transport-belt", x + 11 + i, y + 8) end
         end },
-      { "Too close to the line",
-        "Keep walking east. Two of these go up and one does not: a walking arm has only about a tile to the side.",
+      { "How far off your line",
+        "Keep walking east. Each sits a tile further off your line than the last: the near three go up, the far two do not.",
         function(x, y)
           pad(x + 1, y + 6, "refined-hazard-concrete-left")
-          -- Three crammed inside the tile of side reach a walk has. Two is all that can be
-          -- got at walking pace, and which two is not fixed. Walk it again at half speed --
-          -- a slowed character, or the same ghosts read while riding -- and all three go up,
-          -- which is the cone being wider rather than the arm trying harder.
-          ghost("transport-belt", x + 10, y + 7)
-          ghost("transport-belt", x + 11, y + 6)
-          ghost("transport-belt", x + 11, y + 7)
+          -- A ladder rather than a count. Each rung sits one tile further from the line the
+          -- walk takes than the one before, so what the bay shows is the edge itself --
+          -- three rungs built, two left standing, and the step between them where the side
+          -- reach runs out. A tuned arrangement that happens to leave one of three standing
+          -- shows a number; this shows the boundary, and a watcher can see which rung it
+          -- fell on.
+          --
+          -- Measured walking east on this row's own kit, at four spacings from two tiles
+          -- apart to four: two, three and four tiles abeam go up and five and six do not,
+          -- every time and whatever the spacing. So the edge is between four and five and
+          -- it does not move with how far apart the rungs are.
+          --
+          -- It was three ghosts crammed a tile abeam. Until an arm reckoned its swing from
+          -- where its own arm is rather than from where its claw is drawn, a tile abeam was
+          -- the edge; the bay went on claiming a limit that had moved out to four, and all
+          -- three of it went up.
+          ghost("transport-belt", x + 9, y + 8)
+          ghost("transport-belt", x + 12, y + 9)
+          ghost("transport-belt", x + 15, y + 10)
+          ghost("transport-belt", x + 18, y + 11)
+          ghost("transport-belt", x + 21, y + 12)
         end },
     },
   },

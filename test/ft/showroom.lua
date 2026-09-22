@@ -191,15 +191,44 @@ describe("row 12, rounds on the move", function()
     end, "the walk never ended", 400)
   end)
 
-  --- "Two of these go up and one does not: a walking arm has only about a tile to the
-  --- side." Three crammed inside that tile, each with a window of a few ticks, and the
-  --- claw cannot make every swing in time. Which one is left over is not fixed, so only
-  --- the count is pinned.
-  it("bay 2: gets two of three crammed inside the side reach", function()
+  --- "The near three go up and the far two do not: a walking arm has about four tiles of
+  --- reach to the side." A ladder, each rung one tile further from the line the walk takes
+  --- than the one before, so the bay shows where the edge is rather than asserting a count:
+  --- what a watcher sees is the step in the line where the reach ran out.
+  ---
+  --- Which rung it falls on is the thing to pin, so this asserts the whole pattern rather
+  --- than the total. Measured on this row's own kit at four spacings, from two tiles apart
+  --- to four: two, three and four abeam go up and five and six do not, every time and
+  --- whatever the spacing, so the edge does not move with how far apart the rungs are.
+  ---
+  --- It was three ghosts crammed a tile abeam and it had to move. Until an arm reckoned its
+  --- swing from where its own arm is rather than from where its claw is drawn, a tile abeam
+  --- was the edge; after that all three went up and the bay was demonstrating a limit that
+  --- had gone, which is the one failure a showroom cannot show for itself.
+  it("bay 2: builds the near rungs of a ladder abeam and leaves the far ones", function()
     kitted(4, "power-armor", { "fission-reactor-equipment", "battery-equipment" }, true)
-    walked_past({ { 9, 1 }, { 10, 0 }, { 10, 1 } }, function(built)
-      assert.are.equal(2, built,
-        "the bay says two of the three go up, and that is no longer what happens")
-    end)
+    -- The bay's own rungs, as offsets from its mark: see row 12 of test/demo/ce-demo.
+    local RUNGS = { { 8, 2 }, { 11, 3 }, { 14, 4 }, { 17, 5 }, { 20, 6 } }
+    local WANTED = { true, true, true, false, false }
+    local laid = {}
+    for index, at in ipairs(RUNGS) do
+      laid[index] = world.ghost(player, BELT, at[1], at[2])
+    end
+    local began = game.tick
+    world.once(function()
+      player.walking_state = { walking = true, direction = defines.direction.east }
+      return world.ghosts(player) == 0 or game.tick - began > 400
+    end, function()
+      player.walking_state = { walking = false }
+      local said = {}
+      for index, at in ipairs(RUNGS) do
+        local up = not (laid[index] and laid[index].valid)
+        said[index] = ("%d abeam %s"):format(at[2], up and "went up" or "stayed")
+        assert.are.equal(WANTED[index], up,
+          ("the rung %d tiles abeam %s, and the bay says it %s"):format(at[2],
+            up and "went up" or "stayed", WANTED[index] and "goes up" or "stays"))
+      end
+      log("SHOWROOM | the ladder abeam | " .. table.concat(said, ", "))
+    end, "the walk never ended", 500)
   end)
 end)
