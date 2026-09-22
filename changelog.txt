@@ -1,6 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.6
   Features:
+    - A quality piece of the equipment now makes a quality arm, which swings faster for it: a legendary one extends and turns two and a half times as fast as a common one, and draws two and a half times the power doing it, so what it costs to build a thing is the same and what it costs to wait is not
     - The arms now reach for where a ghost will be by the time the claw gets there rather than for where it stands, so things go up while you are walking or driving past that could not be built at all before: the smallest arm meets things more than three times its own reach ahead of itself, and the largest more than twice
     - A claw that carries several things now sets off with as much as the whole round will come within reach of, rather than only what is within reach at the moment it leaves, so a row alongside your path goes up in one trip instead of the near end of it going up and the rest being walked past
   Changes:

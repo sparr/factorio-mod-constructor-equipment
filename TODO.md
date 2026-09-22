@@ -43,29 +43,6 @@ it by a third on the fourth tier and by two fifths on the first cost nothing any
 suite, which is evidence that it is not -- the refusals are coming from somewhere else, and
 where wants finding before that number is touched.
 
-## The equipment's own quality does nothing
-
-A legendary arm reaches and swings exactly as far and as fast as a common one. Everything
-about a tier -- its reach, its extension and rotation speeds, what its claw holds, what its
-buffer holds -- comes from lib/tiers.lua by level alone, and nothing anywhere reads the
-quality of the piece in the grid.
-
-What the mod does already handle is the quality of the *work*: a ghost of a legendary belt
-is paid for with a legendary belt, an upgrade to one takes one, and everything that moves an
-item moves it at its own quality. That half is done. It is the equipment itself that is
-inert.
-
-What a quality arm should buy is a question before it is a change. Reach is the obvious
-candidate and the loudest: it is what decides how often a player has to stop and stand
-somewhere else, and a fifth tile is worth more than the throughput figure shows -- see the
-note on the fourth tier's price in lib/tiers.lua. Speed and buffer are the quieter ones. The
-base game's own scaling for equipment is a place to start rather than a thing to copy, since
-a grid's worth of arms is not a solar panel.
-
-Whatever it buys has to come out of the same one number per tier the rest of lib/tiers.lua
-is built on, or the progression stops being checkable: no tier, at any quality, may end up
-worse than the tier below it at the same quality.
-
 ## Mods with vehicle and equipment categories of their own
 
 Everything the mod knows about what can carry an arm is written down here rather than asked.
@@ -93,6 +70,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
 | `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. |
 | `test/ft/losing.lua` | every belt in the arena counted every tick while a train builds a line, with a dump of the ticks round any that goes missing. |
+| `test/ft/qualities.lua` | a quality piece in the grid, the arm it makes, and what each quality is worth in ticks. |
 | `test/ft/spilling.lua` | the showroom's chest downgrade, which sheds sixteen hundred plates for the arms to clear, watching every tick for anything that ends up on the ground without a marker. |
 | `test/ft/grabbing.lua` | an idle claw over a chest and over a vehicle's hold, which is what the barred box at the rest point exists to stop. |
 | `test/ft/bare.lua` | the deconstruction stall with no mod in the loop: one inserter driven by hand through the same cycle. |

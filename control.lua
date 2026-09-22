@@ -522,16 +522,40 @@ local function worn(wearer)
 
   local counted = {}
   -- 2.0 turned get_contents into a list of { name, count, quality } rather than a
-  -- table keyed by name, so it is searched instead of indexed
+  -- table keyed by name, so it is searched instead of indexed.
+  --
+  -- The quality is kept rather than collapsed, because it is the one thing about a piece
+  -- that the arm it makes has to know: the engine swings a quality inserter faster, and the
+  -- model has to be told which one it is looking at -- see tier_of().
   for _, equipment in pairs(grid.get_contents()) do
     local tier = tiers.of(equipment.name)
     if tier then
-      counted[tier.level] = (counted[tier.level] or 0) + (equipment.count or 1)
+      local quality = equipment.quality or "normal"
+      if type(quality) == "table" then quality = quality.name end
+      local by_quality = counted[tier.level]
+      if not by_quality then
+        by_quality = {}
+        counted[tier.level] = by_quality
+      end
+      by_quality[quality] = (by_quality[quality] or 0) + (equipment.count or 1)
     end
   end
+  -- Best first, so that the arm in the first slot is the best one worn: the higher tier
+  -- before the lower, and within a tier the better quality before the worse. A player who
+  -- mixes them gets the good arm doing the work that is offered first.
+  local ranked = {}
+  for name, quality in pairs(prototypes.quality) do
+    ranked[#ranked + 1] = { name = name, level = quality.level }
+  end
+  table.sort(ranked, function(one, other)
+    if one.level ~= other.level then return one.level > other.level end
+    return one.name < other.name
+  end)
   for level = #tiers.list, 1, -1 do
-    for _ = 1, counted[level] or 0 do
-      table.insert(found, level)
+    for _, quality in ipairs(ranked) do
+      for _ = 1, (counted[level] or {})[quality.name] or 0 do
+        table.insert(found, { level = level, quality = quality.name })
+      end
     end
   end
   return found
@@ -544,11 +568,57 @@ local function wearing(wearer)
   return #worn(wearer) > 0
 end
 
+--- One fitted tier per level and quality, made once and kept, because tier_of() is asked
+--- dozens of times a tick and a fresh table each time would be a fresh table each time.
+--- Derived from prototypes, which do not change inside a session, so it belongs here rather
+--- than in storage: the file is run again on load and this comes back empty.
+local fitted = {}
+
 ---What one arm is, from what a record remembers of it.
+---
+---The tier's own table for everything a tier decides -- its reach, its price, its colour --
+---but not for the two speeds the hand moves at. Those are asked of the inserter prototype at
+---the piece's own quality, because that is where the engine scales them: a legendary arm
+---extends and turns at one plus three tenths of the quality level, and the number in
+---lib/tiers.lua is only what a normal one does.
+---
+---It matters because lib/reach.lua is built on those two numbers alone. A model working from
+---the table while the entity works from the prototype is a model that thinks the hand is
+---somewhere it is not, which is the fault this whole branch has been removing -- and at
+---legendary it would be wrong by a factor of two and a half rather than by half a tile.
+---
+---At normal quality the two are the same number by construction: prototypes/inserter.lua
+---writes tier.extension and tier.rotation into the prototype, and the engine scales from
+---there. So this changes nothing until a quality arm exists.
 ---@param record table
 ---@return table
 local function tier_of(record)
-  return tiers.by_level[record.level] or tiers.list[1]
+  local tier = tiers.by_level[record.level] or tiers.list[1]
+  local quality = record.quality or "normal"
+  local by_quality = fitted[tier.level]
+  if not by_quality then
+    by_quality = {}
+    fitted[tier.level] = by_quality
+  end
+  local made = by_quality[quality]
+  if made then return made end
+
+  made = {}
+  for key, value in pairs(tier) do made[key] = value end
+  made.quality = quality
+  -- Guarded, because a game without the quality mod has only the one quality and an older
+  -- one may not answer at all. Falling back on the table is falling back on exactly what
+  -- the prototype would have said for a normal arm.
+  local proto = prototypes.entity[tier.inserter]
+  local ok, extension, rotation = pcall(function()
+    return proto.get_inserter_extension_speed(quality),
+      proto.get_inserter_rotation_speed(quality)
+  end)
+  if ok and extension and rotation then
+    made.extension, made.rotation = extension, rotation
+  end
+  by_quality[quality] = made
+  return made
 end
 
 --- How far a wearer can move in a tick and still be said to have travelled, in tiles.
@@ -627,10 +697,13 @@ end
 ---@param grid LuaEquipmentGrid
 ---@param name string
 ---@return LuaEquipment[]
-local function pieces_of(grid, name)
+local function pieces_of(grid, name, quality)
   local found = {}
   for _, equipment in pairs(grid.equipment) do
-    if equipment.name == name then table.insert(found, equipment) end
+    local its = equipment.quality and equipment.quality.name or "normal"
+    if equipment.name == name and (not quality or its == quality) then
+      table.insert(found, equipment)
+    end
   end
   return found
 end
@@ -2201,6 +2274,11 @@ local function arm_of(player, wearer, record)
       -- turned afterwards. See point(), which is what decides this; nothing here means
       -- north, which is what an inserter faces when nobody says otherwise.
       direction = record.facing,
+      -- The piece's own quality, which is the whole of what a quality arm is: the engine
+      -- swings a quality inserter faster by both its speeds and charges it proportionally
+      -- more for it, and tier_of() fits the model to the same pair. Nothing else here has
+      -- to know.
+      quality = record.quality,
     }
     -- Filled the moment it exists, out of its own equipment, so that it never spends a
     -- tick on empty. Out of the equipment, not out of nothing: handing it a free bufferful
@@ -2828,12 +2906,15 @@ end
 ---@param level integer
 ---@param grid LuaEquipmentGrid?
 ---@return table? the record, no longer folding
-local function reclaim(player, level, grid)
+local function reclaim(player, want, grid)
   local folding = storage.constructor_folding
   if not (folding and #folding > 0) then return nil end
   for index, entry in ipairs(folding) do
     local record = entry.record
-    if entry.player == player.index and record and record.level == level
+    -- The quality as well as the tier, because an arm of the wrong quality is the wrong
+    -- arm: its entity swings at a different rate and the model is fitted to that rate.
+    if entry.player == player.index and record and record.level == want.level
+        and (record.quality or "normal") == want.quality
         and record.grid == grid and record.entity and record.entity.valid then
       table.remove(folding, index)
       -- Only one with an empty hand. A claw still carrying what it set off with is carrying
@@ -2866,11 +2947,17 @@ local function muster(player, wearer)
   end
   for slot = 1, #want do
     local record = list[slot]
+    local fresh = { level = want[slot].level, quality = want[slot].quality }
     if not record then
-      list[slot] = reclaim(player, want[slot], grid) or { level = want[slot] }
-    elseif record.level ~= want[slot] or record.grid ~= grid then
+      list[slot] = reclaim(player, want[slot], grid) or fresh
+    elseif record.level ~= want[slot].level
+        or (record.quality or "normal") ~= want[slot].quality
+        or record.grid ~= grid then
+      -- A quality swapped in the grid is a different arm, and the old one goes away rather
+      -- than being re-labelled: its entity was built at the old rate and cannot be changed
+      -- to the new one, the way a bearing cannot. See point().
       put_away(player, record)
-      list[slot] = reclaim(player, want[slot], grid) or { level = want[slot] }
+      list[slot] = reclaim(player, want[slot], grid) or fresh
     end
   end
 
@@ -2879,9 +2966,12 @@ local function muster(player, wearer)
   -- piece is which does not matter, only that two arms never feed from the same one.
   local taken = {}
   for _, record in ipairs(list) do
-    local name = tier_of(record).name
-    taken[name] = (taken[name] or 0) + 1
-    record.piece = pieces_of(grid, name)[taken[name]]
+    local tier = tier_of(record)
+    -- Keyed by quality as well as name: an arm is fed by a piece of its own quality, so that
+    -- two arms of the same tier and different qualities never draw from the same one.
+    local key = tier.name .. "/" .. tier.quality
+    taken[key] = (taken[key] or 0) + 1
+    record.piece = pieces_of(grid, tier.name, tier.quality)[taken[key]]
     -- remembered so that putting the arm away can hand its charge and its load back where
     -- they were drawn from, whoever its owner is wearing by then. The player too, so that a
     -- box being taken away can find the pockets to empty itself into without every caller
@@ -4957,6 +5047,7 @@ if script.active_mods["ce-stall"] then
           rest = record.rest,
           lift = record.lift,
           level = record.level,
+          quality = record.quality,
           busy = record.busy,
           run = record.run,
           job = job and {
@@ -5008,6 +5099,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.swinging",
     "test.ft.following",
     "test.ft.spilling",
+    "test.ft.qualities",
   }, {
     load_luassert = true,
     game_speed = 100,

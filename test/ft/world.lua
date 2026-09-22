@@ -145,7 +145,14 @@ function world.equip(player, equipment, charged, armour)
   player.insert{ name = armour or armour_for(equipment) }
   local armour = player.get_inventory(defines.inventory.character_armor)[1]
   local grid = armour.grid
-  for _, name in pairs(equipment) do grid.put{ name = name } end
+  -- A name, or { name, quality } for a piece that is not the ordinary one.
+  for _, want in pairs(equipment) do
+    if type(want) == "table" then
+      grid.put{ name = want[1] or want.name, quality = want[2] or want.quality }
+    else
+      grid.put{ name = want }
+    end
+  end
   for _, item in pairs(grid.equipment) do
     item.energy = charged and item.max_energy or 0
   end
