@@ -46,14 +46,61 @@ where wants finding before that number is touched.
 ## Mods with vehicle and equipment categories of their own
 
 Everything the mod knows about what can carry an arm is written down here rather than asked.
-The equipment sits in categories this mod names, and the vehicles it expects are the ones the
-base game ships plus whatever test/ft/ce-tests hands a grid to. A mod that adds a vehicle
-with a grid of its own, or an equipment category of its own, is not considered anywhere.
+The equipment sits in the "armor" category and nothing else, and the vehicles it expects are
+the ones the base game ships plus whatever test/ft/ce-tests hands a grid to.
 
-What that is likely to cost: an arm that will not go into a grid it would fit, a vehicle
-whose arms are never mustered, or a hull whose shape pack.lua has no opinion about and
-mounts everything in the middle of. None of it is measured -- there is no fixture with a
-modded vehicle in it -- so the first thing is to find out which of those actually happen.
+**Krastorio 2 is the worked case, and it costs the arms every vehicle.** Read off the data
+stage of a real load -- Factorio 2.1.20, Krastorio2 2.1.2, this mod, and a probe mod that
+asks each vehicle's grid whether it would take an arm:
+
+| where | grid | takes | an arm fits |
+| --- | --- | --- | --- |
+| car | kr-car-grid | kr-vehicle, kr-vehicle-motor, kr-vehicle-roboport | **no** |
+| tank | kr-tank-grid | the same three | **no** |
+| locomotive | kr-locomotive-grid | kr-vehicle, kr-vehicle-motor | **no** |
+| cargo, fluid and artillery wagons | kr-wagons-grid | kr-vehicle, kr-vehicle-roboport | **no** |
+| spidertron | kr-spidertron-equipment-grid | the same three | **no** |
+| modular, power, power mk2 armour | the base grids | armor | yes |
+| K2's own mk3 and mk4 armour | kr-mk3/mk4-armor-grid | armor | yes |
+
+So on foot everything works, in K2's own armours too, and no vehicle will take an arm at all.
+
+It is deliberate rather than an oversight. K2 declares three categories of its own --
+kr-vehicle, kr-vehicle-motor, kr-vehicle-roboport -- and re-grids all seven base vehicles
+through one helper, which carries the old grid's categories across **except** "armor":
+
+    if equipment_category ~= "armor" and not equipment_categories_set[equipment_category]
+
+Its own equipment then opts back in by declaring both, `categories = { "armor", "kr-vehicle" }`,
+and a fixed list of nine base pieces is hand-patched the same way -- the batteries, the
+shields, the solar panel, the fission reactor, belt immunity, and the two laser defences.
+Three base pieces are deliberately left out and are armour-only under K2: the exoskeleton,
+night vision, and the personal roboport. There is no sweep over everything carrying "armor",
+so a third party's equipment is never on the list.
+
+**Two ways to fix it, and they differ in how much they presume.**
+
+The narrow one is to do what K2's own equipment does: in data-final-fixes, if
+`data.raw["equipment-category"]["kr-vehicle"]` is there, add it to ours. One guarded line, an
+optional dependency on Krastorio2 in info.json, and it handles exactly one overhaul.
+
+The broad one needs no mod named. Take every vehicle that has a grid, intersect the category
+sets of those grids, and add what is common to all of them -- which for K2 is exactly
+{ kr-vehicle }, the category its author made for general vehicle equipment. That generalises
+to any overhaul that invents categories, at the risk of putting an arm somewhere an author
+meant to be exclusive. Worth measuring against a second overhaul before trusting it.
+
+Either wants a decision about whether it is this mod's business to opt itself into another
+mod's categories at all, given that K2 went out of its way to exclude armour equipment from
+vehicles. The other two failures the old note guessed at -- a vehicle whose arms are never
+mustered, a hull pack.lua has no opinion about -- are still unmeasured, and cannot be reached
+while the equipment will not go into the grid in the first place.
+
+A caveat on the measurement: Krastorio2 2.1.2 does not finish loading on Factorio 2.1.20 at
+all, failing on its own `wood` prototype with `ItemPrototype::fuel_category was removed`,
+which the log attributes to "Base mod > Krastorio 2" and which has nothing to do with this
+mod. The data stage completes, so what is written above is what the two mods really agree
+on; it is not a thing a player can sit down and play today.
 
 ## What there is to work with
 
