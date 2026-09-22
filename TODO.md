@@ -11,28 +11,6 @@ oriented search box are all in, and what each of them cost and bought is written
 was decided -- reach.cone, reach.search_box and choose() in control.lua carry their own
 measurements.
 
-## 20. Deconstruction leaves items behind
-
-About one in twenty items picked up from around three and a half tiles away is left on the
-ground, without even its deconstruct marker.
-
-**Reproduced on the showroom's chest downgrade bay.** The arm takes something like thirty
-seconds to pick up what is lying near it, and drops some of it around four tiles from the
-player. That is the bay to work from; what follows is what could not be got out of a bare
-ring.
-
-Not reproduced by laying rings out, over eight layouts counted to the last item: rings of twenty four marked
-belts at 2.5, 3.0, 3.5, 4.0 and 4.5 tiles, a ring of marked loose stacks rather than things
-standing, the same ring worked by a second tier arm, and a line of twenty walked past. Every
-one of them balances -- what was laid out equals what came home, plus what is still standing,
-plus what is on the ground, plus what is in a claw, a box or an escrow -- and in none of them
-is anything on the ground at all.
-
-Run against the code as it was before the round of fixes this note sits under as well, in
-case one of them had quietly cured it, and the numbers are identical. So it is not that this
-was fixed; it is that these are not the layouts it was seen on. Like 9 and 16, it wants the
-bay or the save it happened in.
-
 ## 22. The crossing horizon, if anybody opens it up
 
 Settled for now: a seventh is off every tier's rotation, which is as much as the swing
@@ -93,6 +71,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
 | `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. |
 | `test/ft/losing.lua` | every belt in the arena counted every tick while a train builds a line, with a dump of the ticks round any that goes missing. |
+| `test/ft/spilling.lua` | the showroom's chest downgrade, which sheds sixteen hundred plates for the arms to clear, watching every tick for anything that ends up on the ground without a marker. |
 | `test/ft/grabbing.lua` | an idle claw over a chest and over a vehicle's hold, which is what the barred box at the rest point exists to stop. |
 | `test/ft/bare.lua` | the deconstruction stall with no mod in the loop: one inserter driven by hand through the same cycle. |
 | `test/ft/vanilla.lua` | the same in base game prototypes only, and it runs the console commands in `test/stall/console.lua` as written so what is handed to somebody is what is tested. |

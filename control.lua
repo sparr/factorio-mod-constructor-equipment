@@ -4096,7 +4096,26 @@ function redirect(player, wearer, from, record, job, claimed, range, nearby)
     -- In the arm's own frame, for the same reason: pointed at the world position it would
     -- be aimed a lift below the box it is meant to be putting the round into.
     local to = aimed_at(job, record)
+    -- All three ends together, which is what the delivery path has always done here and
+    -- this one did not. Moving the drop on its own leaves it pointing at bare ground for a
+    -- tick: the pickup is still back on the thing just taken up, so the two are no longer
+    -- the same point and nothing stops the engine letting go, and the box has not been
+    -- teleported across yet so there is nothing there to let go into. The engine finishes
+    -- swings on its own schedule, and a hand that finishes on that one tick puts its load
+    -- on the floor -- unmarked, because the mod never put it there, so nothing ever comes
+    -- back for it.
+    --
+    -- Measured on the showroom's chest downgrade, which sheds sixteen hundred plates: one
+    -- plate on the floor with no marker on it, every run, at the moment a fetch crossed to
+    -- its next plate with two in the claw. See test/ft/spilling.lua.
     arm.drop_position = { to.x, to.y }
+    -- The same point exactly as the drop, which is what keeps the load in the hand: an
+    -- inserter will not put something into the very thing it is picking up from.
+    arm.pickup_position = { to.x, to.y }
+    -- And the box across with them, so the drop is never pointing at ground with nothing
+    -- standing on it. A fetch wants its box from the first tick rather than once the claw
+    -- is near -- see advance(), which says why -- so it is opened here.
+    pin_from(record, catcher_at(record, arm.surface, to, true))
     -- A new leg of the journey, so the swing limit counts from here rather than from the
     -- start of a round that may take half a dozen of them. The leg rather than the journey:
     -- job.started says which journey this is and does not move, since a round that turns to
@@ -4988,6 +5007,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.turning",
     "test.ft.swinging",
     "test.ft.following",
+    "test.ft.spilling",
   }, {
     load_luassert = true,
     game_speed = 100,
