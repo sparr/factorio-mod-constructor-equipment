@@ -202,3 +202,42 @@ describe("waiting for the inserter each tier is made of", function()
       end)
   end
 end)
+
+--- What the equipment is allowed into, which is "armor" and nothing else until a mod moves
+--- the vehicles somewhere else.
+---
+--- data-final-fixes follows the vehicles into whatever categories an overhaul has put them
+--- in -- see lib/grids.lua. In a game nobody has overhauled there is nothing to follow: every
+--- grid the base game puts on a vehicle takes "armor", so the cover comes back empty and the
+--- equipment is left exactly as it was written. That is the half of it a test can hold, and
+--- it is the half that would break quietly.
+describe("what an arm is allowed into", function()
+  it("carries armor and nothing else where nothing has been overhauled", function()
+    for _, tier in ipairs(tiers.list) do
+      local piece = prototypes.equipment[tier.name]
+      assert.is_not_nil(piece, tier.name .. " is not an equipment prototype")
+      local said = {}
+      for _, name in pairs(piece.equipment_categories or {}) do
+        said[#said + 1] = tostring(name)
+      end
+      table.sort(said)
+      assert.are.same({ "armor" }, said,
+        ("%s carries [%s]"):format(tier.name, table.concat(said, ", ")))
+    end
+  end)
+
+  it("is allowed into every grid the game puts on something it can ride", function()
+    -- The vehicles data-final-fixes knows about, as far as this arena has them. A cargo
+    -- wagon has no grid in the base game, so it is not among them.
+    for _, name in ipairs{ "car", "tank", "locomotive", "spidertron" } do
+      local proto = prototypes.entity[name]
+      local grid = proto and proto.grid_prototype
+      assert.is_not_nil(grid, name .. " has no equipment grid to ride on")
+      local takes = {}
+      for _, category in pairs(grid.equipment_categories or {}) do takes[category] = true end
+      assert.is_true(takes.armor,
+        ("%s's grid %s does not take armor, so the arms have come off it"):format(name,
+          grid.name))
+    end
+  end)
+end)

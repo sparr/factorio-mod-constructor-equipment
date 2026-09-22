@@ -78,23 +78,20 @@ Three base pieces are deliberately left out and are armour-only under K2: the ex
 night vision, and the personal roboport. There is no sweep over everything carrying "armor",
 so a third party's equipment is never on the list.
 
-**Two ways to fix it, and they differ in how much they presume.**
+**Done, and no mod is named to do it.** data-final-fixes looks at what the seven vehicles the
+mod already knew about will take now, and works out the fewest categories that get an arm back
+onto all of them -- see lib/grids.lua. On K2 that is the single kr-vehicle, which is what its
+own equipment declares, and the two narrow categories are left alone. In a game nobody has
+overhauled every one of those grids still takes "armor", so the answer is empty and nothing
+is added at all: measured, the equipment carries [armor] and no more.
 
-The narrow one is to do what K2's own equipment does: in data-final-fixes, if
-`data.raw["equipment-category"]["kr-vehicle"]` is there, add it to ours. One guarded line, an
-optional dependency on Krastorio2 in info.json, and it handles exactly one overhaul.
+Re-measured after, on the same load: yes to the car, the tank, the locomotive, all three
+wagons and the spidertron, and still yes to all five armours.
 
-The broad one needs no mod named. Take every vehicle that has a grid, intersect the category
-sets of those grids, and add what is common to all of them -- which for K2 is exactly
-{ kr-vehicle }, the category its author made for general vehicle equipment. That generalises
-to any overhaul that invents categories, at the risk of putting an arm somewhere an author
-meant to be exclusive. Worth measuring against a second overhaul before trusting it.
-
-Either wants a decision about whether it is this mod's business to opt itself into another
-mod's categories at all, given that K2 went out of its way to exclude armour equipment from
-vehicles. The other two failures the old note guessed at -- a vehicle whose arms are never
-mustered, a hull pack.lua has no opinion about -- are still unmeasured, and cannot be reached
-while the equipment will not go into the grid in the first place.
+What is still unmeasured are the other two failures the old note guessed at -- a vehicle whose
+arms are never mustered, and a hull pack.lua has no opinion about and mounts everything in the
+middle of. Neither could be reached while the equipment would not go into the grid at all, and
+both want a game that actually runs to look at.
 
 A caveat on the measurement: Krastorio2 2.1.2 does not finish loading on Factorio 2.1.20 at
 all, failing on its own `wood` prototype with `ItemPrototype::fuel_category was removed`,
