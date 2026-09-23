@@ -8,6 +8,7 @@ written on the ground above it, so nothing here needs reading alongside it.
 test/demo/run.sh                 # a graphical session, standing on the first row's pad
 CE_SPACE_AGE=1 test/demo/run.sh  # with the expansion loaded
 test/demo/smoke.sh               # headless: builds it and says what it built
+CE_AAI=0 test/demo/smoke.sh      # without AAI's vehicles, so three rows fewer
 ```
 
 The game runs out of its own data directory and the repo is symlinked in, so whatever is in
@@ -158,14 +159,21 @@ quotes. Left out of a game with only the one quality in it.
 ## What the smoke run should say
 
 ```
-ce-demo: built 12 rows of 16, 31 bays, 360 ghosts, 4 vehicles
-everything placed
+ce-demo: built 15 rows of 16, 35 bays, 980 ghosts, 7 vehicles
+everything placed, and every vehicle can drive off its mark
 ```
 
-Twelve of sixteen because the smoke run is the base game and this mod and nothing else: the
-three rows about AAI's vehicles and the one about quality are not laid out, and the count
-says so rather than leaving it to be noticed. With all of them, it is sixteen rows, 39 bays,
-540 ghosts and 7 vehicles.
+Fifteen of sixteen because the smoke run is the base game, this mod and AAI's vehicles: the
+row about quality wants the expansion and is not laid out, and the count says so rather than
+leaving it to be noticed. `CE_AAI=0` drops the three rows that are AAI's and gives twelve
+rows, 32 bays, 800 ghosts and 4 vehicles.
+
+AAI is loaded by default because three of the rows are its, and a run without them reported
+everything placed while never laying those rows at all. That is how an ironclad sat beached:
+it is a boat, it collides with nothing but ground tiles, and `create_entity` never asks
+whether a thing can move -- so it was made on the lab floor, counted, and unable to travel a
+tile in any direction. Each vehicle is now asked whether it could be put down a hull's length
+along the way it is pointed, which is the first thing driving east would ask of it.
 
 A bay that quietly failed to build looks exactly like a bay demonstrating that nothing
 happens, which is why the smoke run counts rather than eyeballs.

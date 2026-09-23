@@ -1242,6 +1242,29 @@ local function clear_and_build()
         if made_vehicle.type == "spider-vehicle" then
           made_vehicle.torso_orientation = (row.vehicle.direction or EAST) / 16
         end
+        -- Can it get off the mark? create_entity never asks, so a vehicle standing on
+        -- ground it cannot cross is made exactly as happily as one that can drive away --
+        -- which is how an ironclad, whose only collision is with ground_tile, sat beached
+        -- on the showroom's lab floor through every smoke run, placed and reported and
+        -- unable to move a tile in any direction. Asked here, one hull length along the
+        -- way it is pointed, which is the first thing driving east would ask of it.
+        --
+        -- Not rolling stock: a locomotive off its rail can be placed nowhere at all, and
+        -- the rail is what decides where it may go.
+        if not row.vehicle.on_rail then
+          -- A whole hull along, measured off its own longest side, so the question is
+          -- never answered by the vehicle colliding with itself whichever way it is
+          -- pointed.
+          local box = made_vehicle.prototype.collision_box
+          local long = math.max(box.right_bottom.x - box.left_top.x,
+                                box.right_bottom.y - box.left_top.y)
+          if not made.can_place_entity{ name = row.vehicle.name,
+              position = { made_vehicle.position.x + long + 0.5, made_vehicle.position.y },
+              direction = row.vehicle.direction or EAST,
+              build_check_type = defines.build_check_type.manual } then
+            log(("ce-demo: the %s cannot drive off its mark"):format(row.vehicle.name))
+          end
+        end
         if row.vehicle.fuel then
           made_vehicle.insert{ name = row.vehicle.fuel, count = 50 }
         end
