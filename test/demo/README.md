@@ -99,6 +99,13 @@ vehicle with neither carries them along its flanks. Each reaches from where it i
 rather than from the middle, and the vehicle pays out of its own hold rather than your
 pockets.
 
+Every vehicle in here is parked facing east, which is the way its row is laid and the way
+its bay tells you to drive. It is not only tidiness: where a hull's arms are bolted is
+worked out from which way the hull is pointed, so one parked across its own row shows an
+arrangement nobody is going to drive in. The spidertron is the exception it has to be. Only
+its torso turns, its legs do not, and its arms are on its legs -- so its body is pointed east
+and its eight arms sit where they always sit.
+
 **9. A car** and **10. a locomotive** are **not vanilla**. Neither has an equipment grid in
 the base game, and the showroom adds one so there is something to look at. The locomotive
 pulls a cargo wagon, which is where its belts are: a locomotive prototype has nowhere to put
@@ -115,6 +122,14 @@ of one another; an ironclad is twice as long as it is wide, and carries a grid o
 rather than one the showroom added; a hauler is a big square with a hold, so its arms build
 out of what it is carrying. Each is its own mod, none is a dependency, and a row whose
 vehicle is not installed is not laid out at all.
+
+The ironclad's row is a lane of shallow water forty two tiles long, because an ironclad is a
+boat: its only collision is with ground tiles, so the showroom's own floor is the one thing
+it cannot be on. Shallow rather than deep, and the collision masks decide it rather than the
+look -- deep water collides with the player as well, which would leave the mark out of
+walking reach and anybody who climbed out mid lane with nowhere to stand. The ghosts go along
+the banks rather than down the middle, since the middle is the water the boat is in and a
+belt cannot be built there, and each bank is worked by the arms on its own side.
 
 **14. Leading.** The bays that have to be walked rather than stood on, because an arm aims
 where its target will be by the time the claw gets there and standing still there is nowhere

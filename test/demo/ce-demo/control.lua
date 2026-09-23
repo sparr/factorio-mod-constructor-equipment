@@ -18,6 +18,13 @@ local BAY = 12          -- how wide a bay is: past the longest reach, and past i
 local ROW = 14          -- how far apart the rows are
 local SURFACE = "ce-demo"
 
+--- Which way every vehicle in here is parked. The showroom runs west to east -- rows are
+--- laid out that way, every bay tells you to walk or drive east, and the train's rail is
+--- laid east -- so a vehicle facing north is a vehicle you have to turn before the bay it
+--- is standing in means anything. It also decides where its arms are bolted, so a hull
+--- parked across its own row shows an arrangement nobody is going to drive in.
+local EAST = defines.direction.east
+
 local TIERS = { "constructor-equipment", "constructor-equipment-2",
                 "constructor-equipment-3", "constructor-equipment-4" }
 
@@ -135,6 +142,38 @@ local function pad(x, y, tile)
     row = building.row, bay = building.bay, title = building.title,
     x = x + 0.5, y = y + 0.5,
   }
+end
+
+---A lane of water, for a boat to be launched onto and driven along.
+---
+---Shallow water rather than water, and the collision masks decide it rather than the look.
+---An AAI ironclad is a boat by its mask -- it collides with ground_tile and with nothing
+---else -- so the showroom's own lab floor is what it cannot be put on, and any tile without
+---that layer will float it. Deep water carries the player layer as well, which puts the
+---mark out of walking reach and leaves anybody who climbs out mid lane with nowhere to
+---stand. Shallow water carries neither, so the boat floats on it and you can walk out to it
+---and back.
+---
+---Nothing else here minds. A catcher box and the porter collide with nothing at all, and an
+---item lying in the water is left where it falls, since shallow water has no item layer.
+---What does mind is a belt, so a lane is laid narrower than the rows of ghosts either side
+---of it and never under them.
+---@param x number the west end, in tiles
+---@param y number the north edge, in tiles
+---@param wide integer how many tiles east
+---@param tall integer how many tiles south
+local function water(x, y, wide, tall)
+  local tiles = {}
+  for dx = 0, wide - 1 do
+    for dy = 0, tall - 1 do
+      tiles[#tiles + 1] = { name = "water-shallow", position = { x + dx, y + dy } }
+    end
+  end
+  ground().set_tiles(tiles)
+  -- Counted as part of the exhibit, so that the pad on to the next row goes past the far
+  -- end of the lane rather than into it: a concrete mark laid mid water is ground again,
+  -- and ground is the one thing the boat cannot cross.
+  eastmost = math.max(eastmost, x + wide)
 end
 
 ---A mark that gives you something different from the rest of its row.
@@ -725,7 +764,7 @@ local ROWS = {
         end },
     },
     vehicle = { name = "locomotive", at = { 6, 6 }, fuel = "solid-fuel",
-                direction = defines.direction.east, on_rail = true,
+                direction = EAST, on_rail = true,
                 arms = { TIERS[2], TIERS[2], TIERS[2], TIERS[2],
                          TIERS[2], TIERS[2], TIERS[2], TIERS[2] },
                 -- Enough for the whole field and then some. Four rows of a hundred and
@@ -778,18 +817,33 @@ local ROWS = {
     kit = { armour = "power-armor", equipment = {}, items = {} },
     bays = {
       { "Arms down a long hull",
-        "Get in and drive east. An ironclad carries a grid of its own, so nothing here had to give it one.",
+        "Get in and drive east. An ironclad is a boat, so its row is a lane of water with ghosts on the banks.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          -- Two lines wide apart, since a hull this long puts its end arms a good way from
-          -- its middle and a single line would only ever be worked by the near ones.
+          -- The lane. It starts one tile east of the mark, which is as far west as it can
+          -- go and leave the mark dry, and runs nine tiles past the last of the ghosts,
+          -- because eighty tonnes of ironclad at speed does not stop where the belts do.
+          -- Five tiles across against a hull 1.8 wide, so there is a tile and a half either
+          -- side to steer in. Measured on the built showroom: thirty eight spots along it
+          -- will take the boat, unbroken from the lane's west end to its east one, and not
+          -- one tile outside the lane will take it at all.
+          water(x + 3, y + 4, 42, 5)
+          -- Two lines, one along each bank, because the middle of this row is the water the
+          -- boat is in and a belt cannot be built there. Three tiles off the lane's middle,
+          -- which is a shade over two from the flank an arm is bolted to -- a hull 0.9 half
+          -- wide with the bases brought in a quarter, so 0.675 out -- and inside a second
+          -- tier reach of three, with each bank worked by the arms on its own side.
           for i = 0, 29 do
             ghost("transport-belt", x + 6 + i, y + 3)
             ghost("transport-belt", x + 6 + i, y + 9)
           end
         end },
     },
-    vehicle = { name = "ironclad", at = { 3, 6 }, fuel = "solid-fuel",
+    -- Two tiles further east than the rest of the vehicles, so that the whole of a hull
+    -- 3.8 long lies in the lane rather than its stern resting on the mark. One tile of
+    -- ground under it is enough to hold it: create_entity will make it there regardless,
+    -- since it never checks, and what it cannot then do is move.
+    vehicle = { name = "ironclad", at = { 5, 6 }, fuel = "solid-fuel",
                 arms = { TIERS[2], TIERS[2], TIERS[2],
                          TIERS[2], TIERS[2], TIERS[2] } },
   },
@@ -1170,9 +1224,24 @@ local function clear_and_build()
         end
       else
         made_vehicle = place(row.vehicle.name, where[1], where[2],
-          { direction = row.vehicle.direction })
+          { direction = row.vehicle.direction or EAST })
       end
       if made_vehicle then
+        -- A spidertron is turned by hand, because it is the one wearer that will not take
+        -- a direction. Measured on 2.1.20: every car -- a car, a tank, a chaingunner, an
+        -- ironclad, a hauler -- is built by create_entity facing whatever direction it was
+        -- given and reads back an orientation of a quarter for east, and a spidertron
+        -- built the same way reads 0.000, with writing 0.25 to its orientation accepted
+        -- and changing nothing. torso_orientation is the one it hears.
+        --
+        -- And it turns the body a player looks at and nothing else. A spidertron's arms are
+        -- bolted to its legs, its legs do not turn, and facing_of() reads its orientation,
+        -- which is north whatever the torso is doing. So this row shows the same eight arms
+        -- whichever way the torso is pointed -- which is the spidertron, not a fault here,
+        -- and is why its bay says walk it rather than drive it.
+        if made_vehicle.type == "spider-vehicle" then
+          made_vehicle.torso_orientation = (row.vehicle.direction or EAST) / 16
+        end
         if row.vehicle.fuel then
           made_vehicle.insert{ name = row.vehicle.fuel, count = 50 }
         end
