@@ -1407,10 +1407,25 @@ local function course_to(record, from, at, range, setting_off)
     return { met = true }
   end
   local arm = arm_state(record, range, at)
+  local drift = record.drift or STILL
   -- A hand with no bearing and a thing already in reach wants no lead at all: aim at it and
   -- be done. An empty claw is rebuilt facing wherever it is going, so there is nothing for
   -- it to turn through and the engine's own chase is the short way round.
-  if not arm.facing and not reach.out_of_range(from, at, range) then
+  --
+  -- Only for a wearer standing still. The engine's chase is the short way round to something
+  -- that is not moving; to something that is, it goes where the thing is rather than where it
+  -- will be, which is the whole of what a lead exists to avoid. Being in reach now says
+  -- nothing about that: what is in reach of somebody walking is in reach for a moment.
+  --
+  -- What it is worth is only the departure, because holding_course() thinks again on the very
+  -- next tick either way -- see the note there. It buys the one thing that tick cannot: an
+  -- arm is built facing what point() is told it is going for, and an arm built facing the
+  -- ghost has to turn off it again the moment a lead is worked out. Measured on a ghost laid
+  -- one tile ahead of somebody already up to speed, which is the marginal case because it is
+  -- swept underfoot within a swing: three tiers of four build it this way against two of four
+  -- aimed straight at it, and at two tiles and further all four build it either way.
+  if not arm.facing and drift.x == 0 and drift.y == 0
+      and not reach.out_of_range(from, at, range) then
     return { met = true }
   end
   -- How far ahead to look, and the two cases want different answers. An arm deciding whether
@@ -1422,7 +1437,7 @@ local function course_to(record, from, at, range, setting_off)
   -- forty three.
   local horizon = setting_off and reach.full_swing(tier_of(record)) or reach.longest(arm)
   local arrival, lead = reach.intercept(
-    arm, record.drift or STILL, { x = at.x - from.x, y = at.y - from.y }, horizon)
+    arm, drift, { x = at.x - from.x, y = at.y - from.y }, horizon)
   if not arrival then return nil end
   return { met = false, arrival = arrival, lead = lead }
 end
@@ -3248,6 +3263,9 @@ local function set_course(record, from, range, setting_off)
   local job = record.job
   if not job then return false end
   local course = course_to(record, from, job.target, range, setting_off)
+  -- Whatever comes back, this is a course being worked out afresh, so the handover the last
+  -- one ended in does not carry over to it. See holding_course(), which is what reads it.
+  job.handed = nil
   if not course then
     job.met, job.lead, job.arrival = false, nil, nil
     return false
@@ -3277,13 +3295,37 @@ end
 ---
 ---Turning is not a reason to go looking for something else. The ghost is still the ghost,
 ---and only an intercept that comes back with nothing says it has really gone.
+---
+---Neither is being in reach already. A ghost handed over to is judged on where it stands, and
+---that is what job.met says; but a ghost that was simply in reach when a standing arm set off
+---is marked the same way by course_to() without a lead ever being worked out, and if its
+---owner then walks off it wants leading like anything else. So the two are told apart:
+---job.handed is a handover and nothing else, and a met that is not one is thought about again
+---the moment there is a drift to think about.
 ---@param record table
 ---@param from {x: number, y: number}
 ---@param range number
 ---@return boolean whether the reach is still worth finishing
 local function holding_course(record, from, range)
   local job = record.job
-  if job.met then return not reach.out_of_range(from, job.target, range) end
+  local drift = record.drift or STILL
+  local still = drift.x == 0 and drift.y == 0
+  if job.met and (still or job.handed) then
+    return not reach.out_of_range(from, job.target, range)
+  end
+  -- Met without ever having been handed over to, which is what a ghost already in reach of
+  -- somebody standing still is: with no drift the lead is the ghost, so course_to() says so
+  -- and no lead is worked out at all. That answer belongs to the tick it was given on. Its
+  -- owner walking off afterwards makes it a moving target like any other, and one that is
+  -- still aimed at directly is chased rather than cut off -- measured on a belt two tiles
+  -- ahead, the arm set off standing still, its owner started walking a few ticks later, and
+  -- the ghost was swept in past the arm's own base and out behind it with the claw two
+  -- tenths of a tile into its stretch and never nearer than 0.086 to the drop. Nothing was
+  -- built and the reach was written off twenty seven ticks later.
+  --
+  -- So a course met but never met at is thought about again the moment there is a drift to
+  -- think about, and the handover below is what latches it for good.
+  job.met = false
   if not set_course(record, from, range) then return false end
   -- Handed over when the arrival is upon us rather than the moment the ghost is in range,
   -- and the difference only shows on an arm that is already out.
@@ -3305,6 +3347,7 @@ local function holding_course(record, from, range)
   if job.arrival and game.tick + 1 >= job.arrival
       and not reach.out_of_range(from, job.target, range) then
     job.met, job.lead, job.arrival = true, nil, nil
+    job.handed = game.tick
   end
   return true
 end
@@ -4516,6 +4559,7 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
         hand_over(record, job)
       elseif not reach.out_of_range(from, job.target, tier_of(record).range) then
         job.met, job.lead, job.arrival = true, nil, nil
+        job.handed = game.tick
         target = aimed_at(job, record)
         arm.drop_position = { target.x, target.y }
         arm.pickup_position = { target.x, target.y }
@@ -5085,6 +5129,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.intercept",
     "test.ft.course",
     "test.ft.leading",
+    "test.ft.chasing",
     "test.ft.steering",
     "test.ft.notatrest",
     "test.ft.showroom",

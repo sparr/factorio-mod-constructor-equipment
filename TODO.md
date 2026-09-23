@@ -114,12 +114,17 @@ appears already holding a belt and already part way out -- which will be reach.B
 179/256 of a tile a fresh hand is born at -- then retracts all the way to its owner before
 extending out to the ghost. It should go straight there.
 
-What they have in common is a claw that comes home when nothing has asked it to. Likely
-suspects: set_course() handing back a lead worked out for a drift that has since gone to
-nothing, and aim() pointing the drop at the rest point on a tick where the job is not yet
-set, which is the shape of the bug fixed in redirect() -- see the commit about a fetch's
-three ends, and whether the same hole is open on the first tick of a job rather than on a
-crossing.
+Walk both in the showroom again before anything else. Neither reproduces in a headless
+fixture: taps of two to thirty ticks at ghosts two to six tiles off and up to two to the
+side, stopped both on a tick count and on the tick the lead is taken, and the button pressed
+with a ghost two tiles off to each of the four sides -- in every one of them the claw went
+straight out. What that sweep did find was a third fault of the same family, which has gone
+since these were seen, and either of them may have gone with it.
+
+If they survive, the suspect left is aim() pointing the drop at the rest point on a tick
+where the job is not yet set, which is the shape of the bug fixed in redirect() -- see the
+commit about a fetch's three ends, and whether the same hole is open on the first tick of a
+job rather than on a crossing.
 
 ## A heap underfoot is worked last, and should be worked first
 
@@ -164,6 +169,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | --- | --- |
 | `test/ft/turning.lua` | a train along a double line of ghosts, counting the ones an arm set off for and never delivered to, and the worst number of attempts on any one of them. It passes now; it is what a claw changing its mind shows up in. |
 | `test/ft/swinging.lua` | a bare inserter turning and stretching at once, tick by tick; one re-aimed part way through a swing; and one making a turn and nothing else at a fixed radius. Between them they pin the law, the tick of grace each half of it gets, and how far the drawing strays from the state. |
+| `test/ft/chasing.lua` | a belt in reach of a standing arm whose owner then walks over it, from every phase of the check tick, which is what says whether a ghost met before the walk is still led once there is one. |
 | `test/ft/following.lua` | the two numbers control.lua carries for a hand, run against a real inserter through a walk's worth of re-aims. |
 | `test/ft/searching.lua` | four search shapes over sixteen scenarios, asserting each holds everything reach.meets says is there and logging what each costs. |
 | `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
