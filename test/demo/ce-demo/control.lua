@@ -693,18 +693,33 @@ local ROWS = {
     kit = { armour = "modular-armor", equipment = {}, items = {} },
     bays = {
       { "Arms on a train",
-        "Get in and drive along the rail. Eight second tier arms, and the belts are in the wagon.",
+        "Get in and drive along the rail and back. Eight second tier arms, and the belts are in the wagon. Long enough to reach full speed and keep it, which is where a train's arms are worth watching.",
         function(x, y)
           pad(x + 2, y + 6, "refined-hazard-concrete-left")
-          for i = -2, 24 do
-            place("straight-rail", x + 6 + i * 2, y + 6,
+          -- Three times the track it used to have. A locomotive spends a long way getting
+          -- up to speed, and a run that ends before it gets there only ever shows the arms
+          -- working at a crawl: the old fifty four tiles were all acceleration.
+          local rail
+          for i = -2, 78 do
+            local laid = place("straight-rail", x + 6 + i * 2, y + 6,
               { direction = defines.direction.east })
+            rail = rail or laid
           end
-          -- Within three tiles of the rail, which is what a second tier arm on a hull can
-          -- reach, and along the whole length of the track rather than the first half of it.
-          for i = 0, 43 do
-            for _, dy in pairs{ 4, 8 } do
-              ghost("transport-belt", x + 6 + i, y + dy)
+          -- Two rows on each side rather than one, measured off the rail the train will
+          -- really sit on rather than off the tape.
+          --
+          -- Rails lie on a grid of their own, half a tile from the one a belt sits on, so a
+          -- row asked for by eye comes out lopsided: two rows either side of y + 6 land at
+          -- two and a half and three and a half tiles from the train on one side and one and
+          -- a half and two and a half on the other, and a second tier arm reaches three. The
+          -- far row is then one no arm can ever touch, and it reads as arms that refuse a
+          -- whole row rather than as a row laid in the wrong place. Measured out of a
+          -- fixture that made exactly that mistake.
+          local middle = rail and rail.position.y or (y + 6.5)
+          for i = 0, 131 do
+            for _, off in pairs{ -2.5, -1.5, 1.5, 2.5 } do
+              place("entity-ghost", x + 6 + i, middle + off - 0.5,
+                { inner_name = "transport-belt" })
             end
           end
         end },
@@ -713,6 +728,10 @@ local ROWS = {
                 direction = defines.direction.east, on_rail = true,
                 arms = { TIERS[2], TIERS[2], TIERS[2], TIERS[2],
                          TIERS[2], TIERS[2], TIERS[2], TIERS[2] },
+                -- Enough for the whole field and then some. Four rows of a hundred and
+                -- thirty two is more than two hundred, and a train that runs dry part way
+                -- along looks exactly like arms that have stopped working.
+                belts = 800,
                 -- A locomotive prototype has nowhere to put a hold, so its only inventory
                 -- is a three slot burner box: an insert of two hundred belts into one takes
                 -- none of them, quietly. The arms build out of the train's wagons instead,
@@ -1188,7 +1207,7 @@ local function clear_and_build()
           else log(("ce-demo: could not put a %s behind the %s"):format(
             row.vehicle.wagon, row.vehicle.name)) end
         end
-        hold.insert{ name = "transport-belt", count = 200 }
+        hold.insert{ name = "transport-belt", count = row.vehicle.belts or 200 }
         local grid = made_vehicle.grid
         if grid then
           -- Two of the third tier unless the row asks for something else. A spidertron and

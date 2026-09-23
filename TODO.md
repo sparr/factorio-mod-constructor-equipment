@@ -188,7 +188,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | `test/ft/searching.lua` | four search shapes over sixteen scenarios, asserting each holds everything reach.meets says is there and logging what each costs. |
 | `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
 | `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. HEAP walks six ratios of work underfoot to work round it and times each to completion; FIELD lays one kind of item both underfoot and out, which is the showroom's case. |
-| `test/ft/losing.lua` | every belt in the arena counted every tick while a train builds a line, with a dump of the ticks round any that goes missing. |
+| `test/ft/losing.lua` | every belt in the arena counted every tick while a train builds a line, with a dump of the ticks round any that goes missing. Also a train driven back and forth over four rows until the field is finished, a parked one that must reach all four, and one whose hold is shut mid reach to see where the belt it is holding ends up. |
 | `test/ft/qualities.lua` | a quality piece in the grid, the arm it makes, and what each quality is worth in ticks. |
 | `test/ft/spilling.lua` | the showroom's chest downgrade, which sheds sixteen hundred plates for the arms to clear, watching every tick for anything that ends up on the ground without a marker. |
 | `test/ft/grabbing.lua` | an idle claw over a chest and over a vehicle's hold, which is what the barred box at the rest point exists to stop. |

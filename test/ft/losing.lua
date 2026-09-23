@@ -16,6 +16,7 @@
 --- The six kept here are those six, and which of them lands depends on how long the run is.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
+local reach = require("lib.reach")
 
 local BELT = "transport-belt"
 local BELTS = 200
@@ -377,5 +378,452 @@ describe("an arm holding something it was never given", function()
       assert.are.equal(STOCK, everything(),
         "a belt went missing when the arm took a job with a full hand")
     end)
+  end)
+end)
+
+
+--- Belts that end up on the ground rather than in a ghost, and then ride away on the belts
+--- that did get built.
+---
+--- A different fault from the one above and it needs a different census. The runs above ask
+--- whether every belt is still somewhere; this asks whether any of them is somewhere it has
+--- no business being. A belt lying loose is paid for and not placed, and once a line has been
+--- built through the tile it was dropped on the engine feeds it to a lane -- measured
+--- elsewhere, create_entity on a belt lane is swallowed in the same tick -- so it stops being
+--- litter anybody would notice and becomes cargo travelling up the line.
+---
+--- The layout is what was reported: two rows of ghosts on each side rather than one, which
+--- is what puts a built belt between the claw and the row beyond it, and a train driven back
+--- and forth at full speed on nuclear fuel until the whole field is up.
+local LITTER_FROM, LITTER_TO = 6, 160
+local LITTER_RAILS = 900
+local LITTER_RUN = 24000
+
+---Every belt riding a lane anywhere in the arena.
+local function on_lanes(surface)
+  local carried = 0
+  for _, entity in ipairs(surface.find_entities_filtered{ position = world.ORIGIN,
+        radius = ARENA }) do
+    if entity.valid then
+      local lanes = 0
+      if entity.type == "transport-belt" or entity.type == "loader"
+          or entity.type == "loader-1x1" then lanes = 2
+      elseif entity.type == "underground-belt" then lanes = 4
+      elseif entity.type == "splitter" or entity.type == "lane-splitter" then lanes = 8 end
+      for line = 1, lanes do
+        local items = entity.get_transport_line(line)
+        if items then carried = carried + items.get_item_count(BELT) end
+      end
+    end
+  end
+  return carried
+end
+
+describe("a train driven back and forth over a field of ghosts", function()
+  local player
+
+  before_each(function()
+    player = world.player()
+    clear_arena(player)
+  end)
+
+  after_each(function()
+    for _, sticker in pairs(player.character and player.character.stickers or {}) do
+      sticker.destroy()
+    end
+    clear_arena(player)
+  end)
+
+  --- Both ways round, because the showroom's train is not the obvious way round and the
+  --- report came from the showroom. Its wagon goes on the nearest rail at least six tiles
+  --- from the locomotive, and its rails start four tiles west of where the locomotive
+  --- stands, so the first candidate is always east: the wagon leads and the arms trail.
+  --- And one that runs dry part way, which is the state a showroom train was in when this
+  --- was first reported as "nothing gets built": a hold with fewer belts in it than the
+  --- field wants. What is asked of that one is only that nothing escapes; how much of the
+  --- field goes up is decided by how much it was given.
+  for _, consist in ipairs{ { name = "wagon behind", at = -27 },
+                            { name = "wagon in front", at = -13 },
+                            { name = "running dry", at = -13, stock = 300 } } do
+  it("leaves nothing lying on the ground or riding the line, " .. consist.name, function()
+    local surface, y = player.surface, world.ORIGIN.y
+    -- Well past the turning points at both ends. A train reversed into the end of its track
+    -- stops dead and stays there, which an earlier version of this spent eighteen thousand
+    -- ticks doing: the wagon leads when it backs up, so the west end has to clear the whole
+    -- train and then some.
+    for x = world.ORIGIN.x - 220, world.ORIGIN.x + LITTER_RAILS, 2 do
+      surface.create_entity{ name = "straight-rail", position = { x, y },
+        direction = defines.direction.east, force = player.force }
+    end
+    local loco = surface.create_entity{ name = "locomotive",
+      position = { world.ORIGIN.x - 20, y }, direction = defines.direction.east,
+      force = player.force }
+    local wagon = surface.create_entity{ name = "cargo-wagon",
+      position = { world.ORIGIN.x + consist.at, y }, direction = defines.direction.east,
+      force = player.force }
+    assert.is_not_nil(wagon, "the wagon would not go on the rail")
+    -- Nuclear, for the acceleration: the point is to spend as much of the run as possible at
+    -- the top rather than getting there.
+    loco.insert{ name = "nuclear-fuel", count = 10 }
+    local grid = {}
+    for _ = 1, 8 do grid[#grid + 1] = tiers.by_level[2].name end
+    grid[#grid + 1] = "battery-mk2-equipment"
+    world.fit(loco, grid, true)
+    loco.train.manual_mode = true
+    loco.set_driver(player)
+
+    -- Two rows on each side, measured off the rail the train really sits on. Rails lie on a
+    -- grid half a tile from the one a belt sits on, so rows asked for by eye come out
+    -- lopsided -- minus two and a half and minus one and a half on one side against plus two
+    -- and a half and plus three and a half on the other, and a second tier arm reaches
+    -- three. An earlier version of this laid exactly that and spent a long time reading the
+    -- unreachable row as a fault in the arms.
+    local middle = loco.position.y - world.ORIGIN.y
+    local ghosts = {}
+    for x = LITTER_FROM, LITTER_TO do
+      for _, off in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+        local ghost = world.ghost(player, BELT, x, middle + off)
+        if ghost then ghosts[#ghosts + 1] = ghost end
+      end
+    end
+    do
+      local seen = {}
+      for i = 1, 4 do
+        seen[i] = ("%+.2f"):format(ghosts[i].position.y - loco.position.y)
+      end
+      log(("LITTER | the rows really sit at %s from the train"):format(
+        table.concat(seen, ", ")))
+    end
+    -- Comfortably more than the field needs, so that running dry is never the explanation --
+    -- except in the case that is about exactly that.
+    wagon.insert{ name = BELT, count = consist.stock or (#ghosts + 400) }
+    local stocked = wagon.get_inventory(defines.inventory.cargo_wagon)
+      .get_item_count(BELT)
+
+    local began, going = game.tick, "east"
+    local worst_loose, worst_lanes, first_at = 0, 0, nil
+    local left, passes, fastest, was_at = #ghosts, 0, 0, loco.position.x
+    world.once(function()
+      local at = loco.position.x - world.ORIGIN.x
+      local moved = math.abs(loco.position.x - was_at)
+      was_at = loco.position.x
+      if moved > fastest then fastest = moved end
+      -- Back and forth over the whole field, turned round well past either end so that the
+      -- braking and the reversing happen off it rather than among the ghosts.
+      if going == "east" and at > LITTER_TO + 120 then going = "west" passes = passes + 1
+      elseif going == "west" and at < -140 then going = "east" passes = passes + 1 end
+      player.riding_state = {
+        acceleration = going == "east" and defines.riding.acceleration.accelerating
+          or defines.riding.acceleration.reversing,
+        direction = defines.riding.direction.straight }
+
+      -- Counted twice a second rather than every tick. Walking six hundred ghosts and
+      -- sweeping the arena for loose items on every one of eighteen thousand ticks is a
+      -- great deal more work than the thing being measured, and it is what made an earlier
+      -- version of this run take longer than the harness would wait.
+      if (game.tick - began) % 30 ~= 0 then
+        return game.tick - began > LITTER_RUN
+      end
+      local loose = surface.count_entities_filtered{ name = "item-on-ground",
+        position = world.ORIGIN, radius = ARENA }
+      if loose > worst_loose then worst_loose = loose end
+      if loose > 0 and not first_at then first_at = game.tick - began end
+
+      local standing = 0
+      for _, ghost in ipairs(ghosts) do if ghost.valid then standing = standing + 1 end end
+      left = standing
+      -- Said out loud every so often, because the harness gives up on a game that has not
+      -- printed anything for fifteen seconds and a run this long is otherwise silent.
+      if (game.tick - began) % 2000 == 0 then
+        log(("LITTER ... tick %d: %d of %d still standing, %d loose, %d passes, at %.0f")
+          :format(game.tick - began, standing, #ghosts, loose, passes, at))
+      end
+      return (standing == 0 and loose == 0 and not consist.stock)
+        or game.tick - began > LITTER_RUN
+    end, function()
+      player.riding_state = { acceleration = defines.riding.acceleration.nothing,
+                              direction = defines.riding.direction.straight }
+      local loose = surface.count_entities_filtered{ name = "item-on-ground",
+        position = world.ORIGIN, radius = ARENA }
+      local riding = on_lanes(surface)
+      local built = surface.count_entities_filtered{ name = BELT, position = world.ORIGIN,
+        radius = ARENA }
+      local spare = wagon.valid and wagon.get_inventory(defines.inventory.cargo_wagon)
+        .get_item_count(BELT) or 0
+      -- Which ones are left, because "a quarter of them never went up" is a different
+      -- question depending on whether they are the far rows, the ends of the field, or
+      -- scattered through it.
+      local by_row, lowest, highest = {}, nil, nil
+      for _, ghost in ipairs(ghosts) do
+        if ghost.valid then
+          local off = ("%+.1f"):format(ghost.position.y - loco.position.y)
+          by_row[off] = (by_row[off] or 0) + 1
+          local dx = ghost.position.x - world.ORIGIN.x
+          if not lowest or dx < lowest then lowest = dx end
+          if not highest or dx > highest then highest = dx end
+        end
+      end
+      local rows = {}
+      for _, off in ipairs{ "-2.5", "-1.5", "+1.5", "+2.5" } do
+        rows[#rows + 1] = ("%s: %d of %d"):format(off, by_row[off] or 0,
+          LITTER_TO - LITTER_FROM + 1)
+      end
+      log(("LITTER rows left | %s | from x %s to %s"):format(table.concat(rows, ", "),
+        tostring(lowest), tostring(highest)))
+      log(("LITTER | %s | %d ghosts, %d still standing, %d built | %d passes, top speed"
+        .. " %.3f | loose now %d, worst %d, first seen at %s | riding a lane %d | %d belts"
+        .. " left of %d"):format(consist.name, #ghosts, left, built, passes, fastest, loose,
+        worst_loose, tostring(first_at), riding, spare, stocked))
+      for _, line in ipairs(sweep(surface, player)) do log("    " .. line) end
+      if not consist.stock then
+        assert.is_true(spare > 0, "the train ran out of belts, so this measured nothing")
+      end
+      assert.are.equal(0, riding, ("%d belts are riding the line"):format(riding))
+      assert.are.equal(0, loose, ("%d belts are lying on the ground"):format(loose))
+    end, "the run never ended", LITTER_RUN + 200)
+  end)
+  end
+end)
+
+
+--- The same four rows, with the train standing still.
+---
+--- The run above finds that every ghost three tiles north of the rail survives a field that
+--- is otherwise finished -- 155 of 155, against nothing left in the other three rows. That
+--- is an asymmetry rather than a reach limit, since three tiles south is built. This asks
+--- whether it is there when nothing is moving, which separates what an arm can reach from
+--- what it can be led to.
+describe("a train standing among four rows of ghosts", function()
+  local player
+
+  before_each(function()
+    player = world.player()
+    clear_arena(player)
+  end)
+
+  after_each(function()
+    for _, sticker in pairs(player.character and player.character.stickers or {}) do
+      sticker.destroy()
+    end
+    clear_arena(player)
+  end)
+
+  it("reaches all four rows when it is standing still", function()
+    local surface, y = player.surface, world.ORIGIN.y
+    -- The same offsets the runs above use. Rolling stock goes where a rail is rather than
+    -- where the tape measure says, and these are known to take one.
+    for x = world.ORIGIN.x + RAILS_FROM, world.ORIGIN.x + 60, 2 do
+      surface.create_entity{ name = "straight-rail", position = { x, y },
+        direction = defines.direction.east, force = player.force }
+    end
+    local loco = surface.create_entity{ name = "locomotive",
+      position = { world.ORIGIN.x - 20, y }, direction = defines.direction.east,
+      force = player.force }
+    assert.is_not_nil(loco, "the locomotive would not go on the rail")
+    local wagon = surface.create_entity{ name = "cargo-wagon",
+      position = { world.ORIGIN.x - 27, y }, direction = defines.direction.east,
+      force = player.force }
+    loco.insert{ name = "nuclear-fuel", count = 5 }
+    wagon.insert{ name = BELT, count = 400 }
+    local grid = {}
+    for _ = 1, 8 do grid[#grid + 1] = tiers.by_level[2].name end
+    grid[#grid + 1] = "battery-mk2-equipment"
+    world.fit(loco, grid, true)
+    loco.train.manual_mode = true
+    loco.set_driver(player)
+    loco.train.speed = 0
+
+    -- Alongside the hull rather than ahead of it, since nothing is going to move: the
+    -- locomotive is about seven tiles long and its arms are spread down it.
+    -- About the train rather than about world.ORIGIN. Rolling stock sits on the rail grid,
+    -- which is not the tile grid the ghosts are measured from: the rail here comes out half
+    -- a tile north of the line the fixture thinks it laid, so rows at plus and minus three
+    -- are really at minus three and a half and plus two and a half. Measured before this was
+    -- noticed: the whole northern row of a field was left standing and read as a fault in
+    -- the arms, when it was simply three and a half tiles from a three tile reach.
+    local rail_dy = loco.position.y - world.ORIGIN.y
+    log(("ROWS | the train sits %+.2f off the line the ghosts are measured from"):format(
+      rail_dy))
+    local ghosts = {}
+    local seen = {}
+    for x = -24, -16 do
+      for _, dy in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+        local ghost = world.ghost(player, BELT, x, rail_dy + dy)
+        if ghost then
+          ghosts[#ghosts + 1] = { thing = ghost, dy = dy }
+          -- Where it really landed. A belt ghost snaps to a tile centre, and asking for a
+          -- half tile offset from the rail lands it on a tile edge, which rounds one way on
+          -- one side of the train and the other way on the other.
+          seen[dy] = ghost.position.y - loco.position.y
+        end
+      end
+    end
+    local where = {}
+    for _, dy in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+      where[#where + 1] = ("asked %+.1f, got %+.2f"):format(dy, seen[dy] or 0)
+    end
+    log("ROWS | " .. table.concat(where, " | "))
+
+    -- Where each arm sits and how far it is from a ghost in each row, which is what says
+    -- whether a row is out of reach or merely never chosen.
+    local said = false
+    local began = game.tick
+    world.once(function()
+      if not said then
+        said = true
+        for slot, record in pairs(storage.constructor_arms[player.index] or {}) do
+          local arm = record.entity
+          if arm and arm.valid then
+            local aways = {}
+            for _, dy in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+              aways[#aways + 1] = ("%+.1f: %.2f"):format(dy, reach.distance(arm.position,
+                { x = loco.position.x, y = loco.position.y + dy - (record.lift or 0) }))
+            end
+            log(("ROWS arm %d at %+.2f,%+.2f lift %.2f | %s"):format(slot,
+              arm.position.x - loco.position.x, arm.position.y - loco.position.y,
+              record.lift or 0, table.concat(aways, ", ")))
+          end
+        end
+      end
+      local left = 0
+      for _, ghost in ipairs(ghosts) do if ghost.thing.valid then left = left + 1 end end
+      if (game.tick - began) % 1000 == 0 then
+        local by_row = {}
+        for _, ghost in ipairs(ghosts) do
+          if ghost.thing.valid then by_row[ghost.dy] = (by_row[ghost.dy] or 0) + 1 end
+        end
+        local rows = {}
+        for _, dy in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+          rows[#rows + 1] = ("%+.1f: %d"):format(dy, by_row[dy] or 0)
+        end
+        log(("ROWS ... tick %d: %d left | %s"):format(game.tick - began, left,
+          table.concat(rows, ", ")))
+      end
+      return left == 0 or game.tick - began > world.CYCLE * 60
+    end, function()
+      local by_row = {}
+      for _, ghost in ipairs(ghosts) do
+        if ghost.thing.valid then by_row[ghost.dy] = (by_row[ghost.dy] or 0) + 1 end
+      end
+      local rows, left = {}, 0
+      for _, dy in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+        rows[#rows + 1] = ("%+.1f: %d of 9 left"):format(dy, by_row[dy] or 0)
+        left = left + (by_row[dy] or 0)
+      end
+      log(("ROWS | standing still, after %d ticks: %s"):format(game.tick - began,
+        table.concat(rows, ", ")))
+      -- All four, which is the point. Two rows either side of a track at a tile and a half
+      -- and two and a half are inside a second tier arm's three, and a row that never goes
+      -- up is either a reach that has shrunk or a row laid where nothing can touch it.
+      assert.are.equal(0, left,
+        ("%d ghosts were left standing beside a parked train"):format(left))
+    end, "never settled", world.CYCLE * 61)
+  end)
+end)
+
+
+--- What happens to a belt the hold will not take back.
+---
+--- give_to() is the "put it where it came from" path, and when the pockets are full it does
+--- what the game does with what a character cannot hold: it spills. That is right, and the
+--- item is left unmarked on purpose because it is the player's own rather than something the
+--- arms should come back for.
+---
+--- Where it spills is the question. On a train the wearer is the locomotive, which stands on
+--- the rail, and the rows an arm builds are a tile and a half off it -- so a spill scattered
+--- round the hull lands on belts the arms have just put down. spill_item_stack defaults
+--- allow_belts to true, and a lane swallows a stack whole: the belt stops being litter
+--- anybody can see and becomes cargo riding up the line, which is indistinguishable from a
+--- belt destroyed until somebody reads the lanes.
+---
+--- The hold is barred rather than filled, which is the same refusal arrived at in one line.
+describe("a train whose hold will not take a belt back", function()
+  local player
+
+  before_each(function()
+    player = world.player()
+    clear_arena(player)
+    storage.constructor_off = {}
+  end)
+
+  after_each(function()
+    storage.constructor_off = {}
+    for _, sticker in pairs(player.character and player.character.stickers or {}) do
+      sticker.destroy()
+    end
+    clear_arena(player)
+  end)
+
+  it("does not feed it to the belts it has just built", function()
+    local surface, y = player.surface, world.ORIGIN.y
+    for x = world.ORIGIN.x + RAILS_FROM, world.ORIGIN.x + 60, 2 do
+      surface.create_entity{ name = "straight-rail", position = { x, y },
+        direction = defines.direction.east, force = player.force }
+    end
+    local loco = surface.create_entity{ name = "locomotive",
+      position = { world.ORIGIN.x - 20, y }, direction = defines.direction.east,
+      force = player.force }
+    assert.is_not_nil(loco, "the locomotive would not go on the rail")
+    local wagon = surface.create_entity{ name = "cargo-wagon",
+      position = { world.ORIGIN.x - 27, y }, direction = defines.direction.east,
+      force = player.force }
+    loco.insert{ name = "nuclear-fuel", count = 5 }
+    wagon.insert{ name = BELT, count = 50 }
+    local grid = {}
+    for _ = 1, 8 do grid[#grid + 1] = tiers.by_level[2].name end
+    grid[#grid + 1] = "battery-mk2-equipment"
+    world.fit(loco, grid, true)
+    loco.train.manual_mode = true
+    loco.set_driver(player)
+    loco.train.speed = 0
+
+    -- Belts already standing where a spill round the hull will land, which is what the
+    -- rows either side of a track are by the time any of this happens.
+    local middle = loco.position.y - world.ORIGIN.y
+    local dx = loco.position.x - world.ORIGIN.x
+    for step = -3, 3 do
+      for _, off in ipairs{ -2.5, -1.5, 1.5, 2.5 } do
+        surface.create_entity{ name = BELT,
+          position = { world.ORIGIN.x + dx + step, world.ORIGIN.y + middle + off },
+          direction = defines.direction.east, force = player.force }
+      end
+    end
+    -- And a ghost or two for an arm to set off with a belt for, clear of the belts laid
+    -- above and inside what an arm at the end of the hull can reach.
+    world.ghost(player, BELT, dx + 4, middle + 1.5)
+    world.ghost(player, BELT, dx + 4, middle - 1.5)
+
+    local began, barred, pressed = game.tick, false, false
+    world.once(function()
+      local holding = false
+      for _, record in pairs(storage.constructor_arms[player.index] or {}) do
+        local arm = record.entity
+        if arm and arm.valid and arm.held_stack.valid_for_read
+            and arm.held_stack.name == BELT then holding = true end
+      end
+      -- The moment a claw is carrying one, shut the hold and take the arms away. What it is
+      -- holding has nowhere to go but the ground.
+      if holding and not barred then
+        wagon.get_inventory(defines.inventory.cargo_wagon).set_bar(1)
+        barred = true
+      end
+      if barred and not pressed then
+        press(player)
+        pressed = true
+      end
+      return (pressed and game.tick - began > 240) or game.tick - began > 900
+    end, function()
+      assert.is_true(barred, "no claw ever picked a belt up, so this measured nothing")
+      local riding = on_lanes(surface)
+      local loose = surface.count_entities_filtered{ name = "item-on-ground",
+        position = world.ORIGIN, radius = ARENA }
+      log(("HANDBACK | after the hold was shut: %d riding a lane, %d lying on the ground")
+        :format(riding, loose))
+      for _, line in ipairs(sweep(surface, player)) do log("    " .. line) end
+      -- On the ground is honest -- it is the player's own belt and they can see it. Riding
+      -- the line is not: it is gone.
+      assert.are.equal(0, riding,
+        ("%d belts were fed to the lanes rather than left on the ground"):format(riding))
+    end, "the arms never went away", 1000)
   end)
 end)

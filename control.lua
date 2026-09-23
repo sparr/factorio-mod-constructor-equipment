@@ -2513,6 +2513,14 @@ local OPEN = 2.5
 ---goes missing every time somebody's inventory is full at the wrong moment. Spilling is what
 ---the game does with what a character cannot hold, and the stack goes down as it stands so a
 ---damaged or a quality thing stays what it was. Unmarked: it is the player's own.
+---
+---On the ground and not onto a belt. spill_item_stack lets a lane have it by default, and a
+---lane swallows a stack whole: what was meant to be the player's own belt lying where they
+---can see it becomes cargo riding up the line, which is indistinguishable from a belt
+---destroyed until somebody thinks to read the lanes. It bites hardest on a train, where the
+---wearer stands on the rail and the rows its arms have just built are a tile and a half
+---off it -- measured, a claw whose hold was shut mid reach put both its belts straight onto
+---the belt beside it and nothing at all on the ground. See test/ft/losing.lua.
 ---@param player LuaPlayer
 ---@param wearer LuaEntity?
 ---@param inventory LuaInventory?
@@ -2530,6 +2538,7 @@ local function give_to(player, wearer, inventory, stack)
     stack = { name = stack.name, quality = quality, count = count - took },
     enable_looted = true,
     force = player.force,
+    allow_belts = false,
   }
 end
 
@@ -2805,6 +2814,7 @@ local function put_away(player, record)
       stack = stack,
       enable_looted = true,
       force = player.force,
+      allow_belts = false,
     }
   end
 
@@ -3464,6 +3474,7 @@ local function give_back(player, wearer, record)
           stack = { name = job.item, quality = job.quality, count = job.escrow },
           enable_looted = true,
           force = player.force,
+          allow_belts = false,
         }
       end
       job.escrow = 0
@@ -3486,6 +3497,7 @@ local function give_back(player, wearer, record)
                     count = job.owed.count },
           enable_looted = true,
           force = player.force,
+          allow_belts = false,
         }
       end
       job.owed.count = 0
@@ -3509,6 +3521,7 @@ local function give_back(player, wearer, record)
         stack = arm.held_stack,
         enable_looted = true,
         force = player.force,
+        allow_belts = false,
       }
     end
     arm.held_stack.clear()
