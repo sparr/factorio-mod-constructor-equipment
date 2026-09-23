@@ -172,9 +172,13 @@ describe("the arm itself", function()
     end)
   end)
 
+  -- "Just after finishing" is world.DELIVERED, which is past the delivery and short of the
+  -- claw being home: an arm is put away a second after it stops, and a whole cycle plus a
+  -- score of ticks is far enough past the end of a two tile reach to be inside that second
+  -- rather than just after it.
   it("is put away once it has had nothing to do for a second", function()
     world.ghost(player, BELT, 2, 0)
-    after_ticks(world.CYCLE + 20, function()
+    after_ticks(world.DELIVERED, function()
       assert.are.equal(1, world.count(player, BELT), "it never built, so this proves nothing")
       assert.is_not_nil(world.arm(player), "it should still be out just after finishing")
     end)
@@ -338,9 +342,12 @@ end)
 --- The character can walk off mid swing. An arm that stretched to follow would be no kind
 --- of inserter, so it lets go and comes back empty handed.
 describe("walking away mid swing", function()
+  -- Eight ticks rather than six, because an arm looks for work ten times a second and which
+  -- tick of that six-tick cycle a test starts on is decided by how long the tests before it
+  -- ran. Six was inside the cycle and went with the wind.
   it("gives up on a ghost that has gone out of reach", function()
     world.ghost(player, BELT, 2, 0)
-    after_ticks(6, function()
+    after_ticks(8, function()
       assert.is_not_nil(job(), "nothing was reaching, so this proves nothing")
       player.teleport({ world.ORIGIN.x + 25, world.ORIGIN.y }, player.surface)
     end)
@@ -613,10 +620,16 @@ describe("walking while the arm is reaching", function()
     end)
   end)
 
+  -- Long enough for the three it asks for and no longer, so that this stays a question about
+  -- whether the arm keeps working while its owner paces about rather than about how fast it
+  -- is. Four of world.CYCLE for three deliveries: a cycle is an out and back to the edge of
+  -- the reach, and a claw that has to be re-aimed every tick at a base that keeps changing
+  -- direction does not get a clean one. Three in three cycles was inside the noise and came
+  -- back with two about one run in three.
   it("keeps going through a run of them", function()
     world.several(player, BELT, 6)
-    pace(4, 130)
-    after_ticks(150, function()
+    pace(4, world.CYCLE * 4 - 20)
+    after_ticks(world.CYCLE * 4, function()
       assert.is_true(world.count(player, BELT) >= 3,
         "only " .. world.count(player, BELT) .. " went up while the character walked")
     end)

@@ -101,7 +101,7 @@ on; it is not a thing a player can sit down and play today.
 
 ## A claw that goes home before it goes out
 
-Two sightings from the showroom, which may be one fault:
+One sighting from the showroom, still to be run down.
 
 **A tap of movement.** Stand about 2.1 tiles from a ghost with a first tier arm and tap a
 movement key towards it. The arm sets off with a lead, comes home because its owner stopped
@@ -109,19 +109,13 @@ at the end of the tap, and then sets off again for a standing delivery. It shoul
 on delivering from the first departure: the ghost never left its reach, and the only thing
 that changed was the drift going back to nothing.
 
-**The toolbar button.** Switch the arms on while standing in reach of a ghost. The arm
-appears already holding a belt and already part way out -- which will be reach.BORN, the
-179/256 of a tile a fresh hand is born at -- then retracts all the way to its owner before
-extending out to the ghost. It should go straight there.
-
-Walk both in the showroom again before anything else. Neither reproduces in a headless
+Walk it in the showroom again before anything else. It does not reproduce in a headless
 fixture: taps of two to thirty ticks at ghosts two to six tiles off and up to two to the
-side, stopped both on a tick count and on the tick the lead is taken, and the button pressed
-with a ghost two tiles off to each of the four sides -- in every one of them the claw went
-straight out. What that sweep did find was a third fault of the same family, which has gone
-since these were seen, and either of them may have gone with it.
+side, stopped both on a tick count and on the tick the lead is taken -- in every one of them
+the claw went straight out. What that sweep did find was another fault of the same family,
+which has gone since this was seen, and it may have gone with it.
 
-If they survive, the suspect left is aim() pointing the drop at the rest point on a tick
+If it survives, the suspect left is aim() pointing the drop at the rest point on a tick
 where the job is not yet set, which is the shape of the bug fixed in redirect() -- see the
 commit about a fetch's three ends, and whether the same hole is open on the first tick of a
 job rather than on a crossing.
@@ -169,6 +163,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | --- | --- |
 | `test/ft/turning.lua` | a train along a double line of ghosts, counting the ones an arm set off for and never delivered to, and the worst number of attempts on any one of them. It passes now; it is what a claw changing its mind shows up in. |
 | `test/ft/swinging.lua` | a bare inserter turning and stretching at once, tick by tick; one re-aimed part way through a swing; and one making a turn and nothing else at a fixed radius. Between them they pin the law, the tick of grace each half of it gets, and how far the drawing strays from the state. |
+| `test/ft/resting.lua` | where a fresh hand is born, where a folding one stops, and the curve a claw takes home when its rest point sits exactly on the arm's base. |
 | `test/ft/chasing.lua` | a belt in reach of a standing arm whose owner then walks over it, from every phase of the check tick, which is what says whether a ghost met before the walk is still led once there is one. |
 | `test/ft/following.lua` | the two numbers control.lua carries for a hand, run against a real inserter through a walk's worth of re-aims. |
 | `test/ft/searching.lua` | four search shapes over sixteen scenarios, asserting each holds everything reach.meets says is there and logging what each costs. |

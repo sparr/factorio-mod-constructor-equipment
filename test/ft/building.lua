@@ -6,9 +6,12 @@ local tiers = require("lib.tiers")
 local slowed_describe = tiers.SLOWS and describe or describe.skip
 local slowed_it = tiers.SLOWS and it or it.skip
 
---- Comfortably more than one build interval, so a test is not at the mercy of which tick
---- of the cycle it started on.
-local A_BUILD = world.BUILD_INTERVAL * 2
+--- Comfortably more than one swing, so a test is not at the mercy of which tick of the
+--- check cycle it started on. Built on the swing rather than on world.BUILD_INTERVAL, which
+--- is a leftover from when the mod capped its own build rate and has nothing to do with how
+--- long a reach takes: two of those intervals is sixty ticks, and a first tier arm reaching
+--- the edge of its two tiles wants up to sixty three.
+local A_BUILD = world.DELIVERED
 
 local BELT = "transport-belt"
 

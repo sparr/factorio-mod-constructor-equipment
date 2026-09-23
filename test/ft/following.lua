@@ -143,8 +143,16 @@ describe("a hand the mod is carrying rather than reading", function()
         assert.is_true(checked > 20,
           ("only %d ticks were worth checking, which is too few to say anything")
             :format(checked))
-        assert.is_true(worst_out <= QUANTUM,
-          ("the carried radius was %.4f tiles off what the engine drew"):format(worst_out))
+        -- One of the tier's own extension steps for the radius, not the engine's grid.
+        -- The sum runs free through a turn -- follow() does not correct itself against the
+        -- drawing while a hand is turning, because the drawing is not the arm there -- so
+        -- the tick a turn ends is the tick the two are furthest apart, and the gap is the
+        -- engine's step-that-arrives against the model's step-then-clamp. Measured on the
+        -- second tier coming out of a 45 degree turn: 0.0376 of a tile against a step of
+        -- 0.05, and gone on the tick after, when follow() takes the drawing's word for it.
+        assert.is_true(worst_out <= tier.extension,
+          ("the carried radius was %.4f tiles off what the engine drew, which is more than"
+            .. " the %.3f it steps in a tick"):format(worst_out, tier.extension))
         assert.is_true(worst_at <= 1.0,
           ("the carried bearing was %.3f degrees off what the engine drew"):format(worst_at))
       end, "the run never ended", HOLD * #LEGS + 60)

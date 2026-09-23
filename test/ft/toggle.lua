@@ -12,8 +12,20 @@ local slowed_describe = tiers.SLOWS and describe or describe.skip
 local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
-local A_BUILD = world.BUILD_INTERVAL * 2
+--- Comfortably more than one swing, so a test is not at the mercy of which tick of the
+--- check cycle it started on. Built on the swing rather than on world.BUILD_INTERVAL, which
+--- is a leftover from when the mod capped its own build rate and has nothing to do with how
+--- long a reach takes: two of those intervals is sixty ticks, and a first tier arm reaching
+--- the edge of its two tiles wants up to sixty three.
+local A_BUILD = world.DELIVERED
 local TOGGLE = "constructor-equipment-toggle"
+
+--- Far enough into a reach that the claw is properly out and nowhere near home again, for
+--- the tests that press the button mid swing. Half a swing rather than a tick count: a claw
+--- is called home as soon as it is within HOME of its rest point, and a fixed number of
+--- ticks that was a third of the way out when a hand was born seven tenths of a tile along
+--- its bearing is inside that window now that one starts on the shoulder.
+local MID_REACH = math.floor(world.SWING_TICKS / 2)
 
 --- Long enough for a claw switched off part way through a reach to swing home. It is not
 --- taken away where it stands: the hand retracts along the line it was working on, hands
@@ -81,14 +93,14 @@ describe("the constructor equipment toggle", function()
   -- what it does in between is come back.
   it("brings a claw home rather than taking it away where it stands", function()
     world.ghost(player, BELT, 2, 0)
-    after_ticks(12, function()
+    after_ticks(MID_REACH, function()
       press(player)
       after_ticks(1, function()
         local arm = world.arms(player)[1]
         assert.is_truthy(arm, "the arm vanished mid reach instead of swinging home first")
         local out = reach.distance(player.position, arm.held_stack_position)
-        -- A short look. A first tier hand a dozen ticks into a two tile reach is most of
-        -- the way home again within thirty, and an arm that has arrived has been put away.
+        -- A short look. A first tier hand half way through a two tile reach is most of the
+        -- way home again within thirty, and an arm that has arrived has been put away.
         after_ticks(6, function()
           local still = world.arms(player)[1]
           assert.is_truthy(still, "the arm was taken away before it could get home")
@@ -107,25 +119,29 @@ describe("the constructor equipment toggle", function()
   -- way to where it is drawn being stowed.
   it("brings the claw all the way in before it folds away", function()
     world.ghost(player, BELT, 2, 0)
-    local last_out, last_held
-    after_ticks(20, function()
+    local last_out, last_held, pressed
+    after_ticks(MID_REACH, function()
       press(player)
-      for n = 21, 200 do
-        after_ticks(n, function()
-          local arm = world.arms(player)[1]
-          if arm and arm.valid then
-            last_out = reach.distance(arm.position, arm.held_stack_position)
-            last_held = arm.held_stack.valid_for_read
-          end
-        end)
-      end
+      pressed = true
     end)
+    -- Registered from the top rather than from inside the press, so that every tick after it
+    -- is looked at whichever tick the press really lands on.
+    for n = 1, 200 do
+      after_ticks(n, function()
+        if not pressed then return end
+        local arm = world.arms(player)[1]
+        if arm and arm.valid then
+          last_out = reach.distance(arm.position, arm.held_stack_position)
+          last_held = arm.held_stack.valid_for_read
+        end
+      end)
+    end
     after_ticks(210, function()
       assert.is_nil(world.arms(player)[1], "the arm never folded away")
       assert.is_not_nil(last_out, "the arm was never seen after the button was pressed")
-      -- A hand will not retract inside a minimum extension of its own, and where that
-      -- leaves it is the tier's business rather than the mod's: measured at 0.19 on a first
-      -- tier arm folding from a two tile reach. What is asked is that it got there.
+      -- A fold aims the hand at the rest point, which is all but on the mounting point, and
+      -- on a mount that is still moving it settles a lag behind that. What is asked is that
+      -- it got there rather than being taken away in mid air.
       assert.is_true(last_out < 0.3,
         ("the claw was %.2f tiles out when the arm was taken away"):format(last_out))
       assert.is_false(last_held,

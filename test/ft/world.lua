@@ -26,17 +26,26 @@ world.BUILD_RANGE = 2
 ---
 --- The swing is the inserter entity's own, at the base game's extension and rotation speeds
 --- for the inserter the tier borrows from, so this is measured rather than set. Measured at
---- two tiles, six runs: the claw sets off within a check tick of the ghost appearing and
---- delivers 37 ticks after that, so a ghost put down at an arbitrary tick is built between
---- tick 38 and tick 43, and the claw is home again by tick 89.
+--- two tiles from every phase of the check tick: a ghost put down at an arbitrary tick is
+--- built between tick 58 and tick 63, which is the claw setting off within a check tick of
+--- the ghost appearing and taking 57 to get there.
 ---
---- It was 26 for a while, when an arm's hand extended half again as fast as the inserter's
+--- It was 41 until the arms asked to be born on their own base. A hand used to start seven
+--- tenths of a tile out along the way it faced, and a first tier hand crawls at 0.035 of a
+--- tile a tick, so that head start was twenty ticks of this figure -- see reach.BORN.
+--- Measured both ways over the same ten phases, at these same two tiles: the first tier
+--- went from 38..43 to 58..63, the second from 27..32 to 41..46, and the third and fourth
+--- from 14..19 to 21..26. Which is 0.7 of a tile at each tier's own extension speed, and
+--- nothing else.
+---
+--- It was 26 before that, when an arm's hand extended half again as fast as the inserter's
 --- and turned a third slower. That was worth having only while an arm was built facing
 --- north whatever it was about to reach for: an arm pointed at what it is reaching for
 --- hardly turns at all, so the faster extension was buying back a cost that no longer
 --- exists, and the tiers are on the inserters' own numbers again. Every window in the tests
---- is built from this one, so re-measuring it is what a change to the tiers' speeds costs.
-world.SWING_TICKS = 41
+--- is built from this one, so re-measuring it is what a change to the tiers' speeds or to
+--- where a hand starts costs.
+world.SWING_TICKS = 61
 
 --- Comfortably after a swing has reached its target and delivered, and before it is home
 --- again. Both ends matter: tests wait this long to see what was delivered, and others wait

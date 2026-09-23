@@ -78,39 +78,49 @@ function reach.within(tier, threshold, moved)
 end
 
 --- Where a freshly built hand sits, in tiles out from the arm's own base along the way it
---- was built facing.
+--- was built facing -- and, deliberately, where an idle claw is held as well. It is what
+--- prototypes/inserter.lua asks for as starting_distance and what control.lua uses as REST,
+--- so that being built and being at rest are the same place and there is nothing to see
+--- between them.
 ---
---- Measured on every tier on 2.1.19 and the same on all four, which is what makes it a
---- constant here rather than something read off a prototype: the first tier's hand is born
---- as far out as the fourth's, though one of them reaches two tiles and the other five.
---- 179/256 of a tile, exactly, which is one step of the grid the engine keeps positions on.
+--- Two 256ths of a tile: as near the base as the engine can be held to without landing on
+--- it. Nothing is not allowed, for the one reason that has nothing to do with birth -- a
+--- pickup sitting exactly on the arm's base is no bearing, and the engine answers by turning
+--- the hand back towards the way the arm was built facing while it retracts, so a claw folds
+--- home the long way round instead of coming in along the line it went out on. Measured on a
+--- fourth tier arm, that curve bulges 2.27 tiles out to the side. One 256th off the base is
+--- already enough to cure it, measured; see test/ft/resting.lua.
 ---
---- Along the bearing the arm was built facing, and nothing else decides it. Measured: an arm
---- built facing east starts its hand due east whether its pickup is set three tiles west,
---- three north, or not set at all, and setting either end on the same tick does not move it.
---- It only moves on the ticks after, as the engine animates it.
+--- Two rather than one because the rest point is aimed along whatever bearing the claw was
+--- last working on, and the engine snaps each axis to its own 256th rather than the radius.
+--- At one 256th a bearing near the diagonal has components of 0.0028, which is inside the
+--- rounding window, so both axes can land back on the base and the fold curves round after
+--- all. Every component of a two 256th offset is at least 0.0055, which is more than a whole
+--- 256th, and a span wider than the grid cannot fit inside one cell of it. So this is the
+--- smallest radius that is safe from every bearing rather than merely from the ones a test
+--- happened to try.
 ---
---- Nor does the prototype have any say. Six copies of a fourth tier arm with their
---- pickup_position and insert_position moved about -- a drop three tiles out, a pickup three
---- tiles out, both, a pair pointing across the arm's own facing, and a drop a fifth of a tile
---- long -- all start their hands in exactly the same place. See test/ft/intercept.lua and
---- the variants test/ft/ce-tests builds for it.
+--- What it was, and what it cost. Left at the engine's default of 0.7 a fresh hand appeared
+--- 179/256 of a tile out along the way the arm was built facing -- the same on every tier,
+--- though one reaches two tiles and another five, and a hair short off the cardinals because
+--- each axis is snapped to its own 256th rather than the radius being. An arm is put away
+--- when it is idle and built again when it sets off, so that birth radius was where nearly
+--- every swing started. It was a head start of 0.7 of a tile: twenty ticks of a first tier
+--- swing, seven of a fourth tier one.
 ---
---- Off the four cardinals it reads a hair short -- 0.6961 on the diagonals, 0.6971 on the
---- half steps -- because each axis is snapped to its own 256th rather than the radius being.
---- Three thousandths of a tile, against a model that already carries a whole tick of grace,
---- which is a tenth of a tile on the fourth tier.
+--- It was also visible, which is what settled it. An arm that appears part way out and then
+--- pulls in to its rest point before setting off is an arm seen to flinch -- see the toolbar
+--- button in TODO.md -- and the same jump happened every time point() built one again to
+--- turn it. Born where it rests, there is nothing to pull in from.
 ---
---- It was 0.6939 here for a while, which was this same figure measured badly. The arm was
---- put at a mount 0.7 north of the middle of a tile -- not a whole 256th, so not a position
---- the engine will hold -- and the distance was taken from where it had been asked to go
---- rather than from where it went. Measured from the arm's own position it is 179/256 every
---- time.
----
---- It matters because it is a head start. A five tile arm travels 4.30 tiles rather than
---- five, which is seven ticks off a swing and a tile off how far its owner walks while the
---- hand is out.
-reach.BORN = 179 / 256
+--- Nothing else about the prototype has any say in it. Six copies of a fourth tier arm with
+--- their pickup_position and insert_position moved about -- a drop three tiles out, a pickup
+--- three tiles out, both, a pair pointing across the arm's own facing, and a drop a fifth of
+--- a tile long -- all start their hands in exactly the same place, and setting either end
+--- from script on the tick the arm is built does not move it either. starting_distance is
+--- the one field that does. See test/ft/intercept.lua and test/ft/resting.lua, and the
+--- variants test/ft/ce-tests builds for them.
+reach.BORN = 2 / 256
 
 ---How long a hand takes to go all the way out, in ticks.
 ---
@@ -578,11 +588,11 @@ end
 ---tangent only where neither swallows the other, and the hand swallows its own first disc
 ---whenever it grows at least as fast as its owner walks: the far disc then holds every disc
 ---before it, and the hull is that disc sliding rather than a wedge opening. Drawing the
----wedge anyway throws away work that is really in reach -- measured, eighteen spots of three
----thousand on a hand creeping at a twentieth of a tile a tick. How much it throws away grows
----as the first disc shrinks, so it is an arm whose hand is near its own base that feels it
----and one already well out that does not. That case gets a capsule instead, which is exact
----rather than merely a superset.
+---wedge anyway was measured throwing away work that is really in reach -- eighteen spots of
+---three thousand on a hand creeping at a twentieth of a tile a tick -- and the amount
+---thrown away grows as the first disc shrinks, so a hand born at its own base feels it
+---where a hand born seven tenths out did not. That case gets a capsule instead, which is
+---exact rather than merely a superset.
 ---@param arm {range: number, extension: number, out: number?}
 ---@param drift {x: number, y: number} how far its owner went last tick
 ---@param ticks number how far ahead to look

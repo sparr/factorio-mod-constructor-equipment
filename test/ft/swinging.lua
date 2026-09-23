@@ -50,13 +50,33 @@ end
 ---@return {x: number, y: number} the hand from the arm's base
 ---@return number how far out
 ---@return number how far round, in degrees
-local function state_at(tier, turn, want, k)
-  local way = want < reach.BORN and -1 or 1
-  local out = reach.BORN + way * math.min(math.abs(want - reach.BORN), tier.extension * k)
+local function state_at(tier, turn, want, from, k)
+  local way = want < from and -1 or 1
+  local out = from + way * math.min(math.abs(want - from), tier.extension * k)
   local round = math.min(turn, tier.rotation * 360 * k)
   local angle = math.rad(round)
   return { x = out * math.cos(angle), y = -out * math.sin(angle) }, out, round
 end
+
+--- Where the swings below start their hands, which is not where a hand is born.
+---
+--- A claw near its own base is drawn ahead of the bearing the arm really holds, and by a
+--- lot: driven through a 120 degree turn from a standing start, the drawn bearing led the
+--- state by 17 degrees on the first tier at a fifth of a tile out and by 4 on the fourth,
+--- closing steadily as the hand came out. The radius is exact the whole way -- it is the
+--- bearing alone the drawing gets wrong there.
+---
+--- Which is a second way the drawing is not the arm, alongside the big turns this file was
+--- written for, and mixing the two would measure neither. So every swing here is started
+--- from a hand already out at this radius. It is where they used to start for nothing:
+--- 179/256 of a tile is where a hand appeared before the arms asked to be born on their own
+--- base -- see reach.BORN.
+---
+--- control.lua is not exposed to the near-base lead. follow() does not correct its bearing
+--- against the drawing while a hand is turning, and a hand going straight out is drawn
+--- exactly on its bearing: measured tick by tick on the first and fourth tiers, dead east to
+--- four decimal places the whole way out.
+local FROM = 179 / 256
 
 --- How far the drawn hand gets past its own state, in the two numbers the model is written
 --- in: tiles of radius and degrees of bearing, each already allowed the one step of grace
@@ -65,10 +85,10 @@ end
 --- would read as a gap on every swing there is.
 ---@return number tiles
 ---@return number degrees
-local function past_its_state(tier, turn, want, path)
+local function past_its_state(tier, turn, want, from, path)
   local widest, furthest = 0, 0
   for index, hand in ipairs(path) do
-    local _, out, round = state_at(tier, turn, want, index - 1)
+    local _, out, round = state_at(tier, turn, want, from, index - 1)
     local drawn = math.sqrt(hand.x * hand.x + hand.y * hand.y)
     widest = math.max(widest, math.abs(drawn - out) - tier.extension)
     furthest = math.max(furthest,
@@ -90,32 +110,58 @@ describe("a hand going out and round at once", function()
   before_each(function() player = world.player(); world.clear(player); scrub() end)
   after_each(function() scrub(); world.clear(player) end)
 
-  --- Drive one bare inserter of a tier's own prototype from its birth radius to a spot, and
-  --- hand the flight to `finished` as one entry a tick, from the arm's own base.
+  --- Drive one bare inserter of a tier's own prototype from FROM out to a spot, and hand the
+  --- flight to `finished` as one entry a tick, from the arm's own base.
+  ---
+  --- The hand is driven out to FROM first rather than measured from where it is born; see
+  --- FROM for why.
   local function flown(tier, turn, want, finished)
     local surface = player.surface
     local base = { x = world.ORIGIN.x + 10.5, y = world.ORIGIN.y + 0.5 }
-    -- Born facing east, so the hand starts due east at its birth radius and the whole of the
-    -- turn is the bearing asked for.
+    -- Built facing east and sent due east first, so the hand arrives at FROM on its own
+    -- bearing with nothing left to turn through, and the whole of the turn below is the one
+    -- asked for.
     local arm = surface.create_entity{ name = tier.inserter, position = base,
       force = player.force, direction = defines.direction.east }
     local angle = math.rad(turn)
     local drop = { x = base.x + math.cos(angle) * want,
                    y = base.y - math.sin(angle) * want }
     arm.pickup_position = { base.x + 0.2, base.y }
-    arm.drop_position = { drop.x, drop.y }
+    arm.drop_position = { base.x + FROM, base.y }
     -- Something in the hand, so the engine drives it at the drop rather than the pickup.
     arm.held_stack.set_stack{ name = "transport-belt", count = 1 }
-    surface.create_entity{ name = "constructor-equipment-catcher",
-      position = { drop.x, drop.y }, force = player.force }
+    local waiting = surface.create_entity{ name = "constructor-equipment-catcher",
+      position = { base.x + FROM, base.y }, force = player.force }
+    -- Barred, so the hand comes out to FROM and waits there holding what it has rather than
+    -- letting go and folding back.
+    waiting.get_inventory(defines.inventory.chest).set_bar(1)
 
-    local began, path = game.tick, {}
+    local out = game.tick
     world.once(function()
       arm.energy = arm.prototype.get_max_energy_usage() * 100
       local hand = arm.held_stack_position
-      path[#path + 1] = { x = hand.x - arm.position.x, y = hand.y - arm.position.y }
-      return game.tick - began > 90 or not arm.held_stack.valid_for_read
-    end, function() finished(path) end, "the swing never ended", 200)
+      local dx, dy = hand.x - arm.position.x, hand.y - arm.position.y
+      return (math.abs(dx - FROM) < 0.01 and math.abs(dy) < 0.01)
+        or game.tick - out > 200
+    end, function()
+      waiting.destroy()
+      arm.drop_position = { drop.x, drop.y }
+      surface.create_entity{ name = "constructor-equipment-catcher",
+        position = { drop.x, drop.y }, force = player.force }
+      -- The first entry is taken here rather than left to the loop below, because the loop's
+      -- first call comes on the tick after this one and the engine moves on a target written
+      -- this tick during this tick. Without it the whole path is a step ahead of the state it
+      -- is compared against, which reads as every arrival landing a tick and a half early.
+      local began, path = game.tick, {}
+      local first = arm.held_stack_position
+      path[1] = { x = first.x - arm.position.x, y = first.y - arm.position.y }
+      world.once(function()
+        arm.energy = arm.prototype.get_max_energy_usage() * 100
+        local hand = arm.held_stack_position
+        path[#path + 1] = { x = hand.x - arm.position.x, y = hand.y - arm.position.y }
+        return game.tick - began > 90 or not arm.held_stack.valid_for_read
+      end, function() finished(path) end, "the swing never ended", 200)
+    end, "the hand never reached its starting radius", 260)
   end
 
   for _, level in ipairs{ 1, 2, 4 } do
@@ -125,7 +171,7 @@ describe("a hand going out and round at once", function()
         local tier = tiers.by_level[level]
         local want = tier.range
         flown(tier, turn, want, function(path)
-          local widest, furthest = past_its_state(tier, turn, want, path)
+          local widest, furthest = past_its_state(tier, turn, want, FROM, path)
           log(("SWING | tier %d | %3d degrees | %d ticks | the drawn hand gets %.4f tiles and"
             .. " %.2f degrees past its own state, over the step of grace each"):format(level,
             turn, #path, widest, furthest))
@@ -153,16 +199,16 @@ describe("a hand going out and round at once", function()
   for _, level in ipairs{ 1, 2, 4 } do
     local tier = tiers.by_level[level]
     for _, turn in ipairs{ 0, 45, 90, 135, 180 } do
-      -- The third of these puts the target at exactly the radius a hand is born at, so
+      -- The third of these puts the target at exactly the radius the hand starts at, so
       -- there is nothing to stretch and the turn is the whole journey. That case is the one
       -- reach.on_it's charge for a turn is written against, and it is not the same as the
       -- others: see the arrival logged for it.
-      for _, part in ipairs{ 0.45, 1.0, reach.BORN / tier.range } do
+      for _, part in ipairs{ 0.45, 1.0, FROM / tier.range } do
         it(("tier %d, %d degrees round, %.2f of the reach: arrives on the greater of the"
             .. " stretch and the turn"):format(level, turn, part), function()
           local want = tier.range * part
           flown(tier, turn, want, function(path)
-            local by_out = math.abs(want - reach.BORN) / tier.extension
+            local by_out = math.abs(want - FROM) / tier.extension
             local by_turn = (turn / 360) / tier.rotation
             local law = math.max(by_out, by_turn)
             -- On the spot, not near it. A tolerance in degrees is worth a fraction of a
@@ -182,10 +228,13 @@ describe("a hand going out and round at once", function()
               .. " %.1f, turn %.1f) | arrived %s"):format(level, turn, part, law, by_out,
               by_turn, tostring(arrived)))
             assert.is_not_nil(arrived, "the hand never got there")
-            -- Floor of the law: never later than it, and at worst the one tick earlier that
-            -- the engine's last step covers, on the radius and on the bearing alike.
-            assert.is_true(arrived <= law + 1e-6,
-              ("arrived on %d against a law of %.1f"):format(arrived, law))
+            -- Within a tick of the law either way. The law is a real number of ticks and the
+            -- engine only arrives on whole ones, so which side of it the arrival lands on is
+            -- decided by the fraction: the step that arrives covers whatever gap is left, so
+            -- a law of 37.2 is met on tick 37, and a law of 56.9 on tick 57. Both are the
+            -- same behaviour and neither is the model being wrong.
+            assert.is_true(arrived <= law + 1,
+              ("arrived on %d, more than a tick after a law of %.1f"):format(arrived, law))
             assert.is_true(arrived > law - 1.5,
               ("arrived on %d, more than a tick before a law of %.1f"):format(arrived, law))
           end)
@@ -260,7 +309,7 @@ describe("a hand re-aimed part way through a swing", function()
             end
             -- The arm has been flying since the tick after it was made, so at tick `at` it
             -- has had `at - 1` steps.
-            local _, out, round = state_at(tier, first, tier.range, at - 1)
+            local _, out, round = state_at(tier, first, tier.range, reach.BORN, at - 1)
             local by_drawn, by_state = law(drawn.out, drawn.at), law(out, round)
             log(("REAIM | out for %3d | re-aimed on %2d to %4d | drawn hand %.3f at %6.2f,"
               .. " state %.3f at %6.2f | the drawn hand says %.1f, the state says %.1f |"

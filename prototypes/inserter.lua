@@ -42,6 +42,7 @@
 --- billing, and emptying the buffer before refilling it each tick does not help, because the
 --- engine has already spent that tick's network draw by the time script runs.
 local tiers = require("lib.tiers")
+local reach = require("lib.reach")
 local art = require("prototypes.art")
 
 --- How much charge an arm carries: a couple of movements' worth, so a tick's draw never
@@ -80,6 +81,25 @@ for _, tier in ipairs(tiers.list) do
     uses_inserter_stack_size_bonus = true,
     extension_speed = tier.extension,
     rotation_speed = tier.rotation,
+    -- Born with the claw on the arm's own base rather than the engine's default 0.7 of a
+    -- tile out. An arm is put away when it is idle and built again when it sets off, and it
+    -- is built again to turn it as well, so that birth radius is where nearly every swing
+    -- starts: a claw that appears part way out and pulls in to its rest point before going
+    -- anywhere is a flinch the player watches every time.
+    --
+    -- Not the mod's own number but the one control.lua rests an idle claw at, so that the
+    -- two are the same place and cannot drift apart -- see reach.BORN, which says why it is
+    -- two 256ths of a tile rather than nought.
+    --
+    -- It is the one prototype field that moves a fresh hand -- pickup_position and
+    -- insert_position do not, measured six ways in test/ft/intercept.lua -- and it is not a
+    -- floor: a hand comes all the way in to wherever its pickup is put, here as at 0.7. See
+    -- test/ft/resting.lua.
+    --
+    -- What it costs is the head start. Every swing now travels the whole of its reach rather
+    -- than the reach less 0.7, which is twenty ticks on the first tier and seven on the
+    -- fourth.
+    starting_distance = reach.BORN,
     -- both ends are set from script every tick; these are only what it starts with
     pickup_position = { 0, 0 },
     insert_position = { 0, 1 },
@@ -127,11 +147,14 @@ for _, tier in ipairs(tiers.list) do
       -- a short one; sixteen leaves a thirty-second, which is nothing anywhere.
       --
       -- Measured on 2.1.19: with this flag all sixteen stick and the hand starts exactly on
-      -- its bearing, 179/256 of a tile out, at every one of them. On its bearing and nothing
-      -- else -- an arm built facing east starts its hand due east whether its pickup is set
-      -- three tiles west, three north, or never set at all, and setting either end on the
-      -- same tick does not move it. It is a flag about how a player builds a thing, and
-      -- nobody builds these: they are hidden, not blueprintable, and made only by script.
+      -- its bearing, at 179/256 of a tile out, which is where starting_distance had it
+      -- before it was set to nought here. On its bearing and nothing else -- an arm built
+      -- facing east started its hand due east whether its pickup was set three tiles west,
+      -- three north, or never set at all, and setting either end on the same tick did not
+      -- move it. The bearing still decides which way a hand goes out; there is simply no
+      -- longer any radius for it to be born at. It is a flag about how a player builds a
+      -- thing, and nobody builds these: they are hidden, not blueprintable, and made only
+      -- by script.
       "building-direction-16-way",
       "not-on-map",
       "not-blueprintable",

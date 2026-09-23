@@ -656,11 +656,15 @@ describe("ground that speeds its owner up", function()
 
   --- And one the extra speed takes away. A second tier arm reaches three tiles and extends
   --- at a twentieth of a tile a tick, so its wedge is narrow to begin with -- 19.7 degrees
-  --- at a walk -- and refined concrete closes it to 13.0. A ghost five ahead and two off sits
-  --- between the two, so it is there to be had until the moment the ground changes and not
-  --- afterwards.
+  --- at a walk -- and refined concrete closes it to 13.0.
+  ---
+  --- Two tiles off the line, the band that is there at a walk and gone once paved is six to
+  --- eight tiles ahead: nearer than six is inside neither wedge and nine or further is
+  --- inside both, because speeding up moves the whole reachable wedge forward as well as
+  --- narrowing it. Eight is taken, so that the ghost is still inside the walking wedge for
+  --- the dozen ticks it takes the arm to notice it.
   it("gives a ghost up, and keeps the belt, when the wedge closes past it", function()
-    pave_mid_reach(tiers.by_level[2], 5, 2, 1, function(built, gave_up)
+    pave_mid_reach(tiers.by_level[2], 8, 2, 1, function(built, gave_up)
       assert.is_false(built, "a ghost outside the narrowed wedge was built anyway")
       assert.is_true(gave_up, "the reach was neither finished nor given up")
       assert.are.equal(1, world.ghosts(player), "the ghost is not standing where it was")

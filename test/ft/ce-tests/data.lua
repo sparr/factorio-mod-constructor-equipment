@@ -28,6 +28,13 @@ end
 --- them. Setting either end from script does not move it; the question left is whether the
 --- prototype's own vectors do.
 ---
+--- The last two are the control. The arms set starting_distance small enough that a fresh
+--- hand sits on the arm's own base, and a test that only ever sees that cannot tell "the
+--- vectors do not move it" from "nothing moves it at all": born-far and born-near ask for a
+--- radius of their own and are the pair that shows the one field which does. Every other
+--- copy keeps whatever the fourth tier arm itself asks for, so the six of them stay with it
+--- if that number ever moves.
+---
 --- Test only, and safe here for the same reason the grids above are: ce-tests is never
 --- published.
 local util = require("util")
@@ -41,6 +48,8 @@ if ORIGINAL then
     { name = "ce-tests-arm-both-far",   pickup = { 0, -2 }, insert = { 0, 2 } },
     { name = "ce-tests-arm-sideways",   pickup = { 1, 0 },  insert = { -1, 0 } },
     { name = "ce-tests-arm-tiny",       pickup = { 0, 0 },  insert = { 0, 0.2 } },
+    { name = "ce-tests-arm-born-far",   pickup = { 0, 0 },  insert = { 0, 1 }, born = 1.5 },
+    { name = "ce-tests-arm-born-near",  pickup = { 0, 0 },  insert = { 0, 1 }, born = 0.25 },
   }
   local made = {}
   for _, variant in ipairs(VARIANTS) do
@@ -48,6 +57,7 @@ if ORIGINAL then
     copy.name = variant.name
     copy.pickup_position = variant.pickup
     copy.insert_position = variant.insert
+    if variant.born then copy.starting_distance = variant.born end
     made[#made + 1] = copy
   end
   data:extend(made)

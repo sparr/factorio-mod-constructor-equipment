@@ -95,14 +95,20 @@ describe("how long a hand is out", function()
       reach.full_swing{ range = 5, extension = 0.1 })
   end)
 
-  -- Measured on 2.1.19: the four tiers let go on ticks 37, 46, 33 and 43. The estimate is
-  -- allowed to be a shade over, because the engine's last step covers whatever gap is left
-  -- rather than creeping up on it, and is not allowed to be under.
+  -- Measured: the four tiers let go on ticks 56, 59, 39 and 49, which is what
+  -- test/ft/intercept.lua writes to intercept-born.txt. The estimate is allowed to be a
+  -- shade over, because the engine's last step covers whatever gap is left rather than
+  -- creeping up on it, and is not allowed to be under.
+  --
+  -- It was 37, 46, 33 and 43 while a hand was born seven tenths of a tile out along its own
+  -- bearing. A hand starts on the arm's base now -- see reach.BORN -- so every tier travels
+  -- its whole reach, and what each of them gained is that head start at its own extension
+  -- speed: nineteen ticks on the first, thirteen on the second, six on the other two.
   local MEASURED = {
-    { range = 2, extension = 0.035, ticks = 37 },
-    { range = 3, extension = 0.05,  ticks = 46 },
-    { range = 4, extension = 0.1,   ticks = 33 },
-    { range = 5, extension = 0.1,   ticks = 43 },
+    { range = 2, extension = 0.035, ticks = 56 },
+    { range = 3, extension = 0.05,  ticks = 59 },
+    { range = 4, extension = 0.1,   ticks = 39 },
+    { range = 5, extension = 0.1,   ticks = 49 },
   }
 
   for _, tier in ipairs(MEASURED) do
@@ -200,8 +206,8 @@ describe("where to look for work", function()
 end)
 
 describe("whether an arm could ever meet a spot", function()
-  --- The fourth tier: five tiles at a tenth of a tile a tick, so a hand born 0.69 out takes
-  --- 43 ticks to reach full stretch.
+  --- The fourth tier: five tiles at a tenth of a tile a tick, and a hand born at the arm's
+  --- own base, so fifty ticks to reach full stretch.
   local ARM = { range = 5, extension = 0.1 }
   local HORIZON = reach.full_swing(ARM)
   --- A character's own walk, measured: 38/256 of a tile a tick.
@@ -224,8 +230,12 @@ describe("whether an arm could ever meet a spot", function()
     end)
 
     it("does not meet what it will never catch up with", function()
-      -- twelve ahead: the owner covers 6.4 tiles in the 43 ticks and the arm five, so no
-      assert.is_false(reach.meets(ARM, WALKING, { x = 12, y = 0 }, HORIZON))
+      -- thirteen ahead: the owner covers 7.4 tiles in the fifty ticks and the arm five, so
+      -- anything past 12.4 is never met. It was 12 when a hand had seven tenths of a tile
+      -- of head start, because the head start bought a shorter swing and a shorter swing
+      -- is a shorter walk -- see reach.BORN, which is nought now.
+      assert.is_true(reach.meets(ARM, WALKING, { x = 12, y = 0 }, HORIZON))
+      assert.is_false(reach.meets(ARM, WALKING, { x = 13, y = 0 }, HORIZON))
     end)
 
     --- The whole point of the cone, and where it differs from the circle the search draws.
@@ -236,19 +246,25 @@ describe("whether an arm could ever meet a spot", function()
       assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 5 }, HORIZON))
     end)
 
-    --- And barely anything abeam at all. A character walks 0.148 of a tile a tick and a
-    --- fourth tier hand extends a tenth, so its owner outruns its own stretch by half
-    --- again: by the time the hand is two tiles out its owner has carried the shoulder
-    --- nearly two tiles on. Square abeam, the cone is 0.94 of a tile wide.
+    --- And nothing abeam at all worth the name. A character walks 0.148 of a tile a tick
+    --- and a fourth tier hand extends a tenth, so its owner outruns its own stretch by half
+    --- again: the gap square abeam only ever opens, and whatever the hand is going to touch
+    --- there it touches on the first tick or never.
+    ---
+    --- Which makes this the one number reach.BORN really pays for. A hand born seven tenths
+    --- out was already that far abeam before it started, and reached 1.07 of a tile;  born
+    --- at its own base it reaches 0.134, which is the tick of grace and nothing else. Work
+    --- straight out to the side of somebody walking is work for a standing arm now.
     ---
     --- Which is what was measured from the other end before any of this was worked out. A
     --- ghost laid one to three tiles to the side of a character already under way was set
     --- off for and written off without a delivery on nine passes of two dozen. See
     --- out_of_reach() in control.lua.
     it("meets almost nothing square abeam, however near", function()
-      -- 1.07 of a tile, counting the tick of grace the engine's last step is worth.
-      assert.is_true(reach.meets(ARM, WALKING, { x = 0, y = 1 }, HORIZON))
-      assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 1.1 }, HORIZON))
+      -- 0.134 of a tile, which is the tick of grace the engine's last step is worth.
+      assert.is_true(reach.meets(ARM, WALKING, { x = 0, y = 0.13 }, HORIZON))
+      assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 0.2 }, HORIZON))
+      assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 1 }, HORIZON))
       assert.is_false(reach.meets(ARM, WALKING, { x = 0, y = 2 }, HORIZON))
     end)
 
@@ -269,9 +285,11 @@ describe("whether an arm could ever meet a spot", function()
 
     it("carries a hand at full stretch forward with its owner", function()
       local out = { range = 5, extension = 0.1, out = 5 }
-      -- the far tip of the capsule: the whole walk, plus the reach
-      assert.is_true(reach.meets(out, WALKING, { x = 0.1484375 * HORIZON + 4.9, y = 0 },
-        HORIZON))
+      -- The far tip of the capsule: the whole walk, plus the reach. Whole ticks, because
+      -- that is what reach.meets answers in -- a horizon of 49.92 is forty nine chances to
+      -- arrive, not 49.92 of one, and the last tenth of a tick of walking is not walked.
+      assert.is_true(reach.meets(out, WALKING,
+        { x = 0.1484375 * math.floor(HORIZON) + 4.9, y = 0 }, HORIZON))
     end)
   end)
 
@@ -515,7 +533,8 @@ describe("the first moment a hand could be on something", function()
   end
 
   it("is now, for something a resting hand is already touching", function()
-    -- a hand is born 0.6939 out, so that is exactly what it is touching
+    -- a hand is born at the arm's own base, so an offset of reach.BORN is nothing at all
+    -- and the hand is already on it
     assert.are.equal(0, reach.earliest(ARM, STILL, { x = reach.BORN, y = 0 }, HORIZON))
   end)
 

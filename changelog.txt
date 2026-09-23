@@ -9,6 +9,8 @@ Version: 2.1.6
     - The arms cost a fraction of what they did to work out what to reach for next, six to nine times less while you are moving, which is when they cost the most
     - An arm turns its claw more slowly, so a hand swings round at a speed that suits the size of the thing rather than snapping between bearings
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
+    - A claw now sits on the shoulder when it has nothing to do, and a new one appears there rather than part way out, so switching the arms on or an arm turning to face new work no longer shows the claw jump out and pull itself back in before it goes anywhere
+    - A reach now starts from the shoulder rather than seven tenths of a tile along the way the claw faces, so a swing takes that much longer: a first tier arm wants about twenty ticks more to build something at the edge of its reach, a second tier arm fourteen, and the two largest seven
   Bugfixes:
     - An arm now charges itself for the turn a claw near the shoulder still has to make, which it used to have for nothing, so it no longer sets off for work it cannot swing round to in time
     - Fixed an item being destroyed when a claw gave up its reach on the way home, which happened when another arm built the ghost it was carrying for: the load went into the box the claw rests on and that box was taken away with it still inside, at about one belt in two hundred where eight arms worked a line from a moving train

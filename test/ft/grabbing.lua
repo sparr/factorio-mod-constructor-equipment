@@ -1,7 +1,7 @@
 --- An idle arm must not help itself to whatever its owner is standing on.
 ---
 --- An inserter takes from whatever container sits at its pickup position, and an arm's claw
---- rests two tenths of a tile from where it is bolted on, which is on its owner. That is a
+--- rests all but on the spot where it is bolted on, which is on its owner. That is a
 --- container often enough to matter: a vehicle with a hold of its own is one, and a
 --- character can walk over a chest and stand on it.
 ---

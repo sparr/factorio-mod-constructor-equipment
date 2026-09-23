@@ -42,10 +42,10 @@ local ENTERS = GHOST.x - HALF_CHORD
 --- swing is all extension and no turn.
 local LEAD = { x = HALF_CHORD, y = GHOST.y }
 
---- What the hand has to travel, going by the one figure the repo has measured: a freshly
---- built hand starts seven tenths of a tile out along its own bearing. See
---- prototypes/inserter.lua.
-local BORN_AT = 0.7
+--- What the hand has to travel. A freshly built hand starts on the arm's own base -- the
+--- prototypes set starting_distance to reach.BORN, two 256ths of a tile -- so there is no
+--- head start worth taking off the reach. See prototypes/inserter.lua.
+local BORN_AT = reach.BORN
 local PREDICTED = (TIER.range - BORN_AT) / TIER.extension
 
 --- Long enough for any of this to finish and be seen to have finished.
@@ -147,18 +147,37 @@ end)
 --- What decides where a freshly built hand sits, which is worth pinning rather than
 --- assuming, because reach.BORN is a number the whole of the lead arithmetic rests on.
 ---
---- The answer is the bearing the arm was built facing, and nothing else at all. Not the
---- pickup or the drop set from script, and not the pickup_position or insert_position
---- written into the prototype either -- test/ft/ce-tests carries six copies of a fourth tier
---- arm with those vectors moved about, including one pointing sideways to the arm's own
---- facing and one a fifth of a tile long, and every one of them starts its hand in exactly
---- the same place.
+--- The answer is starting_distance, and nothing else at all. Not the pickup or the drop set
+--- from script, and not the pickup_position or insert_position written into the prototype
+--- either -- test/ft/ce-tests carries six copies of a fourth tier arm with those vectors
+--- moved about, including one pointing sideways to the arm's own facing and one a fifth of a
+--- tile long, and every one of them starts its hand in exactly the same place.
 ---
---- If a future version of the game ever ties the two together, this is what says so.
+--- Which is the arm's own base, since the arms ask for two 256ths of a tile. The bearing it
+--- was built facing still decides which way the hand goes out, and what the six variants
+--- show is that nothing else about the prototype moves the radius. The two born-far and
+--- born-near copies are what show that starting_distance does.
+---
+--- If a future version of the game ever ties any of the others to it, this is what says so.
 describe("what decides where a fresh hand starts", function()
+  --- Every one of these but the last two asks for starting_distance = 0, the way the arms
+  --- themselves do, and differs only in the ends written into the prototype.
   local VARIANTS = { "ce-tests-arm-plain", "ce-tests-arm-far-insert",
                      "ce-tests-arm-far-pickup", "ce-tests-arm-both-far",
-                     "ce-tests-arm-sideways", "ce-tests-arm-tiny" }
+                     "ce-tests-arm-sideways", "ce-tests-arm-tiny",
+                     "ce-tests-arm-born-far", "ce-tests-arm-born-near" }
+
+  --- What each one asks for, which is what its hand should be found at.
+  local BORN = { ["ce-tests-arm-born-far"] = 1.5, ["ce-tests-arm-born-near"] = 0.25 }
+
+  local WAYS = { defines.direction.north, defines.direction.east,
+                 defines.direction.south, defines.direction.west }
+  local ALONG = {
+    [defines.direction.north] = { x = 0, y = -1 },
+    [defines.direction.east]  = { x = 1, y = 0 },
+    [defines.direction.south] = { x = 0, y = 1 },
+    [defines.direction.west]  = { x = -1, y = 0 },
+  }
 
   after_each(function()
     for _, name in ipairs(VARIANTS) do
@@ -169,15 +188,7 @@ describe("what decides where a fresh hand starts", function()
     end
   end)
 
-  it("is the bearing it was built facing, and not the prototype's own ends", function()
-    local WAYS = { defines.direction.north, defines.direction.east,
-                   defines.direction.south, defines.direction.west }
-    local WANTED = {
-      [defines.direction.north] = { x = 0, y = -reach.BORN },
-      [defines.direction.east]  = { x = reach.BORN, y = 0 },
-      [defines.direction.south] = { x = 0, y = reach.BORN },
-      [defines.direction.west]  = { x = -reach.BORN, y = 0 },
-    }
+  it("is starting_distance, and not the prototype's own ends", function()
     local checked = 0
     for _, name in ipairs(VARIANTS) do
       if prototypes.entity[name] then
@@ -186,9 +197,15 @@ describe("what decides where a fresh hand starts", function()
             force = player.force, direction = facing }
           assert.is_not_nil(arm, "no " .. name .. " could be placed")
           local hand = arm.held_stack_position
-          local want = WANTED[facing]
-          assert.is_true(math.abs(hand.x - arm.position.x - want.x) < 1e-6
-              and math.abs(hand.y - arm.position.y - want.y) < 1e-6,
+          local out = BORN[name] or reach.BORN
+          local along = ALONG[facing]
+          local want = { x = along.x * out, y = along.y * out }
+          -- A whole 256th of grace, which is the grid the engine keeps positions on: a
+          -- radius off the cardinals is snapped per axis rather than as a radius. These are
+          -- all on the cardinals, so it is exact, and the tolerance is only there to say
+          -- what kind of number this is.
+          assert.is_true(math.abs(hand.x - arm.position.x - want.x) <= 1 / 256
+              and math.abs(hand.y - arm.position.y - want.y) <= 1 / 256,
             ("%s facing %d started its hand at %+.4f,%+.4f rather than %+.4f,%+.4f")
               :format(name, facing, hand.x - arm.position.x, hand.y - arm.position.y,
                 want.x, want.y))
@@ -197,7 +214,7 @@ describe("what decides where a fresh hand starts", function()
         end
       end
     end
-    assert.is_true(checked >= 24,
+    assert.is_true(checked >= 32,
       "only " .. checked .. " arms were checked; the variants may not have loaded")
   end)
 end)
@@ -660,15 +677,16 @@ describe("the ground a walking owner searches", function()
 
   --- What the circle is drawn from is the tier, not a constant. Not simply the reach
   --- either: how long the hand is out counts for as much as how far it goes, and the two
-  --- do not go together. A first tier arm reaches two tiles and is out for 37 ticks, which
-  --- carries its owner 5.54 tiles, so it searches 7.54 tiles ahead -- nearly four times its
-  --- own reach, and further ahead than a third tier arm would if that arm were slower.
+  --- do not go together. A first tier arm reaches two tiles and is out for 57 ticks, which
+  --- carries its owner 8.45 tiles, so it searches 10.45 tiles ahead -- five times its own
+  --- reach, and not far short of the fourth tier's 12.41 for two and a half times the
+  --- stretch.
   it("draws each tier its own circle, out of the reach and the swing together", function()
-    local ahead = world.ghost(player, BELT, 9, 0)
+    local ahead = world.ghost(player, BELT, 11.5, 0)
     assert.is_true(found({ { level = 4 } }, WALKING, ahead),
-      "the fourth tier searches 11.4 tiles ahead and should have found it")
+      "the fourth tier searches 12.4 tiles ahead and should have found it")
     assert.is_false(found({ { level = 1 } }, WALKING, ahead),
-      "the first tier searches 7.5 tiles ahead and should not have")
+      "the first tier searches 10.5 tiles ahead and should not have")
   end)
 end)
 

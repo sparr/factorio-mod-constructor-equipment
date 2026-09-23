@@ -1027,11 +1027,13 @@ describe("which way an arm is pointed", function()
   it("does not drop its load on a ghost right beside it", function()
     world.equip(player, { tiers.list[1].name, "battery-equipment" }, true)
     player.insert{ name = BELT, count = 5 }
-    -- One tile off, which is inside the seven tenths of a tile a freshly built hand starts
-    -- out at. An arm pointed at something that close is at its drop position on the tick it
-    -- is loaded, so the box on the ghost has to be there already: the engine puts a load
-    -- down when the hand arrives whether there is anything to take it or not, and with
-    -- nothing there it goes on the floor.
+    -- One tile off, which is as short a swing as a ghost of its own tile allows. A hand
+    -- that has hardly any distance to cover can be at its drop position within a tick or
+    -- two of being loaded, so the box on the ghost has to be there in time: the engine puts
+    -- a load down when the hand arrives whether there is anything to take it or not, and
+    -- with nothing there it goes on the floor. It was a tick-zero race when a fresh hand
+    -- was born seven tenths of a tile out and the drop was already inside that; born at the
+    -- base it is merely a short one.
     world.ghost(player, BELT, 0, 1)
     world.once(function() return world.ghosts(player) == 0 end, function()
       assert.are.equal(1, world.count(player, BELT), "the ghost was not built")

@@ -48,16 +48,33 @@ local CHECK_TICK = CHECK_INTERVAL / 2
 --- How far off the mounting point the claw is aimed when it has nowhere else to be.
 ---
 --- Not at the mounting point itself. An inserter's hand goes home to its pickup position,
---- and a pickup sitting exactly on the arm's own base is no direction at all: the engine
---- picks one to fold through, and it picked east, so the claw swung out to full stretch
---- sideways before coming home. Anything off the base at all cures that.
+--- and a pickup sitting exactly on the arm's own base is no bearing at all: the engine
+--- turns the hand back towards the way the arm was built facing while it retracts, so the
+--- claw takes a long curve round instead of coming in along the line it went out on.
 ---
---- Two tenths because that is where the claw ends up closest to the character, not because
---- it is the smallest that works. The hand will not retract inside a minimum extension of
---- its own, so aiming it nearer than that gains nothing, and aiming it further simply holds
---- it further out: measured against the mounting point, it rests 0.18 away at nought, 0.08
---- at a tenth, 0.02 at two tenths, and 0.42 at six tenths.
-local REST = 0.2
+--- Measured on an arm built facing east with its hand driven somewhere else first, which is
+--- the ordinary case and is what the fold has to be asked of -- an arm whose hand is already
+--- on its own bearing has no turn to make and shows nothing. Folding to a pickup on the base
+--- the claw bulges out to the side on the way in: 1.30 tiles on a first tier hand coming
+--- from the north, 2.27 on a fourth tier one, 2.72 coming from the north west. Folding to a
+--- pickup anywhere off the base at all, from the same places, it is straight -- 0.0000 of a
+--- tile sideways on every tick of the way in. See test/ft/resting.lua.
+---
+--- How little would do is one 256th of a tile, the smallest offset the engine can hold: at
+--- 1/256, 2/256 and every larger radius measured the fold is straight, and only an exact
+--- nought curves round. So this is as near the base as a claw can be held, which is where a
+--- fresh one is born too -- the same number, so that a rebuilt arm shows no motion at all.
+--- reach.BORN says why it is two 256ths rather than one.
+---
+--- It used to be two tenths. That was never a threshold that had to be cleared, only a
+--- guess at one, and it left an idle claw a fifth of a tile off the shoulder where it was
+--- meant to read as folded away.
+---
+--- There is no minimum extension involved anywhere in this: measured on the first and fourth
+--- tiers, empty and with a belt in the claw, a hand comes to exactly wherever its pickup is
+--- and stops there -- 0.0000 at nought, 0.0508 at a twentieth, 0.2031 at two tenths, 0.6016
+--- at six tenths, to the 256th the engine keeps positions on.
+local REST = reach.BORN
 
 --- How close the hand has to get to the character to count as home again.
 ---
@@ -66,26 +83,24 @@ local REST = 0.2
 --- hand steps over, and the engine then finishes the swing by dropping the load.
 local HOME = 0.4
 
---- How far from its rest point a hand still is once it has come as far in as it can.
+--- How far from its rest point a hand can still be once it has come as far in as it is
+--- going to, so that the homecoming window is never narrower than that.
 ---
---- A hand cannot come closer to its own base than where a fresh one is born, and the rest
---- point is deliberately nearer than that: close enough that the engine can never reach it,
---- and so can never let go of a load there and put it on the ground. What that costs is
---- that a claw which has arrived is still this far from the point its arrival is measured
---- against, so the homecoming window has to be at least this wide.
+--- Lag, and nothing else. It used to be written as reach.BORN - REST, on the reasoning that
+--- a hand cannot come closer to its own base than where a fresh one is born and so can never
+--- reach a rest point nearer than that. The reasoning is wrong, and was wrong before
+--- starting_distance was ever touched: measured both ways round, at the engine's default
+--- birth radius and at nought, a hand comes to exactly its pickup whether it is empty or
+--- carrying something -- see test/ft/resting.lua. There is no floor, and with the birth
+--- radius now nought the old expression would have come out negative.
 ---
---- It was not, and a claw that never had to travel was never seen to arrive at all. A fetch
---- from under its owner's own feet picked the item up, came in to its birth radius, and sat
---- there holding it until the swing limit gave up on it -- once per item, so a block of
---- nine laid round somebody's feet gave up one and left the other eight on the ground. A
---- claw with a journey behind it got home only because the window widens by what the hand
---- was last seen covering, and a claw that has not moved has covered nothing.
----
---- A tick of travel is allowed on top of it wherever it is used. A hand does not come to
---- rest at exactly this radius on a mount that is moving -- it lags its own base by up to a
---- step -- and an arm on a train was measured home and empty at 0.73 out, holding a job it
---- had finished for eighty three ticks because the window stopped a hair short of that.
-local RETRACTED = reach.BORN - REST
+--- What the width is really for is a mount that moves. A hand does not come to rest at its
+--- own rest point on a character who is walking or a train that is rolling: the rest point
+--- travels with the mount and the hand lags it by up to a step. An arm on a train was
+--- measured home and empty at 0.73 out, holding a job it had finished for eighty three
+--- ticks, because the window stopped a hair short of that. A tick of travel is allowed on
+--- top of this wherever it is used, which covers the rest of it.
+local RETRACTED = 0.5
 
 --- How little a hand has to move in a tick to count as having stopped.
 ---
@@ -97,12 +112,12 @@ local RETRACTED = reach.BORN - REST
 --- belt still in it, so the item winked out in mid air and the claw jumped the rest of the
 --- way to the stowing position.
 ---
---- Asked as "has it stopped" rather than as a distance, because how near the base a hand
---- can actually get is not a number the mod owns: a hand will not retract inside a minimum
---- extension of its own, and where that leaves it depends on the tier, on the bearing it
---- came in along and on how far up its owner the arm is strapped. Measured on a first tier
---- arm folding from a two tile reach, it settles 0.19 from the base and stays there. So the
---- claw is home when it has come as far in as it is going to.
+--- Asked as "has it stopped" rather than as a distance, because where a fold leaves the
+--- claw is not a number this can assume: a fold aims the hand at the rest point along the
+--- bearing it was working on, and on a mount that is still moving it settles a lag behind
+--- that. Measured on a first tier arm folding from a two tile reach, it settles 0.19 from
+--- the base and stays there. So the claw is home when it has come as far in as it is going
+--- to.
 local SETTLED = 0.01
 
 ---How close is close enough for one arm. See lib/reach.lua, which the tests measure the
@@ -1156,6 +1171,17 @@ local function born_facing(record)
   return { x = x, y = y }
 end
 
+--- How far out the drawn hand has to be before its position says which way it points.
+---
+--- Not a claim about the arm -- the engine's bearing is real at every radius, and a hand
+--- parked two 256ths out pays the full price of a turn, measured. This is about reading one
+--- off a drawing: the engine keeps each axis to its own 256th, so a claw a hundredth of a
+--- tile out has only a handful of directions it can be drawn in, and the angle taken from
+--- it is quantised into uselessness. The bearing control.lua carries is stepped by the same
+--- law the engine uses instead, and is only ever corrected against the drawing once there
+--- is enough radius for the drawing to mean something.
+local DRAWN_BEARING_AT = 0.2
+
 ---Follow the engine's arm through one tick, so that the mod knows where it is.
 ---
 ---The state of an inserter's hand is two numbers: how far out it is, and which way it points.
@@ -1200,7 +1226,7 @@ local function follow(record)
     local dx, dy = hand.x - base.x, hand.y - base.y
     local length = math.sqrt(dx * dx + dy * dy)
     record.out = length
-    record.pointing = length >= 0.2 and { x = dx / length, y = dy / length }
+    record.pointing = length >= DRAWN_BEARING_AT and { x = dx / length, y = dy / length }
       or born_facing(record)
     return
   end
@@ -1231,7 +1257,9 @@ local function follow(record)
   local dx, dy = hand.x - base.x, hand.y - base.y
   local length = math.sqrt(dx * dx + dy * dy)
   record.out = length
-  if length >= 0.2 then record.pointing = { x = dx / length, y = dy / length } end
+  if length >= DRAWN_BEARING_AT then
+    record.pointing = { x = dx / length, y = dy / length }
+  end
 end
 
 ---How far out an arm's hand is, in tiles from its own base.
@@ -1282,7 +1310,8 @@ end
 ---does. Measured on the first and fourth tiers, a hand parked at 1/256, at a twentieth and
 ---at two tenths and then sent somewhere half a turn round took the same 42 and 73 ticks
 ---from all three -- the full price of the turn, at every radius. The floor was not a
----safeguard, it was the mod handing itself a free turn.
+---safeguard, it was the mod handing itself a free turn, and it would have covered the whole
+---of an idle claw's life now that one rests two 256ths out.
 ---@param record table
 ---@return {x: number, y: number}?
 --- How far off a target has to be before which way it lies means anything. Nearer than
@@ -2602,7 +2631,7 @@ end
 ---A box with nothing in it and no room for anything, stood where an idle claw rests.
 ---
 ---An inserter takes from whatever container is at its pickup position, and an arm's claw
----rests two tenths of a tile from where it is bolted on -- which is on its owner. So an arm
+---rests all but on the spot where it is bolted on -- which is on its owner. So an arm
 ---with nothing to do helps itself to whatever its owner is standing on. Measured: a
 ---character standing on an iron chest of fifty belts had one out of it and into the claw,
 ---and an arm bolted to a tank took one out of the tank's own hold the same way.
@@ -4872,13 +4901,16 @@ local function assign(player, wearer, list, tick, nearby)
           end
         end
         -- The box has to be standing on the target before the engine next moves the hand,
-        -- rather than on the tick after. A freshly built arm's hand starts seven tenths of
-        -- a tile out along the way it faces -- measured, at every tier and every direction
-        -- -- so an arm pointed at something inside that is at its drop position already on
-        -- the tick it is loaded. The engine puts a load down when the hand arrives whether
-        -- anything is there to take it or not: with no box, a belt on the floor and the
-        -- ghost still standing. advance() opens the box once the claw is near, and on the
-        -- tick an arm sets off advance has already run.
+        -- rather than on the tick after. An arm pointed at something near enough is at its
+        -- drop position already on the tick it is loaded, and the engine puts a load down
+        -- when the hand arrives whether anything is there to take it or not: with no box, a
+        -- belt on the floor and the ghost still standing. advance() opens the box once the
+        -- claw is near, and on the tick an arm sets off advance has already run.
+        --
+        -- "Near enough" used to mean anything inside seven tenths of a tile, because that
+        -- is where a freshly built hand sat. It is the arm's own base now -- see
+        -- reach.BORN -- so this only bites on work underfoot, which is exactly the work a
+        -- claw is likeliest to be standing on top of.
         if arm and record.job and not record.job.take then
           local target = aimed_at(record.job, record)
           if reach.distance(arm.held_stack_position, target) <= within(tier, OPEN) then
@@ -5181,6 +5213,7 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.following",
     "test.ft.spilling",
     "test.ft.qualities",
+    "test.ft.resting",
   }, {
     load_luassert = true,
     game_speed = 100,
