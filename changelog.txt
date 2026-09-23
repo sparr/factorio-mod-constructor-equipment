@@ -10,6 +10,7 @@ Version: 2.1.6
     - An arm turns its claw more slowly, so a hand swings round at a speed that suits the size of the thing rather than snapping between bearings
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
   Bugfixes:
+    - An arm now charges itself for the turn a claw near the shoulder still has to make, which it used to have for nothing, so it no longer sets off for work it cannot swing round to in time
     - Fixed an item being destroyed when a claw gave up its reach on the way home, which happened when another arm built the ghost it was carrying for: the load went into the box the claw rests on and that box was taken away with it still inside, at about one belt in two hundred where eight arms worked a line from a moving train
     - An arm on something that is barely moving, or on a character just getting under way, no longer overlooks work that is really within its reach
     - Fixed a ghost that was in reach when an arm set off never being built once its owner started walking: the claw went on aiming at where the ghost stood rather than cutting to where it was going, so a belt two tiles ahead was swept past the arm and the whole reach was written off with nothing built

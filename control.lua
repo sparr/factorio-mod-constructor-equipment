@@ -1276,8 +1276,13 @@ end
 ---happen. The two questions are the same question, so they are asked of the same predicate:
 ---an arm is held to its bearing exactly when it cannot be pointed.
 ---
----Nothing as well for a hand sitting on its own base, which is no direction at all: the
----engine picks one, and picking the same one here would be guessing.
+---Held to whatever bearing is carried for it however near the base the hand is, which was
+---not always so. There used to be a floor here at two tenths of a tile, on the reasoning
+---that a hand sitting all but on its own base points nowhere the engine will honour. It
+---does. Measured on the first and fourth tiers, a hand parked at 1/256, at a twentieth and
+---at two tenths and then sent somewhere half a turn round took the same 42 and 73 ticks
+---from all three -- the full price of the turn, at every radius. The floor was not a
+---safeguard, it was the mod handing itself a free turn.
 ---@param record table
 ---@return {x: number, y: number}?
 --- How far off a target has to be before which way it lies means anything. Nearer than
@@ -1289,9 +1294,6 @@ local function hand_facing(record, towards)
   if not (arm and arm.valid) then return nil end
   local pointing = record.pointing
   if not pointing then return nil end
-  -- A hand sitting on its own base points nowhere the engine will honour, whatever bearing
-  -- has been carried for it, so the measure is still how far out it is.
-  if hand_out(record) < 0.2 then return nil end
   -- Nothing for a bearing that is about to be replaced, which is not the same as one that
   -- could be. It used to be enough that the arm was rebuildable, on the grounds that the
   -- bearing was about to be whatever it needed to be -- but point() rebuilds only when it
