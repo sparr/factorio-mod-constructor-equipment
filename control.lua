@@ -2097,24 +2097,26 @@ local function choose(player, wearer, from, nearby, claimed, range, record)
         end
         if not skip then
           local price = hand and reach.swing_ticks(tier, from, hand, at) or far
-          -- What standing on a thing really adds, which is one extension of the arm.
+          -- Nothing extra for work underfoot, which is the nearest thing there is and is
+          -- priced as such.
           --
-          -- Taking something up from under the base is the slowest swing there is: the hand
-          -- comes all the way in, and whatever is next has to go all the way out again. So
-          -- it belongs behind work that is merely near, and that is all -- there used to be
-          -- a hundred thousand ticks here, which is not a queue position but a refusal.
-          -- Anything underfoot waited for a moment when nothing else was in reach at all,
-          -- and somebody standing among their own work never gives it that moment; what it
-          -- read as was an arm that would not pick up what you were standing on.
+          -- There were two charges here before, and the argument for both was that taking
+          -- something up from under the base leaves the hand folded, so whatever is next has
+          -- to go all the way out again. That is not a thing that happens. A fetch drops at
+          -- the rest point -- see aim() -- so the hand comes home at the end of every
+          -- take-up job and not only an underfoot one, and the job after one starts from a
+          -- folded hand whatever went before it.
           --
-          -- Measured on a heap underfoot with eight marked belts round it: banished, the
-          -- heap went last at tick 317 and the lot was clear at 317; with nothing added it
-          -- went first at tick 3 and the lot took until 592, because every journey after it
-          -- started from a fully folded hand. One extension is the cost the next job
-          -- actually pays.
-          if taking(work) and underfoot(work, standing) then
-            price = price + (tier and tier.range / tier.extension or 0)
-          end
+          -- Measured, with the same second job in both cases and nothing else anywhere to
+          -- queue behind: a plate two tiles off, marked the tick the first thing went, was
+          -- taken 36 ticks later after a stoop and 36 ticks later after a two tile reach.
+          -- The claw was 0.18 out at the moment of asking in one and 1.71 in the other, and
+          -- it made no difference at all. See the AFTER probe in test/ft/underfoot.lua.
+          --
+          -- What the charge really bought was queue order, and it was paid for by the thing
+          -- underfoot: with a flat extension, four plates underfoot among twelve plates one
+          -- tile away went last of all, which is an arm reaching over its own boot for the
+          -- same item.
 
           local better
           if not best then better = true

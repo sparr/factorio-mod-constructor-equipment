@@ -120,21 +120,26 @@ where the job is not yet set, which is the shape of the bug fixed in redirect() 
 commit about a fetch's three ends, and whether the same hole is open on the first tick of a
 job rather than on a crossing.
 
-## A heap underfoot is worked last, and should be worked first
+## Clearing a heap is eighty trips, and nothing else happens meanwhile
 
-The showroom's chest downgrade sheds its plates around and under the player, and the ones
-under the player go last. They should go about first: they are the nearest thing there is.
+An arm clearing eighty plates from under its owner's feet takes about 1150 ticks whatever
+order it works in, because a first tier claw carries one plate a trip and that is eighty
+trips of some fourteen ticks. Nothing else about heap clearing is worth looking at until
+that number moves.
 
-choose() charges work underfoot an extra full extension -- `price + tier.range /
-tier.extension` -- on the grounds that taking something up from under the base is the slowest
-swing there is, since the hand comes all the way in and whatever is next has to go all the
-way out again. That reasoning was measured on a heap with other work round it and it is
-right for a claw choosing between one thing underfoot and one thing at arm's length.
+While it grinds, the arm does nothing else: a marked belt two tiles away waits for the whole
+heap. Measured, the last of eight things laid round a heap of eighty went at tick 726 against
+345 back when the heap was priced to go last. Working the nearest thing first is right and is
+what it does now, but a round that scoops eighty plates and then ferries them one at a time
+is a long thing to be committed to.
 
-It is wrong for a heap that is mostly underfoot. When the next job is another plate off the
-same heap, the hand does not have to go all the way out again, so the charge is paying for a
-journey that never happens. What is wanted is a price that knows what the next job is likely
-to be, or an underfoot charge that falls away when the work is dense.
+Two places to look. `loot_into` fills the box by whole entities until the round's room is
+used, so a heap of ten-plate stacks overshoots what the claw can carry and the rest is
+ferried; capping a round at what one trip can hold would cut the commitment rather than the
+work. And nothing lets an arm part way through a long round take something else first, which
+is what would stop a heap blocking a belt.
+
+Watch on the next walk which of the two a player actually minds.
 
 ## An arm on a train at speed builds nothing
 
@@ -168,7 +173,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 | `test/ft/following.lua` | the two numbers control.lua carries for a hand, run against a real inserter through a walk's worth of re-aims. |
 | `test/ft/searching.lua` | four search shapes over sixteen scenarios, asserting each holds everything reach.meets says is there and logging what each costs. |
 | `test/ft/chunkful.lua` | a whole chunk of the mixed ghosts a blueprint is made of, for what a tick costs one arm in a realistic field, and four arms walking it for what actually gets built. |
-| `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. |
+| `test/ft/underfoot.lua` | every kind of job placed under its owner's feet and one and three tiles off, and the same under a tank. HEAP walks six ratios of work underfoot to work round it and times each to completion; FIELD lays one kind of item both underfoot and out, which is the showroom's case. |
 | `test/ft/losing.lua` | every belt in the arena counted every tick while a train builds a line, with a dump of the ticks round any that goes missing. |
 | `test/ft/qualities.lua` | a quality piece in the grid, the arm it makes, and what each quality is worth in ticks. |
 | `test/ft/spilling.lua` | the showroom's chest downgrade, which sheds sixteen hundred plates for the arms to clear, watching every tick for anything that ends up on the ground without a marker. |
