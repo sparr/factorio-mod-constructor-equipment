@@ -67,8 +67,8 @@ end
 ---it does next.
 ---
 ---Widening it for every tier instead was tried and was worse than the disease: delivering
----half a tile short shortens every swing, and on the slow tiers that opened gaps in the
----character's slowdown that a player would feel as their speed stuttering.
+---half a tile short shortens every swing, and on the slow tiers it opened gaps between one
+---trip and the next that a player would feel as the arms stuttering.
 ---@param tier table
 ---@param threshold number
 ---@param moved number? how far this hand went last tick

@@ -14,33 +14,6 @@ local CHECK_PER_SECOND = 10
 --- a couple of that tier's reaches, from lib/tiers.lua -- so that an arm never stops
 --- halfway with an item in its hand.
 
---- Every set of slowdown stickers there is: two per tier that asks for the penalty, one
---- for whatever walks or rolls and one for whatever strides. See prototypes/sticker.lua for
---- why they are stickers rather than a number on the character, and why the same penalty
---- has to be written down twice, and lib/tiers.lua for which tiers have any at all.
----
---- All of them in one list, because the one thing slowing a wearer must do is take every
---- other set off them: they are separate prototypes, so any two the engine keeps are
---- multiplied together, and that includes the two kinds of the same tier's own.
-local SETS = {}
-for _, tier in ipairs(tiers.list) do
-  if tier.stickers then
-    table.insert(SETS, tier.stickers)
-    table.insert(SETS, tier.stickers.legs)
-  end
-end
-
----Which of a tier's two sets of stickers a wearer takes: the legged one if it strides,
----and the one that serves characters and wheels otherwise.
----@param wearer LuaEntity
----@param set table a tier's stickers, from lib/tiers.lua
----@return table
-local function stickers_for(wearer, set)
-  if wearer.type == "spider-vehicle" and set.legs then return set.legs end
-  return set
-end
-
-
 local CHECK_INTERVAL = 60 / CHECK_PER_SECOND
 local CHECK_TICK = CHECK_INTERVAL / 2
 
@@ -207,8 +180,6 @@ local function setup()
   storage.constructor_stowing = storage.constructor_stowing or {}
   -- arms switched off part way through a reach, on their way home before being put away
   storage.constructor_folding = storage.constructor_folding or {}
-  -- whether the ramp into the slowdown has already been run for the run in progress
-  storage.constructor_ramped = storage.constructor_ramped or {}
   -- who has switched their arms off from the toolbar, by player index
   storage.constructor_off = storage.constructor_off or {}
   storage.constructor_shunned = storage.constructor_shunned or {}
@@ -268,7 +239,7 @@ end
 ---cab. What a vehicle has instead is a grid of its own, and the equipment goes in it as
 ---readily as into armour -- every grid in the base game takes the same category of
 ---equipment -- so while somebody is driving, the vehicle is what wears the arms, pays for
----them out of its own grid, and takes the slowdown they ask for.
+---them out of its own grid.
 ---
 ---The driver's, and nobody else's. One grid worn by two people would put two sets of arms
 ---on the same equipment, and a passenger would double what the vehicle can do by climbing
@@ -395,145 +366,6 @@ local function refund(player, wearer, inventory, name, quality, count)
     if on_cursor(player, wearer, name, quality) then stack.count = stack.count + over end
   else
     stack.set_stack{ name = name, quality = quality, count = over }
-  end
-end
-
----One of this mod's stickers on a wearer, if it is there.
----@param wearer LuaEntity
----@param name string
----@return LuaEntity?
-local function sticker_on(wearer, name)
-  for _, sticker in pairs(wearer.stickers or {}) do
-    if sticker.valid and sticker.name == name then return sticker end
-  end
-  return nil
-end
-
----Slow whoever is wearing the arms down, or keep them slowed if they already are.
----
----Character or vehicle, and the same fraction of speed either way. A sticker carries a
----figure for a character and a figure for a vehicle and the engine uses whichever suits
----what it lands on, and where one figure will not do for both kinds of vehicle there is a
----second set to pick from: see stickers_for above and prototypes/sticker.lua.
----
----Slowing is in two parts. The first build of a run puts on the slowing sticker, which
----interpolates from full speed down to the tier's own figure over its lifetime, so the
----character leans into the work rather than stopping dead. When that has run its course
----the flat sticker takes over and holds them there for as long as there is building to do.
----
----Putting the same sticker on a character who already has it does not give them two: the
----engine keeps the one and starts its life over. That is what makes a run of builds one
----unbroken slowdown, and it is also why the slowing sticker must be left alone while it
----runs: refreshing it would start the ramp again and the character would surge.
----
----Every other set has to go, whichever this one is. They are separate prototypes, so the
----engine would keep them all and multiply them together, and someone who put a second arm
----on would end up slower than either arm asks for. The recovery stickers go for the same
----reason, plus one of their own: a character who started speeding up and then found
----something else to build would otherwise keep the tail of the ramp as well.
----@param player LuaPlayer
----@param wearer LuaEntity? the character or vehicle the arms are on
-
---- Put one of this mod's stickers on a wearer, if it will take one.
----
---- Not everything does. Rolling stock does not, and create_entity raises over it rather
---- than returning nothing, so the first tick after a player climbed into a locomotive
---- wearing arms took the whole session down. There is no prototype field to ask, so it is
---- tried once and the answer remembered against the name.
----
---- Nothing is lost by the refusal. The sticker is how the arms charge their owner part of
---- their speed, and a train's speed is not a thing a sticker can touch, so arms on one are
---- free to carry -- which is a fair price for a vehicle that cannot turn aside to build.
----@param wearer LuaEntity
----@param name string
-local refuses = {}
-local function stick(wearer, name)
-  if refuses[wearer.name] then return end
-  local ok = pcall(function()
-    wearer.surface.create_entity{ name = name, position = wearer.position, target = wearer }
-  end)
-  if not ok then refuses[wearer.name] = true end
-end
-
----@param set table which tier's stickers, from lib/tiers.lua
----Global for the same reason press() is: a test cannot climb into a locomotive wearing
----arms, because a locomotive has no equipment grid to wear them in, so the only way to
----exercise the sticker on one is to call this.
-function slow(player, wearer, set)
-  if not (wearer and wearer.valid) then return end
-  set = stickers_for(wearer, set)
-  for _, other in ipairs(SETS) do
-    local recovery = sticker_on(wearer, other.recovery)
-    if recovery then recovery.destroy() end
-    if other ~= set then
-      local flat = sticker_on(wearer, other.flat)
-      if flat then flat.destroy() end
-      local slowing = sticker_on(wearer, other.slowing)
-      if slowing then slowing.destroy() end
-    end
-  end
-
-  local flat = sticker_on(wearer, set.flat)
-  if flat then
-    -- already at the bottom of the ramp; keep it there
-    stick(wearer, set.flat)
-    return
-  end
-
-  -- Part way down. Left to run: refreshing it would start the descent again and the
-  -- character would surge. It is not swapped for the flat sticker early either, which is
-  -- what this used to do -- the ramp ends at exactly the speed the flat sticker holds, so
-  -- letting it expire on its own makes the handover invisible, where swapping out with a
-  -- fifth of its life left was a step change in speed.
-  if sticker_on(wearer, set.slowing) then return end
-
-  -- Neither is on. Whether that means the ramp has not run yet or that it has been and
-  -- gone is not something the character can be asked, because an expired sticker leaves
-  -- nothing behind, so it is remembered instead.
-  --
-  -- Reading it off the sticker was the bug. A run of building is not continuous: an arm
-  -- that gets home before its clock is due waits a few ticks, and a ramp that ran out in
-  -- one of those gaps was replaced by a second ramp rather than by the flat sticker. The
-  -- character kept easing towards a speed they never reached.
-  if storage.constructor_ramped[player.index] then
-    stick(wearer, set.flat)
-    return
-  end
-
-  -- The ramp is cosmetic, and a missing sticker prototype is not worth ending someone's
-  -- game over. It can go missing for a real reason: game.reload_mods() reloads a mod's
-  -- scripts but not its prototypes, so a script that has just learnt about a new sticker
-  -- runs against data that has never heard of it. That crashed a session.
-  if not prototypes.entity[set.slowing] then
-    stick(wearer, set.flat)
-    return
-  end
-  storage.constructor_ramped[player.index] = true
-  stick(wearer, set.slowing)
-end
-
----Let a wearer who has run out of things to build come back up to speed.
----
----The slowdown is flat while there is work, because its own life keeps being restarted
----and the interpolation would restart with it -- which would read as stuttering rather
----than as effort. The ramp belongs at the end, where there is one of it. So the flat
----sticker is swapped for one that interpolates from where it left off back to full speed
----over its lifetime, and the engine walks it up as its life runs down.
----
----Whichever set is on is the one that ramps off, so the character comes back up from the
----speed they were actually walking at rather than from some other tier's.
----@param player LuaPlayer
----@param wearer LuaEntity? the character or vehicle the slowdown is on
-local function recover(player, wearer)
-  storage.constructor_ramped[player.index] = nil
-  if not (wearer and wearer.valid) then return end
-  for _, set in ipairs(SETS) do
-    local slowdown = sticker_on(wearer, set.flat) or sticker_on(wearer, set.slowing)
-    if slowdown then
-      slowdown.destroy()
-      if prototypes.entity[set.recovery] then stick(wearer, set.recovery) end
-      return
-    end
   end
 end
 
@@ -1393,8 +1225,7 @@ local STILL = { x = 0, y = 0 }
 ---a ghost laid down one to three tiles to the side of a character already under way, nine
 ---of them were set off for and written off without a delivery. None of those nine is built
 ---now either -- the arm cannot reach what its owner is walking away from, and no amount of
----aiming changes that -- but none of them costs a swing, the charge that pays for it, or the
----slowdown its owner wears while an arm is working.
+---aiming changes that -- but none of them costs a swing or the charge that pays for it.
 ---
 ---Only what its owner is walking away from, which is the whole of why this is a dot product
 ---rather than a distance. Walking towards a thing shortens the reach as the hand goes, so a
@@ -2298,11 +2129,9 @@ local function job_for(player, wearer, from, nearby, claimed, record, range)
     -- Still worth knowing whether there is anything to do. Setting off wants a full
     -- buffer, and a delivery spends some of it, so an arm that has just finished one is
     -- not ready on the very next tick. Filling it again takes a single tick from charged
-    -- batteries -- measured at every tier -- but a single tick was enough: with no arm
-    -- reporting work the run was declared over, the character started easing back to full
-    -- speed, and a fresh slowdown began a tick later, so they oscillated instead of
-    -- settling. The run ends when the work runs out, not when an arm is a tick short of
-    -- being able to start the next trip.
+    -- batteries -- measured at every tier -- and an arm a tick short of setting off is
+    -- not an arm with nothing to do. Saying which of the two it is keeps the low power
+    -- mark off a wearer who is merely between trips: see flag_power().
     local ghost = choose(player, wearer, from, nearby, claimed, range, record)
     return nil, nil, nil, nil, ghost ~= nil
   end
@@ -2377,8 +2206,8 @@ end
 ---@param at {x: number, y: number}
 local function stow(tier, surface, at, wearer)
   -- Sprites are not among the prototypes script can look up, so the path is checked rather
-  -- than the prototype. Worth checking at all for the same reason the stickers are: a
-  -- script reloaded without its data stage runs against prototypes that never heard of it.
+  -- than the prototype. Worth checking at all because a script reloaded without its data
+  -- stage runs against prototypes that never heard of it.
   if not helpers.is_valid_sprite_path(tier.claw) then return end
   -- Pinned to whoever was wearing it rather than to a spot on the ground. A claw fading
   -- where the character used to be, while the character walks off, is the one thing about
@@ -2880,7 +2709,6 @@ local function put_away(player, record)
   record.entity = nil
   record.job = nil
   record.busy = nil
-  record.run = nil
   record.lift = nil
   record.stranded = nil
 end
@@ -4562,13 +4390,6 @@ local function advance(player, wearer, record, slot, count, claimed, nearby)
 
   if job then
     record.busy = game.tick
-    -- Which is not the same as having a job this tick. A swing that has got home waits a
-    -- few ticks for its clock, and the slowdown has to hold across that gap: the ramp
-    -- sticker is sixty ticks long, so one that ran out in a gap was replaced by a fresh
-    -- ramp rather than handing over to the flat sticker, and the character oscillated
-    -- instead of settling at the speed their tier asks for. Cleared when there is nothing
-    -- left to build, which is decided on the check tick.
-    record.run = game.tick
   else
     -- Nothing to do. The arm stays out for a moment in case another ghost turns up, and is
     -- put away if none does, rather than being worn while the character wanders about.
@@ -4754,7 +4575,7 @@ end
 ---buys. The mod used to cap the rate separately, at two builds a second whatever the arm
 ---was doing. That was left over from when there was no inserter to time, and it did harm:
 ---at short reaches the claw got home well before its next slot was due, and the arm stood
----waiting. Those gaps are what broke the slowdown ramp and the speed recovery, twice.
+---waiting.
 ---
 ---One search serves every arm. It is the expensive part, the answer is the same for all of
 ---them, and only the range each judges it by differs.
@@ -4798,10 +4619,9 @@ local function assign(player, wearer, list, tick, nearby)
       local ghost, item, count, quality, waiting =
         job_for(player, wearer, from, nearby(), claimed, record, tier.range)
       if waiting then
-        -- work in reach, buffer a tick short of full: the run is still on
+        -- work in reach, buffer a tick short of full
         working = true
         starved = true
-        record.run = game.tick
       end
       if ghost then
         claimed[claim_of(ghost)] = true
@@ -4967,7 +4787,7 @@ local function assign(player, wearer, list, tick, nearby)
   return working
 end
 
----Whether there is anything left to build, asked ten times a second rather than every tick.
+---Hand work out, ten times a second rather than every tick.
 ---
 ---Lifted out of on_tick so that what the tick has to remember for the next one can happen
 ---after everything, rather than behind a return that only check ticks reach.
@@ -4976,20 +4796,10 @@ local function check(tick)
   for _, player in pairs(game.players) do
     local wearer = wearer_of(player)
     if wearer and wearer.valid and not switched_off(player) then
-      -- Nothing left in reach is when the character starts getting their speed back, not
-      -- merely no arm swinging this instant: the search runs ten times a second and a claw
-      -- can be home for a few ticks before the next one, and recovering in those gaps had
-      -- the character surging between one ghost and the next all the way along a
-      -- blueprint. So this asks whether there is anything to build.
-      local list = storage.constructor_arms[player.index] or {}
-      -- No arm working after that means no arm could find anything, because an arm with
-      -- nothing to do takes work the instant there is any: without a clock there is no
-      -- such thing as free but not yet due. So this needs no second search of its own.
-      if not assign(player, wearer, list, tick, nearby) then
-        -- the run is over, which is what lets the slowdown ramp off
-        for _, record in pairs(list) do record.run = nil end
-        recover(player, wearer)
-      end
+      -- An arm with nothing to do takes work the instant there is any -- without a clock
+      -- there is no such thing as free but not yet due -- so this needs no search of its
+      -- own beyond the one assign makes.
+      assign(player, wearer, storage.constructor_arms[player.index] or {}, tick, nearby)
     end
   end
 end
@@ -5031,33 +4841,9 @@ local function on_tick(event)
         end
         return searched
       end
-      -- Slowed for as long as an arm is working, not only at the moment one arrives.
-      -- Applying it on delivery alone left a gap: the ramp ran out partway through the
-      -- next swing and the character surged until the next thing was delivered.
-      --
-      -- One slowdown however many arms are working, and where they disagree it is the
-      -- heaviest that lands: a tier that asks for nothing does not excuse the tier working
-      -- beside it that does. So a good arm worn on its own costs its wearer no speed, and
-      -- worn alongside an old one it costs whatever the old one costs.
-      local worst, running = nil, false
       for slot, record in ipairs(list) do
         advance(player, wearer, record, slot, #list, claimed, nearby)
-        if record.run then
-          running = true
-          local set = tier_of(record).stickers
-          if set and (not worst or set.modifier < worst.modifier) then worst = set end
-        end
       end
-      if worst then
-        slow(player, wearer, worst)
-      elseif running then
-        -- arms are in a run and none of them asks for any penalty, so give the speed back
-        -- rather than waiting for the work to run out
-        recover(player, wearer)
-      end
-      -- An arm in no run at all is deliberately left alone here rather than recovered.
-      -- Whether there is anything left to build is asked on the check tick, where it can
-      -- be answered properly, and that is what ends a run.
     else
       -- taken off, switched off, the character is gone, or they are riding in a vehicle as
       -- a passenger: no arms and no half finished swings
@@ -5085,26 +4871,18 @@ end
 ---happens on the tick it is asked for rather than the one after: a claw halfway out when
 ---its owner climbs into a car would otherwise spend a tick reaching from the car with the
 ---armour's charge behind it.
----
----The slowdown is handed back on both sides, because either of them can be carrying one. A
----driver who gets out while the arms are working leaves the vehicle slowed for as long as
----the sticker lasts, and a character who climbs in mid run would be walking slowly when
----they got out again.
 ---@param event EventData.on_player_driving_changed_state
 local function on_driving_changed(event)
   local player = game.get_player(event.player_index)
   if not player then return end
   dismiss(player)
-  recover(player, event.entity)
-  recover(player, player.character)
 end
 
 ---Switch a player's arms on or off, and put the button in the matching state.
 ---
 ---Switching off is not merely a refusal to start anything new. A claw halfway out is
 ---brought home the same way taking the equipment off brings it home -- items back in the
----pockets, charge back in the grid -- and whatever speed the arms were costing is handed
----back on the spot rather than left to expire.
+---pockets, charge back in the grid.
 ---@param player LuaPlayer
 ---@param on boolean
 local function switch(player, on)
@@ -5112,10 +4890,6 @@ local function switch(player, on)
   if prototypes.shortcut[TOGGLE] then player.set_shortcut_toggled(TOGGLE, on) end
   if on then return end
   fold(player)
-  -- both, because the arms may be on either and a character who climbs out of a vehicle
-  -- should not find their own legs still slowed
-  recover(player, wearer_of(player))
-  recover(player, player.character)
 end
 
 ---Put the button where the save says it should be, and grey it out when there is nothing
@@ -5203,7 +4977,6 @@ if script.active_mods["ce-stall"] then
           level = record.level,
           quality = record.quality,
           busy = record.busy,
-          run = record.run,
           job = job and {
             item = job.item, take = job.take, going = job.going, left = job.left,
             carried = job.carried, escrow = job.escrow, crossing = job.crossing,
@@ -5225,8 +4998,6 @@ if script.active_mods["factorio-test"] and script.active_mods["ce-tests"] then
     "test.ft.building",
     "test.ft.delivering",
     "test.ft.characterless",
-    "test.ft.slowdown",
-    "test.ft.interpolation",
     "test.ft.power",
     "test.ft.several",
     "test.ft.equipping",

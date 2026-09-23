@@ -6,10 +6,6 @@
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
 local reach = require("lib.reach")
---- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
---- switch is meant to be flipped back. See tiers.SLOWS.
-local slowed_describe = tiers.SLOWS and describe or describe.skip
-local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 --- Comfortably more than one swing, so a test is not at the mercy of which tick of the
@@ -189,20 +185,22 @@ describe("the constructor equipment toggle", function()
     world.equip(player, { "constructor-equipment-4", "battery-equipment" }, true,
       "power-armor")
     world.ghost(player, BELT, 4, 0)
-    after_ticks(25, function()
+    -- Waited for rather than counted to. Work is handed out on a check tick, which is one
+    -- in six, so where the ghost falls against that cycle is worth several ticks of swing
+    -- and a fixed count leaves the claw a different distance out from one run to the next.
+    world.once(function()
+      local out = world.arm(player)
+      return out ~= nil and reach.distance(out.position, out.held_stack_position) > 2
+    end, function()
       assert.are.equal(4, player.get_item_count(BELT),
         "the arm should be carrying a belt by now")
-      local arm = world.arm(player)
-      assert.is_not_nil(arm, "there should be an arm out")
-      assert.is_true(reach.distance(arm.position, arm.held_stack_position) > 2,
-        "the claw should be well out by now")
       press(player)
       after_ticks(A_FOLD, function()
         assert.are.equal(5, player.get_item_count(BELT),
           "the belt was not handed back inside a fold")
         assert.is_nil(world.arm(player), "the arm was still hanging about")
       end)
-    end)
+    end, "the claw never got well out")
   end)
 
   it("gives back what a claw was carrying when it is pressed mid reach", function()
@@ -244,18 +242,6 @@ describe("the constructor equipment toggle", function()
         end
         assert.are.equal(before + 1, player.get_item_count(BELT) + loose,
           "the belt the claw was carrying was destroyed rather than handed back or dropped")
-      end)
-    end)
-  end)
-
-  slowed_it("hands the speed back at once rather than waiting for the sticker to run out", function()
-    world.several(player, BELT, 4)
-    after_ticks(world.DELIVERED, function()
-      assert.is_not_nil(world.slowed_by(player), "the character was never slowed")
-      press(player)
-      after_ticks(2, function()
-        assert.is_nil(world.slowed_by(player),
-          "the character is still slowed by arms that are switched off")
       end)
     end)
   end)

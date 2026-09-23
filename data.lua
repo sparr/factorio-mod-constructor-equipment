@@ -1,5 +1,4 @@
 require("prototypes.equipment")
-require("prototypes.sticker")
 require("prototypes.inserter")
 require("prototypes.sprite")
 require("prototypes.item")

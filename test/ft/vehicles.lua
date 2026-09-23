@@ -6,10 +6,6 @@
 --- same fraction off its own speed.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
---- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
---- switch is meant to be flipped back. See tiers.SLOWS.
-local slowed_describe = tiers.SLOWS and describe or describe.skip
-local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 --- Comfortably more than one swing, so a test is not at the mercy of which tick of the
@@ -486,7 +482,7 @@ describe("equipment in a vehicle's own grid", function()
     end)
   end)
 
-  slowed_it("works the same in a spidertron's grid", function()
+  it("works the same in a spidertron's grid", function()
     local spider = player.surface.create_entity{
       name = "spidertron", position = world.ORIGIN, force = player.force }
     -- One arm on a spidertron is bolted to its first leg rather than out on its right, so
@@ -496,15 +492,10 @@ describe("equipment in a vehicle's own grid", function()
     spider.set_driver(player)
     spider.insert{ name = BELT, count = 20 }
     world.ghost(player, BELT, SPIDER_REACH[1], SPIDER_REACH[2])
-    world.once(function() return world.slowing_anything(spider) ~= nil end, function()
-      assert.is_not_nil(world.sticker_on(spider, tiers.list[1].stickers.legs.flat)
-        or world.sticker_on(spider, tiers.list[1].stickers.legs.slowing),
-        "the spidertron took the wheeled slowdown rather than the legged one")
-      after_ticks(A_VEHICLE_BUILD, function()
-        assert.is_true(world.count(player, BELT) > 0, "the spidertron's own arms built nothing")
-        spider.destroy()
-      end)
-    end, "the spidertron was never slowed")
+    after_ticks(A_VEHICLE_BUILD, function()
+      assert.is_true(world.count(player, BELT) > 0, "the spidertron's own arms built nothing")
+      spider.destroy()
+    end)
   end)
 
   --- The point of aiming in the frame the arm is drawn in. A spidertron's torso rides a tile
@@ -597,194 +588,3 @@ describe("a vehicle over something marked", function()
   end)
 end)
 
-slowed_describe("the slowdown a vehicle's arms ask for", function()
-  local tank
-
-  before_each(function()
-    tank = world.vehicle(player)
-    world.fitted(tank)
-    tank.insert{ name = BELT, count = 20 }
-  end)
-
-  it("lands on the vehicle", function()
-    world.ghost(player, BELT, beside(tank))
-    world.once(function() return world.slowing_anything(tank) ~= nil end, function() end,
-      "the vehicle was never slowed")
-  end)
-
-  it("does not land on the driver", function()
-    world.ghost(player, BELT, beside(tank))
-    -- Asked on the tick the vehicle is slowed rather than at a tick it ought to be by:
-    -- with nothing slowed yet, nothing is on the driver either, and the test passes
-    -- without having looked at anything.
-    world.once(function() return world.slowing_anything(tank) ~= nil end, function()
-      assert.is_nil(world.slowing_anything(player.character),
-        "the driver was slowed as well as the vehicle they are sat in")
-    end, "the vehicle was never slowed")
-  end)
-
-  --- Measured rather than read off the prototype: LuaEntityPrototype does not hand back a
-  --- sticker's vehicle figures, and they are not the tier's own number anyway. What is
-  --- being claimed is about speed, so speed is what is compared.
-  ---
-  --- Top speed, so each vehicle is started above its own and left to settle down onto it.
-  --- Climbing to it from rest takes thousands of ticks and never quite arrives, and a
-  --- vehicle still accelerating is down by more than its share.
-  --- The tier to measure the wheeled slowdown with. Not the first: a first tier arm reaches
-  --- two tiles, and a tank fills very nearly two tiles of that with its own hull, so there
-  --- is no band left where a ghost is both in reach and clear of the vehicle. The second
-  --- reaches three.
-  local DRIVING_TIER = tiers.by_level[2]
-
-  ---How far a tank gets in ten seconds at its settled speed, with arms working on it or
-  ---with nothing in its grid at all.
-  ---
-  ---Measured end to end, with the mod doing the slowing, because there is no way to hold
-  ---one of its stickers on a vehicle behind its back: an empty vehicle ignores a riding
-  ---state, with or without a character sat in it, so a wheeled vehicle only moves with a
-  ---player at the wheel -- and the moment the mod finds a wearer of its own with nothing to
-  ---build, it hands the speed back. So the tank is given something to build all the way
-  ---along: a row of ghosts beside its path, close enough together that one is always within
-  ---the arm's three tiles and far enough to the side to be clear of the hull.
-  ---
-  ---At its settled speed, so it is started above its own top speed and given twenty five
-  ---seconds to come down to it. A vehicle still picking up speed is down by more than its
-  ---share, which would make this read as too harsh rather than as wrong.
-  ---@param fitted boolean whether to fit arms that will work the whole way
-  ---@param whenever fun(tiles: number, slowed: number)
-  local function settled_run(fitted, whenever)
-    local flats = world.flats()
-    local tank = flats.create_entity{
-      name = "tank", position = { 0, 0 }, force = player.force,
-      direction = defines.direction.east }
-    tank.insert{ name = "coal", count = 50 }
-    if fitted then
-      world.fit(tank, { DRIVING_TIER.name, "battery-equipment", "battery-equipment" }, true)
-      tank.insert{ name = BELT, count = 400 }
-      for x = 4, 700, 1 do
-        flats.create_entity{
-          name = "entity-ghost", inner_name = BELT, position = { x, 2.5 }, force = player.force }
-      end
-    end
-    -- the character has to be on the surface before it can be put in the seat
-    player.teleport({ 0, 0 }, flats)
-    tank.set_driver(player)
-    tank.speed = 1.0
-    player.riding_state = { acceleration = defines.riding.acceleration.accelerating,
-                            direction = defines.riding.direction.straight }
-    local slowed = 0
-    script.on_nth_tick(1, function()
-      if tank.valid and world.slowing_anything(tank) then slowed = slowed + 1 end
-    end)
-    after_ticks(1500, function()
-      local from = tank.position.x
-      after_ticks(600, function()
-        local tiles = tank.position.x - from
-        script.on_nth_tick(nil)
-        player.driving = false
-        tank.destroy()
-        for _, entity in pairs(flats.find_entities_filtered{
-              type = { "entity-ghost", "transport-belt" } }) do entity.destroy() end
-        player.teleport(world.ORIGIN, game.surfaces[1])
-        whenever(tiles, slowed / 2100)
-      end)
-    end)
-  end
-
-  it("is the same share of top speed a character loses", function()
-    local wanted = DRIVING_TIER.stickers.modifier
-    settled_run(true, function(slow, share_slowed)
-      assert.is_true(share_slowed > 0.9,
-        ("the tank was only slowed for %.0f%% of the run, so this measures nothing")
-          :format(share_slowed * 100))
-      settled_run(false, function(free)
-        local share = slow / free
-        assert.is_true(math.abs(share - wanted) < 0.02,
-          ("a tank with its arms working covered %.1f tiles against a bare one's %.1f, which"
-            .. " is %.3f of it rather than the %.3f the tier asks of a character")
-            :format(slow, free, share, wanted))
-      end)
-    end)
-  end)
-
-  it("is the same share again for a spider vehicle, whose legs take the figure straight",
-    function()
-      local set = tiers.list[1].stickers
-      world.unseat(player)
-      -- driverless for the same reason the tank above is
-      local function strides(sticker, whenever)
-        local flats = world.flats()
-        local spider = flats.create_entity{
-          name = "spidertron", position = { 0, 0 }, force = player.force }
-        if sticker then
-          script.on_nth_tick(30, function()
-            if spider.valid then
-              flats.create_entity{ name = sticker, position = spider.position, target = spider }
-            end
-          end)
-        end
-        spider.autopilot_destination = { 400, 0 }
-        -- measured from a running start, so that setting off is not in the figure
-        after_ticks(300, function()
-          local from = spider.position.x
-          after_ticks(600, function()
-            local travelled = spider.position.x - from
-            script.on_nth_tick(nil)
-            spider.destroy()
-            whenever(travelled)
-          end)
-        end)
-      end
-      strides(set.legs.flat, function(slowed)
-        strides(nil, function(free)
-          local share = slowed / free
-          assert.is_true(math.abs(share - set.modifier) < 0.02,
-            ("a slowed spidertron covered %.2f tiles against a free one's %.2f, which is"
-              .. " %.3f of it rather than the %.3f the tier asks for")
-              :format(slowed, free, share, set.modifier))
-        end)
-      end)
-    end)
-
-  it("is given back when the driver gets out", function()
-    world.ghost(player, BELT, beside(tank))
-    world.once(function() return world.slowing_anything(tank) ~= nil end, function()
-      player.driving = false
-      after_ticks(2, function()
-        assert.is_nil(world.slowing_anything(tank),
-          "the vehicle is still slowed by arms nobody is driving")
-      end)
-    end, "the vehicle was never slowed")
-  end)
-end)
-
--- Climbing into a locomotive wearing arms ended a session: slow() puts a sticker on
--- whoever is wearing the arms, rolling stock does not accept stickers, and create_entity
--- raises over it rather than returning nothing.
-slowed_describe("a wearer that will not take a sticker", function()
-  it("is slowed down by nothing rather than taking the game down", function()
-    -- Rolling stock goes where the track lets it rather than where it is asked for, so
-    -- the rail goes down first and the locomotive onto whichever rail took.
-    local locomotive
-    for step = -4, 4 do
-      player.surface.create_entity{ name = "straight-rail",
-        position = { world.ORIGIN.x + step * 2, world.ORIGIN.y + 8 },
-        direction = defines.direction.east, force = player.force }
-    end
-    for _, rail in pairs(player.surface.find_entities_filtered{
-        position = { world.ORIGIN.x, world.ORIGIN.y + 8 }, radius = 10,
-        type = "straight-rail" }) do
-      locomotive = locomotive or player.surface.create_entity{ name = "locomotive",
-        position = rail.position, direction = rail.direction, force = player.force }
-    end
-    assert.is_truthy(locomotive, "no locomotive to try it on")
-    -- Straight at the function the crash came out of, because a locomotive has no
-    -- equipment grid in the base game and so cannot be made to wear an arm here.
-    assert.has_no.errors(function()
-      slow(player, locomotive, tiers.list[1].stickers)
-    end)
-    assert.is_nil(world.sticker_on(locomotive),
-      "a locomotive took a slowdown sticker after all")
-    locomotive.destroy()
-  end)
-end)

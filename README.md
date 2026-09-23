@@ -5,8 +5,7 @@ A mod for the game Factorio, adding equipment for short range automated construc
 
 * Four tiers of equipment that use inserter arms to build nearby blueprints from your inventory.
 * Four technologies to unlock the equipment.
-* Low tier equipment slows you down.
-* Equipment works in a vehicle's equipment grid, building as you drive out of the vehicle's own inventory and slowing the vehicle by the same share. Equipment in your armour is idle while you are in a vehicle.
+* Equipment works in a vehicle's equipment grid, building as you drive out of the vehicle's own inventory. Equipment in your armour is idle while you are in a vehicle.
 * A vehicle's arms sit along the sides of its hull and reach from where they are mounted.
 * A toolbar button switches your own equipment off and on.
 * The arms carry out upgrade planner orders, swapping what is standing there and bringing the old one back to you.

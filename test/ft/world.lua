@@ -117,7 +117,6 @@ function world.clear(player)
   -- counted as busy, so the next test began by putting an arm on someone who had asked
   -- for nothing -- and paying for the swing it took to settle.
   storage.constructor_arms = {}
-  storage.constructor_ramped = {}
   storage.constructor_saved_running_speed_modifier = {}
 end
 
@@ -385,39 +384,6 @@ function world.count(player, name)
   return player.surface.count_entities_filtered{ name = name }
 end
 
---- The mod's own slowdown, from prototypes/sticker.lua. There are two of them on the way
---- down: a ramp that eases the character from full speed to a quarter of it, and a flat
---- one that holds them there once the ramp has run out.
-world.SLOWDOWN = "constructor-equipment-slowdown"
-world.SLOWING = "constructor-equipment-slowing"
-world.RECOVERY = "constructor-equipment-recovery"
-
---- How long the sticker lasts after the build that applied it, from control.lua.
-world.SLOWDOWN_TICKS = 240
-
---- How long the ramp into the slowdown lasts, from prototypes/sticker.lua. The flat
---- sticker does not appear until this has run its course.
-world.RAMP_TICKS = 60
-
----The mod's slowdown sticker on this character, if it is there.
----@param player LuaPlayer
----@return LuaEntity?
----Either half of the slowdown, whichever is on the character.
----@param player LuaPlayer
----@return LuaEntity?
-function world.slowed_by(player)
-  return world.slowdown(player, world.SLOWING) or world.slowdown(player, world.SLOWDOWN)
-end
-
----@param name string? which sticker, defaulting to the flat slowdown
-function world.slowdown(player, name)
-  name = name or world.SLOWDOWN
-  for _, sticker in pairs(player.character.stickers or {}) do
-    if sticker.valid and sticker.name == name then return sticker end
-  end
-  return nil
-end
-
 ---Every inserter on this character, found by name rather than through storage so a
 ---fixture can look at what the engine has them doing.
 ---@param player LuaPlayer
@@ -476,56 +442,6 @@ function world.held(player)
   return arm.held_stack.name
 end
 
----Which tier's slowdown is on this character, if any, and which of its three it is.
----@param player LuaPlayer
----@return integer? level
----@return string? which "flat", "slowing" or "recovery"
-function world.slowed_level(player)
-  for _, tier in ipairs(tiers.list) do
-    local set = tier.stickers
-    if set then
-      for _, which in ipairs{ "flat", "slowing", "recovery" } do
-        if world.slowdown(player, set[which]) then return tier.level, which end
-      end
-    end
-  end
-  return nil
-end
-
----Every sticker of this mod's on the character, by name.
----@param player LuaPlayer
----@return string[]
-function world.mod_stickers(player)
-  local mine, found = {}, {}
-  for _, tier in ipairs(tiers.list) do
-    local set = tier.stickers
-    if set then
-      mine[set.flat] = true
-      mine[set.slowing] = true
-      mine[set.recovery] = true
-    end
-  end
-  for _, sticker in pairs(player.character.stickers or {}) do
-    if sticker.valid and mine[sticker.name] then table.insert(found, sticker.name) end
-  end
-  return found
-end
-
----How fast the character is walking, as a fraction of what they walk with nothing on them.
----@param player LuaPlayer
----@param full number the speed measured with no stickers
----@return number
-function world.share_of(player, full)
-  return player.character_running_speed / full
-end
-
----How many stickers of any kind are on the character.
----@param player LuaPlayer
----@return integer
-function world.stickers(player)
-  return #(player.character.stickers or {})
-end
-
 ---How many ghosts are left in the arena.
 ---@param player LuaPlayer
 ---@return integer
@@ -575,34 +491,6 @@ end
 ---@return LuaEquipmentGrid
 function world.fitted(vehicle)
   return world.fit(vehicle, { "constructor-equipment", "battery-equipment" }, true)
-end
-
----This mod's sticker on anything, character or vehicle.
----@param entity LuaEntity?
----@param name string? which sticker, defaulting to the first tier's flat slowdown
----@return LuaEntity?
-function world.sticker_on(entity, name)
-  if not (entity and entity.valid) then return nil end
-  for _, sticker in pairs(entity.stickers or {}) do
-    if sticker.valid and sticker.name == (name or world.SLOWDOWN) then return sticker end
-  end
-  return nil
-end
-
----Either half of the slowdown on anything, whichever is on it.
----@param entity LuaEntity?
----@return LuaEntity?
-function world.slowing_anything(entity)
-  for _, tier in ipairs(tiers.list) do
-    local set = tier.stickers
-    if set then
-      for _, which in ipairs{ set, set.legs } do
-        local on = world.sticker_on(entity, which.flat) or world.sticker_on(entity, which.slowing)
-        if on then return on end
-      end
-    end
-  end
-  return nil
 end
 
 ---A surface with nothing on it, for measuring how fast something goes.

@@ -58,9 +58,8 @@ with nothing but the base game and this mod, the showroom is the first twelve ro
 **1. Building.** The plain case and the ways it declines. A ghost in reach; one six tiles
 off, which a two tile arm leaves alone; a belt under your own feet, which goes up anyway
 because a belt is not a thing you are standing in; a chest under your own feet, which waits
-until you move off it; one you are carrying nothing to pay for; a curved rail, which wants
-three rails where the claw holds one; and a run of ghosts to walk away from, which is where
-the slowdown shows.
+until you move off it; one you are carrying nothing to pay for; and a curved rail, which
+wants three rails where the claw holds one.
 
 **2. Tiers and numbers.** Four arms at once, one of each tier. The mark puts you down among
 four ghosts at one, two, three and four tiles, because walking up to them offers them one at
@@ -159,14 +158,14 @@ quotes. Left out of a game with only the one quality in it.
 ## What the smoke run should say
 
 ```
-ce-demo: built 15 rows of 16, 35 bays, 980 ghosts, 7 vehicles
+ce-demo: built 15 rows of 16, 34 bays, 971 ghosts, 7 vehicles
 everything placed, and every vehicle can drive off its mark
 ```
 
 Fifteen of sixteen because the smoke run is the base game, this mod and AAI's vehicles: the
 row about quality wants the expansion and is not laid out, and the count says so rather than
 leaving it to be noticed. `CE_AAI=0` drops the three rows that are AAI's and gives twelve
-rows, 32 bays, 800 ghosts and 4 vehicles.
+rows, 31 bays, 791 ghosts and 4 vehicles.
 
 AAI is loaded by default because three of the rows are its, and a run without them reported
 everything placed while never laying those rows at all. That is how an ironclad sat beached:

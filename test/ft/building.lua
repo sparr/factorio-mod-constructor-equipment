@@ -1,10 +1,6 @@
 --- What the equipment does, and what it declines to do.
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
---- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
---- switch is meant to be flipped back. See tiers.SLOWS.
-local slowed_describe = tiers.SLOWS and describe or describe.skip
-local slowed_it = tiers.SLOWS and it or it.skip
 
 --- Comfortably more than one swing, so a test is not at the mercy of which tick of the
 --- check cycle it started on. Built on the swing rather than on world.BUILD_INTERVAL, which
@@ -77,29 +73,6 @@ describe("a character wearing the equipment", function()
       assert.is_true(grid.available_in_batteries < before,
         "building cost nothing: batteries went from " .. before .. " to "
         .. grid.available_in_batteries)
-    end)
-  end)
-
-  -- the trade the mod offers: it builds for you, and you walk slowly while it does
-  slowed_it("slows the character down while it is working", function()
-    local full = player.character_running_speed
-    world.ghost(player, BELT, 2, 0)
-    world.ghost(player, BELT, 3, 0)
-    after_ticks(world.DELIVERED, function()
-      assert.is_not_nil(world.slowed_by(player), "no slowdown sticker was applied")
-      assert.is_true(player.character_running_speed < full,
-        "the character is not actually walking any slower")
-    end)
-  end)
-
-  it("gives the speed back once there is nothing left to build", function()
-    local full = player.character_running_speed
-    world.ghost(player, BELT, 2, 0)
-    after_ticks(world.SLOWDOWN_TICKS + A_BUILD, function()
-      assert.are.equal(0, world.ghosts(player), "something is still waiting to be built")
-      assert.is_nil(world.slowed_by(player), "the slowdown outlived the building")
-      assert.are.equal(full, player.character_running_speed,
-        "the character is still slowed with nothing left to build")
     end)
   end)
 
@@ -203,15 +176,6 @@ describe("a character who cannot build", function()
       assert.are.equal(0, world.count(player, BELT),
         "it built a belt the character was not carrying")
       assert.are.equal(1, world.ghosts(player))
-    end)
-  end)
-
-  it("is not slowed down when it cannot build", function()
-    world.equipped(player)
-    world.ghost(player, BELT, 2, 0)
-    after_ticks(A_BUILD, function()
-      assert.is_nil(world.slowed_by(player),
-        "the character was slowed for a build that never happened")
     end)
   end)
 end)

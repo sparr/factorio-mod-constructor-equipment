@@ -422,8 +422,6 @@ describe("a thing marked with nowhere to put it", function()
         "something was taken up with nowhere to put it")
       assert.are.equal(0, #world.arms(player),
         "an arm came out for work it could not finish")
-      assert.is_nil(world.slowed_by(player),
-        "the character is being slowed by an arm that is doing nothing")
     end)
   end)
 

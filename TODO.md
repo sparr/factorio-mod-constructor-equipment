@@ -1,16 +1,5 @@
 # Outstanding
 
-## 12. The walking penalty is switched off
-
-tiers.SLOWS, with thirty tests skipped behind it. It is not only a cost: a slower wearer has
-a wider cone, so putting it back makes the low tiers reach further to the side than they do
-now.
-
-Everything else under 12 is done. Leading, the cone test, the single-pass choose() and the
-oriented search box are all in, and what each of them cost and bought is written where it
-was decided -- reach.cone, reach.search_box and choose() in control.lua carry their own
-measurements.
-
 ## 22. The crossing horizon, if anybody opens it up
 
 Settled for now: a seventh is off every tier's rotation, which is as much as the swing

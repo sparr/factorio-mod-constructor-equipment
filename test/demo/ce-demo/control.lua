@@ -323,13 +323,6 @@ local ROWS = {
             pad(x + 4, y + 6, "refined-hazard-concrete-left")
           end
         end },
-      { "The slowdown",
-        "Stand on the mark and walk east along them. A first tier arm costs you speed while it works.",
-        function(x, y)
-          pad(x + 1, y + 6, "refined-hazard-concrete-left")
-          -- laid the way you will be walking, so the work keeps up with you
-          for i = 0, 8 do ghost("transport-belt", x + 3 + i, y + 6) end
-        end },
     },
   },
 

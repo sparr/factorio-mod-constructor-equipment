@@ -16,7 +16,7 @@ local SPACING = 16
 --- battery, and something for them to build with.
 ---
 --- Two tiers rather than one, because a mixture is the interesting case: each arm keeps its
---- own reach and its own pace, and the slowdown that lands is the heaviest of them.
+--- own reach and its own pace.
 local FITTING = { "constructor-equipment", "constructor-equipment-3", "battery-equipment" }
 
 --- A plain belt is the thing to watch an arm build: cheap, one item per ghost, and the

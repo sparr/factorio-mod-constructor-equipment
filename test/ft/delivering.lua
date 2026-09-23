@@ -2,10 +2,6 @@
 ---
 local world = require("test.ft.world")
 local tiers = require("lib.tiers")
---- Skipped wholesale while the walking penalty is switched off, rather than deleted: the
---- switch is meant to be flipped back. See tiers.SLOWS.
-local slowed_describe = tiers.SLOWS and describe or describe.skip
-local slowed_it = tiers.SLOWS and it or it.skip
 
 local BELT = "transport-belt"
 local player
@@ -477,21 +473,6 @@ describe("taking the equipment off mid delivery", function()
     end)
   end)
 
-  slowed_it("gives the character their speed back", function()
-    local full = player.character_running_speed
-    reaching_then_stripped()
-    after_ticks(10, function()
-      assert.is_true(player.character_running_speed < full,
-        "the character was never slowed, so this proves nothing")
-    end)
-    after_ticks(world.CYCLE * 4, function()
-      assert.is_nil(world.slowed_by(player),
-        "the character is still slowed by equipment they are not wearing")
-      assert.are.equal(full, player.character_running_speed,
-        "the character never got their walking speed back")
-    end)
-  end)
-
   it("comes back if the equipment goes back in", function()
     reaching_then_stripped()
     after_ticks(20, function()
@@ -960,9 +941,10 @@ describe("a claw that has just let go", function()
     world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
     world.ghost(player, BELT, 1, -4)
     local watched, worst = nil, 0
-    after_ticks(4, function()
+    -- Waited for rather than counted to: work is handed out on a check tick, one in six,
+    -- so a fixed count can arrive before the arm does.
+    world.once(function() return world.arms(player)[1] ~= nil end, function()
       local arm = world.arms(player)[1]
-      assert.is_not_nil(arm, "no arm was built")
       local until_tick = game.tick + world.CYCLE * 2
       on_tick(function()
         if game.tick > until_tick then return false end
@@ -979,15 +961,15 @@ describe("a claw that has just let go", function()
           worst = math.max(worst, math.abs(dx * -watched.y + dy * watched.x))
         end
       end)
-    end)
-    after_ticks(world.CYCLE * 2 + 8, function()
-      assert.is_not_nil(watched, "the claw never went out carrying anything")
-      assert.are.equal(0, world.ghosts(player), "the ghost was never built")
-      -- A hundredth of a tile, against the 0.719 the same fixture gives with the rest
-      -- point back at two 256ths. The window is wide of the one to leave room for a tier
-      -- whose numbers move rather than to leave room for the fault.
-      assert.is_true(worst < 0.15,
-        ("the claw was carried %.3f tiles sideways after letting go"):format(worst))
-    end)
+      after_ticks(world.CYCLE * 2 + 8, function()
+        assert.is_not_nil(watched, "the claw never went out carrying anything")
+        assert.are.equal(0, world.ghosts(player), "the ghost was never built")
+        -- A hundredth of a tile, against the 0.719 the same fixture gives with the rest
+        -- point back at two 256ths. The window is wide of the one to leave room for a
+        -- tier whose numbers move rather than to leave room for the fault.
+        assert.is_true(worst < 0.15,
+          ("the claw was carried %.3f tiles sideways after letting go"):format(worst))
+      end)
+    end, "no arm was built")
   end)
 end)
