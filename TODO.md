@@ -141,22 +141,36 @@ is what would stop a heap blocking a belt.
 
 Watch on the next walk which of the two a player actually minds.
 
-## An arm on a train at speed builds nothing
+## An arm on a train at speed, which no longer looks like a fault
 
-Lay two rows of belt ghosts on each side of the track, extend the track to three times the
-showroom's length so the train reaches full speed, and at full speed nothing is built at all.
+Does not reproduce. Left here as a thing to look at on the next walk rather than as work,
+because the sighting was made in the showroom and everything below is a fixture.
 
-It should be able to. A claw does not have to chase a ghost: it is held on a lead, a point
-fixed in the arm's own frame, and the ghost sweeps onto it. A second tier arm wants 26 ticks
-to reach two tiles abeam, and a locomotive at full speed covers about 36 tiles in that time,
-so the arm has to set off when the ghost is some 36 tiles ahead -- which is inside the 46
-ticks of horizon a second tier swing has, and ought to be inside what the search brings back.
+The report was that with belt ghosts either side of a long enough track nothing is built at
+all at full speed. Driven for real over 2400 tiles of rail, with the showroom's own train
+bay copied -- solid fuel, eight second tier arms, a mk2 battery, ghosts two tiles out on each
+side -- a locomotive reaches 1.262 tiles a tick and builds all the way up:
 
-So the suspicion is the shape of what is searched or sieved at high drift rather than the
-horizon: reach.search_box, reach.cone, or the abeam half of either. Worth measuring what
-comes back and what is turned away at a locomotive's top speed before touching any of them.
-`test/ft/turning.lua` already drives a train, but at 0.3 and 0.6 tiles a tick against a top
-speed nearer 1.4, so the speeds this happens at are not covered by anything.
+| tiles a tick | ghosts carried past | built |
+| --- | --- | --- |
+| 0.4 to 0.6 | 80 | 37 |
+| 0.6 to 0.8 | 146 | 63 |
+| 0.8 to 1.0 | 264 | 128 |
+| 1.0 to 1.4 | 1300 | 587 |
+
+Forty five to forty eight in every hundred, at every speed including the top one, and the
+same 182 of 390 at a forced constant 1.203 whether the mod is the current one or the tree as
+it stood before any of this week's work. So nothing recently fixed it and nothing recently
+broke it; the fixture has never seen it.
+
+What limits the arms is not speed but how many of them there are. Eight arms carried past
+1300 ghosts in the fastest band; to have taken all of them each swing would have had to place
+about a dozen belts. If more of a dense field is wanted at speed, that is the number to argue
+with rather than the horizon or the cone.
+
+So the thing to do is walk the showroom train again and see whether it still happens there.
+If it does, what differs is in the showroom's own setup rather than in the arms, and the two
+fixtures below are the place to put whatever that turns out to be.
 
 ## What there is to work with
 
@@ -166,7 +180,7 @@ nothing. All of `test/ft` runs from `test/ft/run.sh`; a name is a Lua pattern, s
 
 | where | what it measures |
 | --- | --- |
-| `test/ft/turning.lua` | a train along a double line of ghosts, counting the ones an arm set off for and never delivered to, and the worst number of attempts on any one of them. It passes now; it is what a claw changing its mind shows up in. |
+| `test/ft/turning.lua` | a train along a double line of ghosts, counting the ones an arm set off for and never delivered to, and the worst number of attempts on any one of them. It passes now; it is what a claw changing its mind shows up in. Three forced speeds up to the locomotive's own maximum, and a fourth case that drives one for real through every speed and counts what each band builds. |
 | `test/ft/swinging.lua` | a bare inserter turning and stretching at once, tick by tick; one re-aimed part way through a swing; and one making a turn and nothing else at a fixed radius. Between them they pin the law, the tick of grace each half of it gets, and how far the drawing strays from the state. |
 | `test/ft/resting.lua` | where a fresh hand is born, where a folding one stops, and the curve a claw takes home when its rest point sits exactly on the arm's base. |
 | `test/ft/chasing.lua` | a belt in reach of a standing arm whose owner then walks over it, from every phase of the check tick, which is what says whether a ghost met before the walk is still led once there is one. |
