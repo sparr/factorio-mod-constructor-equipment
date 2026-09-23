@@ -43,14 +43,21 @@ local function census(surface, player, wagon)
     and wagon.get_inventory(defines.inventory.cargo_wagon).get_item_count(BELT) or 0
   where.hands, where.boxes, where.escrow = 0, 0, 0
   for _, record in pairs(storage.constructor_arms[player.index] or {}) do
-    local arm, box = record.entity, record.catcher
+    local arm = record.entity
     if arm and arm.valid and arm.held_stack.valid_for_read
         and arm.held_stack.name == BELT then
       where.hands = where.hands + arm.held_stack.count
     end
-    if box and box.valid then
-      where.boxes = where.boxes
-        + box.get_inventory(defines.inventory.chest).get_item_count(BELT)
+    -- Both of an arm's boxes. The keeper was left out of this for a long time, on the
+    -- grounds that it is shut whenever a claw is resting on it and so can never be holding
+    -- anything -- which is true right up until a claw gives its job up on the way home and
+    -- arrives at the rest point with a load still in it. That belt read as destroyed here
+    -- while it was sitting in a box nobody was counting, and it was about to be.
+    for _, box in ipairs{ record.catcher, record.keeper } do
+      if box and box.valid then
+        where.boxes = where.boxes
+          + box.get_inventory(defines.inventory.chest).get_item_count(BELT)
+      end
     end
     if record.job and record.job.item == BELT then
       where.escrow = where.escrow + (record.job.escrow or 0)

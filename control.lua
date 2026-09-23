@@ -2432,15 +2432,24 @@ end
 ---
 ---Nothing goes back into the inventory, because nothing ever came out of it: the hand is
 ---filled from nothing and the inventory is only debited when something arrives. So an arm
----Put items from the box back into the claw, where they are still the player's.
+---Put items from a box back into the claw, where they are still the player's.
+---
+---Which box is asked for rather than assumed. It used to debit record.catcher whatever it
+---was handed, which is right for the callers that are unwinding a delivery and wrong for
+---box_empty, which is also used on the keeper: the hand was filled from the keeper and the
+---catcher was debited, so on a keeper with no catcher beside it the belt was simply copied.
+---Measured: a claw that gave up a reach and came home into its keeper ended the run with six
+---belts where five went in.
 ---@param record table
+---@param box LuaEntity? the box to debit, defaulting to this arm's catcher
 ---@param name string
 ---@param quality string?
 ---@param count integer
-local function take_back(record, name, quality, count)
+local function take_back(record, box, name, quality, count)
   if count <= 0 then return 0 end
   local arm = record.entity
   if not (arm and arm.valid) then return 0 end
+  box = box or record.catcher
   local held = arm.held_stack.valid_for_read and arm.held_stack.count or 0
   arm.held_stack.set_stack{ name = name, quality = quality, count = held + count }
   -- What actually stuck, rather than what was asked for, and the box is only debited by
@@ -2450,7 +2459,6 @@ local function take_back(record, name, quality, count)
   -- first and setting the stack afterwards is how that item used to disappear.
   local now = arm.held_stack.valid_for_read and arm.held_stack.count or 0
   local took = now - held
-  local box = record.catcher
   if took > 0 and box and box.valid then
     local inside = box.get_inventory(defines.inventory.chest)
     if inside then inside.remove{ name = name, quality = quality, count = took } end
@@ -2510,16 +2518,19 @@ end
 ---holding its own belt so the claw would not take it, and the box was destroyed with it
 ---still inside. The theft is old and costs a journey; destroying what was stolen was the
 ---whole of the loss.
+---
+---Asked of a box rather than of record.catcher, because an arm has two of them and both can
+---end up holding something. See keeper_away.
 ---@param record table
-local function catcher_empty(record)
-  local box = record.catcher
+---@param box LuaEntity? the box to empty, which is this arm's catcher or its keeper
+local function box_empty(record, box)
   if not (box and box.valid) then return end
   local inside = box.get_inventory(defines.inventory.chest)
   if not inside or inside.is_empty() then return end
 
   for _, stack in pairs(inside.get_contents()) do
-    take_back(record, stack.name, stack.quality and (stack.quality.name or stack.quality)
-      or nil, stack.count)
+    take_back(record, box, stack.name,
+      stack.quality and (stack.quality.name or stack.quality) or nil, stack.count)
   end
   if inside.is_empty() then return end
 
@@ -2567,7 +2578,7 @@ local function catcher_at(record, surface, at, near)
     -- Nothing of ours should be in it yet. Something else's may be, and whatever is there
     -- is handed out before the box goes rather than destroyed with it.
     if box and box.valid then
-      catcher_empty(record)
+      box_empty(record, box)
       box.destroy()
     end
     record.catcher = nil
@@ -2623,17 +2634,40 @@ local function keeper_at(record, surface, at, shut)
   -- all. Open, the engine treats the rest point as somewhere it could let go and travels
   -- there -- and it never does let go, because the rest point is nearer the base than a
   -- hand can reach, which is the arrangement the homecoming has always run on.
+  --
+  -- And emptied on the way to being shut, for the same reason keeper_away empties it: the
+  -- claw that was coming home may have arrived holding something. Barring a box does not
+  -- take out what is already in it, so without this an idle claw would sit on top of its own
+  -- lost delivery.
+  if shut then box_empty(record, box) end
   local inside = box.get_inventory(defines.inventory.chest)
   if inside and inside.supports_bar() then inside.set_bar(shut and 1 or (#inside + 1)) end
   return box
 end
 
 ---Take the idle claw's box away, for an arm that has work to do again.
+---
+---Emptied first, the same as the catcher is. The keeper is meant never to be holding
+---anything -- it is shut whenever the claw beside it is idle, which is the only time a claw
+---is resting on it -- and that reasoning has a hole in it: it is open the whole time the arm
+---has a job, because a claw coming home has to have somewhere to come home to, and a claw
+---that gives its job up on the way back arrives at the rest point still holding its load.
+---The engine then puts the load into whatever is standing there, which is this. It happens
+---when another arm builds the ghost this one is carrying for.
+---
+---Measured on eight second tier arms on a locomotive, driven back and forth: a claw whose
+---ghost was built by another arm while it was carrying came home, handed its belt to the
+---keeper, and the belt was destroyed with the box on the next tick. One in two hundred, and
+---the same shape as the fault box_empty was written for -- the catcher was taught to empty
+---itself and the keeper was left as it was.
 ---@param record table
 local function keeper_away(record)
   local box = record.keeper
   record.keeper = nil
-  if box and box.valid then box.destroy() end
+  if box and box.valid then
+    box_empty(record, box)
+    box.destroy()
+  end
 end
 
 ---Say that this box, and nothing else, is where this claw hands over.
@@ -2698,7 +2732,7 @@ end
 local function catcher_away(record)
   local box = record.catcher
   if not (box and box.valid) then record.catcher = nil return end
-  catcher_empty(record)
+  box_empty(record, box)
   record.catcher = nil
   box.destroy()
 end
@@ -3929,7 +3963,7 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
   if short > (job.escrow or 0) then
     -- the round is short of what this ghost wants, which should not happen: everything was
     -- reserved at the start. Give back what there is rather than build half a thing.
-    take_back(record, job.item, job.quality, landed)
+    take_back(record, nil, job.item, job.quality, landed)
     abandon(record, job)
     return
   end
@@ -3937,7 +3971,7 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
   if not still_wanted(ghost) then
     -- the ghost went, or the upgrade was called off, while the claw was on its way; the
     -- load goes back in the claw and comes home, since it has already been paid for
-    take_back(record, job.item, job.quality, landed)
+    take_back(record, nil, job.item, job.quality, landed)
     abandon(record, job)
     return
   end
@@ -3986,7 +4020,7 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
     -- and the new belt's own lane, and leave the mod taking it back out again.
     local porter = porter_for(surface, at, force, ghost)
     if not porter then
-      take_back(record, job.item, job.quality, landed)
+      take_back(record, nil, job.item, job.quality, landed)
       abandon(record, job)
       return
     end
@@ -4003,7 +4037,7 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
     if not made then
       if carried then shed(surface, at, force, carried) end
       porter.destroy()
-      take_back(record, job.item, job.quality, landed)
+      take_back(record, nil, job.item, job.quality, landed)
       abandon(record, job)
       return
     end
@@ -4082,7 +4116,7 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
 
   local _, built = ghost.revive()
   if not built then
-    take_back(record, job.item, job.quality, landed)
+    take_back(record, nil, job.item, job.quality, landed)
     abandon(record, job)
     return
   end
@@ -4098,7 +4132,7 @@ local function deliver(player, wearer, from, record, job, claimed, nearby)
   if short > 0 then job.escrow = job.escrow - short end
   -- whatever else the claw brought is still the player's, and goes back in the claw for
   -- the next ghost of this round
-  take_back(record, job.item, job.quality, math.max(0, landed - job.count))
+  take_back(record, nil, job.item, job.quality, math.max(0, landed - job.count))
 
   -- More of this trip left, and another of the same thing in reach, means going home would
   -- be a wasted journey. So the claw turns to the next one with the rest of its load still
