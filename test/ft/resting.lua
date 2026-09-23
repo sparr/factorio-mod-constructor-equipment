@@ -178,14 +178,23 @@ describe("a hand folding to its rest point", function()
   --- hand sent due west is still turning when it reaches full stretch and the fold would be
   --- measured from a bearing it was only passing through.
   local WAYS = {
-    { name = "north", x = 0, y = -1 },
-    { name = "south", x = 0, y = 1 },
-    { name = "northwest", x = -0.7071, y = -0.7071 },
+    { name = "north", x = 0, y = -1, on_grid = true },
+    { name = "south", x = 0, y = 1, on_grid = true },
+    { name = "northwest", x = -0.7071, y = -0.7071, on_grid = true },
+    --- A bearing the grid cannot hold, which the three above all are. The engine keeps a
+    --- position to the 256th of a tile on each axis, so a rest point a couple of 256ths from
+    --- the base can only stand due north, due east, on a diagonal, and a handful of places
+    --- between -- and north, south and northwest are three of them. A hand folding along one
+    --- of those finds its rest point exactly on the line it is already on and has no turn to
+    --- make, which is what hid this: thirty degrees east of north is not on that list, and a
+    --- rest point two 256ths out along it lands as much as 22.5 degrees off.
+    { name = "thirty degrees east of north", x = 0.5, y = -0.8660, on_grid = false },
   }
 
-  --- The rest points to try, and the whole of the finding is the gap between the first two.
-  --- One 256th of a tile is the smallest offset the engine will hold, and it is enough.
-  local RESTS = { 0, 1 / 256, reach.BORN, 0.2 }
+  --- The rest points to try. Nought curves round; the small ones hold a bearing only where
+  --- the grid has one to hold; a tenth of a tile, which is what control.lua rests at, holds
+  --- every bearing to within two degrees. Measured in the table beside REST.
+  local RESTS = { 0, 1 / 256, reach.BORN, 0.1, 0.2 }
 
   for _, level in ipairs{ 1, 4 } do
     local tier = tiers.by_level[level]
@@ -253,9 +262,23 @@ describe("a hand folding to its rest point", function()
                 assert.is_true(worst[rest] > 1,
                   ("folding to the base went only %.3f tiles sideways, so the curve this is"
                     .. " here to pin has gone"):format(worst[rest]))
-              else
-                -- And straight in to anything at all off it, down to the last 256th.
+              elseif way.on_grid then
+                -- Dead straight on a bearing the grid has, at any rest point off the base.
                 assert.is_true(worst[rest] < 0.05,
+                  ("folding to %.5f went %.3f tiles sideways"):format(rest, worst[rest]))
+              elseif rest <= 1 / 256 then
+                -- One 256th is a single step on each axis and cannot point anywhere but the
+                -- eight ways those steps make, so a bearing off them is not held at all and
+                -- the hand goes most of a tile round: 0.88 on the first tier, 1.87 on the
+                -- fourth.
+                assert.is_true(worst[rest] > 0.5,
+                  ("folding to %.5f along a bearing the grid cannot hold went only %.3f"
+                    .. " tiles sideways"):format(rest, worst[rest]))
+              else
+                -- And further out is straighter, all the way down. Measured here, off the
+                -- grid: 0.29 at two 256ths, 0.21 at a tenth, 0.08 at two tenths on the
+                -- fourth tier.
+                assert.is_true(worst[rest] < 0.3,
                   ("folding to %.5f went %.3f tiles sideways"):format(rest, worst[rest]))
               end
             end

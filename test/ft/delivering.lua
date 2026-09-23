@@ -929,3 +929,65 @@ describe("a bulk claw with a yard of ghosts in reach", function()
     end)
   end)
 end)
+
+--- What the claw does on the tick after it lets go.
+---
+--- It comes home by turning to face whatever its pickup names, which is the box standing on
+--- its rest point, and a box too near the base cannot be made to stand on a bearing: entity
+--- positions are kept to the 256th of a tile, so one two 256ths out has only a handful of
+--- directions available to it and the arm's own base snaps separately on top of that.
+---
+--- What that looked like was the claw whipping sideways the instant it delivered, every
+--- delivery. Measured on the showroom's chaingunner, two second tier arms letting go 2.78
+--- tiles out: they turned 14.7 and 33.1 degrees and their claws were carried 0.71 and 1.60
+--- tiles round, at the tier's full rotation, before coming in. With the rest point a tenth
+--- of a tile out instead, both turn 0.2 degrees and are carried 0.01 tiles.
+---
+--- Measured here rather than there because the showroom is not a fixture: what it needs is
+--- an arm that lets go somewhere off its own base, which any ghost not square to the mount
+--- provides. See REST in control.lua for the table this rests on, and test/ft/resting.lua
+--- for the same thing asked of a bare inserter.
+describe("a claw that has just let go", function()
+  --- The fourth tier, and a ghost one tile east and four north. Both of those are the test
+  --- rather than decoration. The sweep is the bearing error times the radius the claw lets
+  --- go at, so a two tile arm hides what a five tile one shows; and a rest point two 256ths
+  --- out can point exactly along anything whose two axes are a step or two each -- due
+  --- north, due east, a diagonal, one along and two up -- so a ghost square to the mount or
+  --- on a tidy ratio has no error to show either. One along and four up is on no such
+  --- ratio. Measured both ways round: this case is carried 0.010 tiles sideways with the
+  --- rest point a tenth of a tile out and 0.719 with it back at two 256ths.
+  it("comes straight in rather than swinging round first", function()
+    world.equip(player, { "constructor-equipment-4", "battery-mk2-equipment" }, true)
+    world.ghost(player, BELT, 1, -4)
+    local watched, worst = nil, 0
+    after_ticks(4, function()
+      local arm = world.arms(player)[1]
+      assert.is_not_nil(arm, "no arm was built")
+      local until_tick = game.tick + world.CYCLE * 2
+      on_tick(function()
+        if game.tick > until_tick then return false end
+        if not (arm and arm.valid) then return false end
+        local base, hand = arm.position, arm.held_stack_position
+        local dx, dy = hand.x - base.x, hand.y - base.y
+        local out = math.sqrt(dx * dx + dy * dy)
+        if out < 0.2 then return end
+        if arm.held_stack.valid_for_read then
+          -- Still carrying, so this is the line it will let go on.
+          watched = { x = dx / out, y = dy / out }
+        elseif watched then
+          -- Empty and still out: how far off that line it has been carried.
+          worst = math.max(worst, math.abs(dx * -watched.y + dy * watched.x))
+        end
+      end)
+    end)
+    after_ticks(world.CYCLE * 2 + 8, function()
+      assert.is_not_nil(watched, "the claw never went out carrying anything")
+      assert.are.equal(0, world.ghosts(player), "the ghost was never built")
+      -- A hundredth of a tile, against the 0.719 the same fixture gives with the rest
+      -- point back at two 256ths. The window is wide of the one to leave room for a tier
+      -- whose numbers move rather than to leave room for the fault.
+      assert.is_true(worst < 0.15,
+        ("the claw was carried %.3f tiles sideways after letting go"):format(worst))
+    end)
+  end)
+end)

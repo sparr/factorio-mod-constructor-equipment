@@ -60,21 +60,42 @@ local CHECK_TICK = CHECK_INTERVAL / 2
 --- pickup anywhere off the base at all, from the same places, it is straight -- 0.0000 of a
 --- tile sideways on every tick of the way in. See test/ft/resting.lua.
 ---
---- How little would do is one 256th of a tile, the smallest offset the engine can hold: at
---- 1/256, 2/256 and every larger radius measured the fold is straight, and only an exact
---- nought curves round. So this is as near the base as a claw can be held, which is where a
---- fresh one is born too -- the same number, so that a rebuilt arm shows no motion at all.
---- reach.BORN says why it is two 256ths rather than one.
+--- What sets it is not where the claw should sit but what the engine can be told. A claw
+--- comes home by turning to face whatever its pickup names, which is the box standing on
+--- this point, and entity positions are kept to the 256th of a tile: a box two 256ths out
+--- can only stand in a handful of directions, so the bearing asked for and the bearing got
+--- are not the same one. Measured on 2.1.20, worst error over sixteen bearings and seven
+--- fractional mounts:
 ---
---- It used to be two tenths. That was never a threshold that had to be cleared, only a
---- guess at one, and it left an idle claw a fifth of a tile off the shoulder where it was
---- meant to read as folded away.
+--- | out | worst bearing error |
+--- | --- | --- |
+--- | 2/256 | 22.5 deg |
+--- | 4/256 | 11.3 deg |
+--- | 8/256 | 7.2 deg |
+--- | 0.05 | 4.1 deg |
+--- | 0.1 | 1.9 deg |
+--- | 0.2 | 0.9 deg |
+---
+--- At two 256ths, which is what this was, a claw letting go at full stretch finds its way
+--- home lying tens of degrees off the line it went out on and swings round to it at the
+--- tier's full rotation. Measured on a chaingunner's arms releasing 2.78 tiles out: 14.7 and
+--- 33.1 degrees, carrying the claw 0.71 and 1.60 tiles round. What a player sees is the claw
+--- jumping about a tile sideways the instant it delivers, every delivery. A tenth leaves 1.9
+--- degrees, which is a sixth of a tile round from five tiles out and nothing anybody watches
+--- for.
+---
+--- The price is that an idle claw rests a tenth of a tile off the shoulder rather than all
+--- but on it. Two tenths was rejected for being visibly off the shoulder; a tenth is half of
+--- that, and it buys the fold.
 ---
 --- There is no minimum extension involved anywhere in this: measured on the first and fourth
 --- tiers, empty and with a belt in the claw, a hand comes to exactly wherever its pickup is
 --- and stops there -- 0.0000 at nought, 0.0508 at a twentieth, 0.2031 at two tenths, 0.6016
---- at six tenths, to the 256th the engine keeps positions on.
-local REST = reach.BORN
+--- at six tenths, to the 256th the engine keeps positions on. Nought is the one radius to
+--- keep away from, and reach.BORN says why: a pickup exactly on the base is no bearing at
+--- all, and the engine answers that by curving the hand round towards the way the arm was
+--- built facing.
+local REST = 0.1
 
 --- How close the hand has to get to the character to count as home again.
 ---
@@ -3190,10 +3211,16 @@ local function aim(player, wearer, record, slot, count, job)
   record.lift = lift
 
   -- Where the claw rests: a little way out from the mounting point, along the bearing it
-  -- is working on, so that coming home is a retraction rather than a swing. With nothing
-  -- to work on it rests above the character, which is where a folded arm looks right.
+  -- is working on, so that coming home is a retraction rather than a swing. A tenth of a
+  -- tile out, which is near enough to read as folded away and far enough to say which way
+  -- it is folded -- see REST, which is the whole of that argument.
   local towards = job and aimed_at(job, record)
-  local bearing = { x = 0, y = -1 }
+  -- With no job to point it, the line the hand is already on rather than due north. North
+  -- was a constant standing in for nowhere in particular, and it is not nowhere: a claw
+  -- comes home by turning to face its box, so a box put due north of an arm whose hand is
+  -- out to the south east is a claw told to swing right round before it may come in. Its
+  -- own bearing is a fold with no turn in it at all.
+  local bearing = record.pointing or born_facing(record)
   if towards then
     local dx, dy = towards.x - mount.x, towards.y - mount.y
     local length = math.sqrt(dx * dx + dy * dy)
