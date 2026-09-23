@@ -149,48 +149,16 @@ describe("the shapes a search can be drawn as", function()
       -- is a good deal cheaper than pricing a swing, and then the pricing and the sort only
       -- over what survives. This is the arrangement neither shape-versus-shape comparison
       -- can see, because it makes the shape's over-reach cost almost nothing.
-      -- The cone as plain arithmetic, which is what a rejection test should be. Everything
-      -- it needs is worked out once per search: the way its owner is going, how long the
-      -- cone is, and how wide it is at each end.
-      --
-      -- Two circles, radius r0 at the near end and r1 at the far one, L apart. The line
-      -- that wraps them is the external tangent, at an angle a to the axis where
-      -- sin a = (r1 - r0) / L, and its distance from the axis at x is (r0 + x sin a)/cos a.
-      -- Clamping x to the cone's own length turns the flare into the caps, which is wider
-      -- than the true circles and therefore never rejects anything real.
-      --
-      -- Per candidate that is a dot product, a cross product and two compares.
-      local speed = math.sqrt(drift.x * drift.x + drift.y * drift.y)
-      local out = reach.BORN
-      local r0 = math.min(arm.range, out + arm.extension)
-      local r1 = math.min(arm.range, out + arm.extension * (ticks + 1))
-      local length = speed * ticks
-      local dirx, diry = 1, 0
-      local cosa, grow = 1, 0
-      if length > 1e-9 then
-        dirx, diry = drift.x / speed, drift.y / speed
-        -- How fast the hand widens against how fast its owner moves. The radius stops
-        -- growing the moment the hand is at full stretch, so a straight line from one end
-        -- to the other runs under the real thing in the middle and throws real spots away:
-        -- measured, two of a hundred and fourteen. The radius is taken at the spot instead.
-        grow = arm.extension / speed
-        local sina = math.min(grow, 0.999)
-        cosa = math.sqrt(math.max(1e-6, 1 - sina * sina))
-      end
+      -- The cone as plain arithmetic, which is what a rejection test should be: worked out
+      -- once per search, and then a dot product, a cross product and two compares for each
+      -- candidate. The shape itself belongs to lib/reach.lua and is asked for rather than
+      -- copied here -- it was copied once, and the copy went on drawing a wedge after the
+      -- real one had learned to draw a capsule for a hand that grows faster than its owner
+      -- walks, which showed up here as this harness throwing away work that is really in
+      -- reach while control.lua kept it.
+      local shape = reach.cone(arm, drift, ticks)
       local function in_cone(at)
-        local ox, oy = at.x - from.x, at.y - from.y
-        if length <= 1e-9 then return ox * ox + oy * oy <= r1 * r1 end
-        local along = ox * dirx + oy * diry
-        if along < -r0 or along > length + r1 then return false end
-        local across = ox * diry - oy * dirx
-        if across < 0 then across = -across end
-        local held = along
-        if held < 0 then held = 0 elseif held > length then held = length end
-        -- The tangent that wraps the growing hand, capped where the hand stops growing.
-        -- Never wider than the reach: every disc the cone is made of is inside that.
-        local wide = (out + arm.extension + held * grow) / cosa
-        if wide > arm.range then wide = arm.range end
-        return across <= wide
+        return reach.in_cone(shape, { x = at.x - from.x, y = at.y - from.y })
       end
 
       local function cheaply(found)

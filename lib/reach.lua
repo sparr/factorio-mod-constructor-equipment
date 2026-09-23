@@ -573,6 +573,16 @@ end
 ---rather than interpolated end to end -- the hand stops growing the moment it is at full
 ---stretch, and a straight line between the ends runs under the real thing in the middle.
 ---Measured before that was fixed: two real spots of a hundred and fourteen thrown away.
+---
+---The tangent is only a bound while there is a tangent to draw. Two discs have an external
+---tangent only where neither swallows the other, and the hand swallows its own first disc
+---whenever it grows at least as fast as its owner walks: the far disc then holds every disc
+---before it, and the hull is that disc sliding rather than a wedge opening. Drawing the
+---wedge anyway throws away work that is really in reach -- measured, eighteen spots of three
+---thousand on a hand creeping at a twentieth of a tile a tick. How much it throws away grows
+---as the first disc shrinks, so it is an arm whose hand is near its own base that feels it
+---and one already well out that does not. That case gets a capsule instead, which is exact
+---rather than merely a superset.
 ---@param arm {range: number, extension: number, out: number?}
 ---@param drift {x: number, y: number} how far its owner went last tick
 ---@param ticks number how far ahead to look
@@ -584,6 +594,19 @@ function reach.cone(arm, drift, ticks)
   if length <= 1e-9 then
     return { still = true,
              radius = math.min(arm.range, out + arm.extension * (ticks + 1)) }
+  end
+  if arm.extension >= speed then
+    -- Every disc lies inside the one the hand is at when it reaches full stretch: that
+    -- disc's centre has moved speed * k while its radius has grown extension * k, and the
+    -- one is no less than the other. So what the hand sweeps is that disc from the tick it
+    -- stops growing to the end of the horizon, which is a capsule -- and before it stops
+    -- growing, the disc at the moment it does holds all of it.
+    local full = (arm.range - out) / arm.extension - 1
+    if full < 0 then full = 0 elseif full > ticks then full = ticks end
+    return { capsule = true,
+             fromx = drift.x * full, fromy = drift.y * full,
+             tox = drift.x * ticks, toy = drift.y * ticks,
+             radius = math.min(arm.range, out + arm.extension * (full + 1)) }
   end
   local grow = arm.extension / speed
   local sina = math.min(grow, 0.999)
@@ -612,6 +635,22 @@ function reach.in_cone(cone, offset)
   if cone.still then
     return offset.x * offset.x + offset.y * offset.y <= cone.radius * cone.radius
   end
+  if cone.capsule then
+    -- How far the spot is off the segment the disc's centre slides along, squared so that
+    -- nothing here needs a root.
+    local dx, dy = cone.tox - cone.fromx, cone.toy - cone.fromy
+    local px, py = offset.x - cone.fromx, offset.y - cone.fromy
+    local span = dx * dx + dy * dy
+    local at = span > 0 and (px * dx + py * dy) / span or 0
+    if at < 0 then at = 0 elseif at > 1 then at = 1 end
+    local ax, ay = px - dx * at, py - dy * at
+    -- A hair of slack, because this is a superset and a spot sitting exactly on the rim is
+    -- one the quadratic in reach.earliest says is reachable on its very last tick. Without
+    -- it, a spot five tiles out from a hand that arrives at five tiles was lost to the last
+    -- bit of a double.
+    local rim = cone.radius + 1e-6
+    return ax * ax + ay * ay <= rim * rim
+  end
   local along = offset.x * cone.dirx + offset.y * cone.diry
   if along < -cone.behind or along > cone.length + cone.range then return false end
   local across = offset.x * cone.diry - offset.y * cone.dirx
@@ -620,7 +659,10 @@ function reach.in_cone(cone, offset)
   if held < 0 then held = 0 elseif held > cone.length then held = cone.length end
   local wide = (cone.base + held * cone.grow) / cone.cosa
   if wide > cone.range then wide = cone.range end
-  return across <= wide
+  -- The same hair of slack the capsule above gets, for the same reason: a spot sitting
+  -- exactly on the envelope is one reach.earliest says is reachable, and which side of the
+  -- line a double lands on is not worth losing a ghost over.
+  return across <= wide + 1e-6
 end
 
 ---The circles to search a cone with, laid end to end along it.

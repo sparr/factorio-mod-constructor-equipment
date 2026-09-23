@@ -10,6 +10,7 @@ Version: 2.1.6
     - An arm turns its claw more slowly, so a hand swings round at a speed that suits the size of the thing rather than snapping between bearings
     - An upgrade order and a marked cliff are led the same way a ghost is, so both are carried out on the way past rather than only from a standstill
   Bugfixes:
+    - An arm on something that is barely moving, or on a character just getting under way, no longer overlooks work that is really within its reach
     - Fixed a ghost that was in reach when an arm set off never being built once its owner started walking: the claw went on aiming at where the ghost stood rather than cutting to where it was going, so a belt two tiles ahead was swept past the arm and the whole reach was written off with nothing built
     - Fixed arms driven past a line of ghosts at speed setting off for one, changing their mind on the next tick, and delivering to neither: a claw now reckons on the swing round it will really have to make before it sets off, and gives a course up only once it has really gone rather than the first time it wavers
     - A claw that has just built one thing now turns only to a neighbour it can actually fly to, rather than taking one, losing it a tick later, taking the next, and delivering to neither: driven past a double line of ghosts, a ghost that had an arm set off for it ten times and was never built now gets one, and a fifth more of the line goes up at half a tile a tick
